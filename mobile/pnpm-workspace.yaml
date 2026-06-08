@@ -1,0 +1,6 @@
+# pnpm 11: lista de dependencias a las que se les permite ejecutar build scripts
+# (postinstall, etc.). Vacía a propósito: con Expo Go (SDK 54) no se compila
+# código nativo en local, así que ningún paquete necesita build scripts.
+# Si en el futuro pnpm reporta "Ignored build scripts", correr `pnpm approve-builds`
+# y agregar aquí el paquete aprobado.
+onlyBuiltDependencies: []

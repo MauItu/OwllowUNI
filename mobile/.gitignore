@@ -1,0 +1,17 @@
+# Entorno y credenciales
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Carpetas de dependencias
+node_modules/
+__pycache__/
+venv/
+
+# Archivos del sistema u operaciones
+.DS_Store
+Thumbs.db
+dist/
+build/

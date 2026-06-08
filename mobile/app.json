@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Wallet",
+    "slug": "wallet-clone",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "walletclone",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0F0F14"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.walletclone.app"
+    },
+    "android": {
+      "package": "com.walletclone.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F0F14"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
