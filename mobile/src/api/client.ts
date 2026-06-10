@@ -9,6 +9,8 @@ import type {
   TransactionFilters,
   Template,
   TemplateInput,
+  Tag,
+  TagInput,
   Paginated,
   StatsSummary,
   CategoryStat,
@@ -83,6 +85,15 @@ export const templatesApi = {
     api.put<Template>(`/templates/${id}`, data).then((r) => r.data),
   use: (id: number) => api.post<Template>(`/templates/${id}/use`).then((r) => r.data),
   remove: (id: number) => api.delete(`/templates/${id}`).then((r) => r.data),
+};
+
+// ──────────────────────────── Tags ──────────────────────────
+export const tagsApi = {
+  list: () => api.get<Tag[]>('/tags').then((r) => r.data),
+  create: (data: TagInput) => api.post<Tag>('/tags', data).then((r) => r.data),
+  update: (id: number, data: Partial<TagInput>) =>
+    api.put<Tag>(`/tags/${id}`, data).then((r) => r.data),
+  remove: (id: number) => api.delete(`/tags/${id}`).then((r) => r.data),
 };
 
 // ─────────────────────────── Stats ──────────────────────────

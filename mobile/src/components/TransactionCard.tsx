@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
+import { TagChip } from './TagChip';
 import { formatSigned } from '../utils/formatCurrency';
 import { formatTime } from '../utils/formatDate';
 import type { Transaction } from '../types';
@@ -44,6 +45,13 @@ export function TransactionCard({ transaction: t, onPress }: Props) {
         <Text style={styles.subtitle} numberOfLines={1}>
           {subtitle}
         </Text>
+        {!!t.tags?.length && (
+          <View style={styles.tagsRow}>
+            {t.tags.map((tag) => (
+              <TagChip key={tag.id} tag={tag} size="sm" />
+            ))}
+          </View>
+        )}
       </View>
       <View style={styles.right}>
         <Text style={[styles.amount, { color: amountColor }]} numberOfLines={1}>
@@ -73,6 +81,7 @@ const createStyles = (theme: Theme) =>
   info: { flex: 1 },
   title: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
   subtitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 2 },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
   right: { alignItems: 'flex-end' },
   amount: { fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
   time: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginTop: 2 },

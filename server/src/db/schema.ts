@@ -9,6 +9,7 @@ import {
   date,
   time,
   text,
+  unique,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
@@ -75,6 +76,32 @@ export const templates = pgTable('templates', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// ─────────────────────────────── tags ───────────────────────────────
+export const tags = pgTable('tags', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 50 }).notNull().unique(),
+  color: varchar('color', { length: 7 }).default('#6C757D').notNull(),
+  icon: varchar('icon', { length: 50 }).default('tag').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ──────────────────────── transaction_tags ──────────────────────────
+export const transactionTags = pgTable(
+  'transaction_tags',
+  {
+    id: serial('id').primaryKey(),
+    transactionId: integer('transaction_id')
+      .references(() => transactions.id, { onDelete: 'cascade' })
+      .notNull(),
+    tagId: integer('tag_id')
+      .references(() => tags.id, { onDelete: 'cascade' })
+      .notNull(),
+  },
+  (t) => ({
+    uniqueTransactionTag: unique().on(t.transactionId, t.tagId),
+  }),
+);
+
 // ───────────────────────────── relations ────────────────────────────
 export const accountsRelations = relations(accounts, ({ many }) => ({
   transactions: many(transactions),
@@ -90,7 +117,23 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
   transactions: many(transactions),
 }));
 
-export const transactionsRelations = relations(transactions, ({ one }) => ({
+export const tagsRelations = relations(tags, ({ many }) => ({
+  transactionTags: many(transactionTags),
+}));
+
+export const transactionTagsRelations = relations(transactionTags, ({ one }) => ({
+  transaction: one(transactions, {
+    fields: [transactionTags.transactionId],
+    references: [transactions.id],
+  }),
+  tag: one(tags, {
+    fields: [transactionTags.tagId],
+    references: [tags.id],
+  }),
+}));
+
+export const transactionsRelations = relations(transactions, ({ one, many }) => ({
+  transactionTags: many(transactionTags),
   account: one(accounts, {
     fields: [transactions.accountId],
     references: [accounts.id],
@@ -125,3 +168,7 @@ export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
 export type Template = typeof templates.$inferSelect;
 export type NewTemplate = typeof templates.$inferInsert;
+export type Tag = typeof tags.$inferSelect;
+export type NewTag = typeof tags.$inferInsert;
+export type TransactionTag = typeof transactionTags.$inferSelect;
+export type NewTransactionTag = typeof transactionTags.$inferInsert;

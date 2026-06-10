@@ -16,6 +16,7 @@ export function MoreScreen() {
     { label: 'Cuentas', description: 'Gestiona tus cuentas y tarjetas', icon: 'wallet', route: 'Accounts', color: theme.colors.primary },
     { label: 'Categorías', description: 'Organiza ingresos y gastos', icon: 'shapes', route: 'Categories', color: theme.colors.accentLight },
     { label: 'Plantillas', description: 'Movimientos frecuentes', icon: 'zap', route: 'Templates', color: theme.colors.income },
+    { label: 'Etiquetas', description: 'Etiqueta libre para tus movimientos', icon: 'tag', route: 'Tags', color: theme.colors.secondary },
   ];
 
   return (

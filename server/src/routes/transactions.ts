@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { and, eq, gte, lte, desc, ilike, sql, count, type SQL } from 'drizzle-orm';
+import { and, eq, gte, lte, desc, ilike, sql, count, inArray, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
-import { transactions, accounts, categories, type Transaction } from '../db/schema.js';
+import { transactions, accounts, categories, tags, transactionTags, type Transaction } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 
 export const transactionsRouter = Router();
@@ -18,7 +18,30 @@ const txSchema = z.object({
   toAccountId: z.number().int().optional().nullable(),
   categoryId: z.number().int().optional().nullable(),
   notes: z.string().optional().nullable(),
+  tagIds: z.array(z.number().int()).optional(),
 });
+
+/** Busca las etiquetas de un conjunto de transacciones y las agrupa por id. */
+async function tagsByTransaction(txIds: number[]) {
+  const map = new Map<number, { id: number; name: string; color: string; icon: string }[]>();
+  if (txIds.length === 0) return map;
+  const rows = await db
+    .select({
+      transactionId: transactionTags.transactionId,
+      id: tags.id,
+      name: tags.name,
+      color: tags.color,
+      icon: tags.icon,
+    })
+    .from(transactionTags)
+    .innerJoin(tags, eq(transactionTags.tagId, tags.id))
+    .where(inArray(transactionTags.transactionId, txIds));
+  for (const r of rows) {
+    if (!map.has(r.transactionId)) map.set(r.transactionId, []);
+    map.get(r.transactionId)!.push({ id: r.id, name: r.name, color: r.color, icon: r.icon });
+  }
+  return map;
+}
 
 /**
  * Genera los UPDATE de balance para una transacción.
@@ -72,6 +95,7 @@ transactionsRouter.get(
     const {
       account_id,
       category_id,
+      tag_id,
       type,
       from_date,
       to_date,
@@ -83,6 +107,10 @@ transactionsRouter.get(
     const conditions: SQL[] = [];
     if (account_id) conditions.push(eq(transactions.accountId, Number(account_id)));
     if (category_id) conditions.push(eq(transactions.categoryId, Number(category_id)));
+    if (tag_id)
+      conditions.push(
+        sql`EXISTS (SELECT 1 FROM ${transactionTags} WHERE ${transactionTags.transactionId} = ${transactions.id} AND ${transactionTags.tagId} = ${Number(tag_id)})`,
+      );
     if (type) conditions.push(eq(transactions.type, type));
     if (from_date) conditions.push(gte(transactions.date, from_date));
     if (to_date) conditions.push(lte(transactions.date, to_date));
@@ -130,8 +158,10 @@ transactionsRouter.get(
       .from(transactions)
       .where(where);
 
+    const txTags = await tagsByTransaction(rows.map((r) => r.id));
+
     res.json({
-      data: rows,
+      data: rows.map((r) => ({ ...r, tags: txTags.get(r.id) ?? [] })),
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -149,7 +179,8 @@ transactionsRouter.get(
     const id = Number(req.params.id);
     const [row] = await db.select().from(transactions).where(eq(transactions.id, id));
     if (!row) throw new ApiError(404, 'Transacción no encontrada');
-    res.json(row);
+    const txTags = await tagsByTransaction([id]);
+    res.json({ ...row, tags: txTags.get(id) ?? [] });
   }),
 );
 
@@ -182,6 +213,12 @@ transactionsRouter.post(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const results = await db.batch([insertStmt, ...balance] as any);
     const created = (results[0] as Transaction[])[0];
+
+    if (data.tagIds && data.tagIds.length > 0) {
+      await db
+        .insert(transactionTags)
+        .values(data.tagIds.map((tagId) => ({ transactionId: created.id, tagId })));
+    }
     res.status(201).json(created);
   }),
 );
@@ -226,10 +263,18 @@ transactionsRouter.put(
       .where(eq(transactions.id, id))
       .returning();
 
-    const stmts = [...revert, ...apply, updateStmt];
+    const stmts: unknown[] = [...revert, ...apply, updateStmt];
+    if (data.tagIds) {
+      stmts.push(db.delete(transactionTags).where(eq(transactionTags.transactionId, id)));
+      if (data.tagIds.length > 0) {
+        stmts.push(
+          db.insert(transactionTags).values(data.tagIds.map((tagId) => ({ transactionId: id, tagId }))),
+        );
+      }
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const results = await db.batch(stmts as any);
-    const updated = (results[results.length - 1] as Transaction[])[0];
+    const updated = (results[revert.length + apply.length] as Transaction[])[0];
     res.json(updated);
   }),
 );

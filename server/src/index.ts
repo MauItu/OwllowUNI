@@ -5,6 +5,7 @@ import { categoriesRouter } from './routes/categories.js';
 import { transactionsRouter } from './routes/transactions.js';
 import { templatesRouter } from './routes/templates.js';
 import { statsRouter } from './routes/stats.js';
+import { tagsRouter } from './routes/tags.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -23,6 +24,7 @@ app.use('/api/categories', categoriesRouter);
 app.use('/api/transactions', transactionsRouter);
 app.use('/api/templates', templatesRouter);
 app.use('/api/stats', statsRouter);
+app.use('/api/tags', tagsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

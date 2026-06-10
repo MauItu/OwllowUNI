@@ -8,9 +8,11 @@ import { Screen, ScreenHeader, EmptyState, ErrorState } from '../components/comm
 import { TransactionCard } from '../components/TransactionCard';
 import { AccountPicker } from '../components/AccountPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
+import { TagPicker } from '../components/TagPicker';
 import { Icon } from '../components/Icon';
 import { useTransactions } from '../hooks/useTransactions';
 import { useAccounts } from '../hooks/useAccounts';
+import { useTags } from '../hooks/useTags';
 import { useAppStore } from '../stores/appStore';
 import { transactionsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
@@ -33,22 +35,27 @@ export function TransactionsScreen() {
   const { accounts } = useAccounts();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
+  const { tags } = useTags();
+
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TxType | 'all'>('all');
   const [accountId, setAccountId] = useState<number | undefined>(route.params?.accountId);
+  const [tagId, setTagId] = useState<number | undefined>(undefined);
   const [range, setRange] = useState<{ from?: string; to?: string }>({});
   const [showAccount, setShowAccount] = useState(false);
   const [showDate, setShowDate] = useState(false);
+  const [showTags, setShowTags] = useState(false);
 
   const filters = useMemo(
     () => ({
       type: typeFilter === 'all' ? undefined : typeFilter,
       account_id: accountId,
+      tag_id: tagId,
       from_date: range.from,
       to_date: range.to,
       search: search.trim() || undefined,
     }),
-    [typeFilter, accountId, range, search],
+    [typeFilter, accountId, tagId, range, search],
   );
 
   const { transactions, loading, refreshing, loadingMore, error, refresh, loadMore, hasMore } = useTransactions(filters);
@@ -64,7 +71,8 @@ export function TransactionsScreen() {
   }, [transactions]);
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
-  const hasFilters = typeFilter !== 'all' || accountId != null || range.from != null;
+  const selectedTag = tags.find((t) => t.id === tagId);
+  const hasFilters = typeFilter !== 'all' || accountId != null || range.from != null || tagId != null;
 
   const remove = async (t: Transaction) => {
     try {
@@ -130,12 +138,22 @@ export function TransactionsScreen() {
             {range.from ? formatShortDate(range.from) : 'Fecha'}
           </Text>
         </Pressable>
+        <Pressable
+          style={[styles.chip, styles.chipIcon, tagId != null && { backgroundColor: selectedTag?.color ?? theme.colors.primary }]}
+          onPress={() => setShowTags(true)}
+        >
+          <Icon name="tag" size={14} color={tagId != null ? '#FFFFFF' : theme.colors.textSecondary} />
+          <Text style={[styles.chipText, tagId != null && styles.chipTextActive]} numberOfLines={1}>
+            {selectedTag ? selectedTag.name : 'Etiqueta'}
+          </Text>
+        </Pressable>
         {hasFilters && (
           <Pressable
             style={[styles.chip, styles.chipIcon]}
             onPress={() => {
               setTypeFilter('all');
               setAccountId(undefined);
+              setTagId(undefined);
               setRange({});
             }}
           >
@@ -199,6 +217,16 @@ export function TransactionsScreen() {
           setShowDate(false);
         }}
         onClose={() => setShowDate(false)}
+      />
+      <TagPicker
+        visible={showTags}
+        title="Filtrar por etiqueta"
+        selectedIds={tagId != null ? [tagId] : []}
+        onToggle={(tag) => {
+          setTagId((prev) => (prev === tag.id ? undefined : tag.id));
+          setShowTags(false);
+        }}
+        onClose={() => setShowTags(false)}
       />
     </Screen>
   );

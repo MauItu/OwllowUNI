@@ -18,6 +18,7 @@ import { AccountsScreen } from '../screens/AccountsScreen';
 import { AddAccountScreen } from '../screens/AddAccountScreen';
 import { CategoriesScreen } from '../screens/CategoriesScreen';
 import { TemplatesScreen } from '../screens/TemplatesScreen';
+import { TagsScreen } from '../screens/TagsScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -132,6 +133,7 @@ export function AppNavigator() {
         <RootStack.Screen name="Accounts" component={AccountsScreen} />
         <RootStack.Screen name="Categories" component={CategoriesScreen} />
         <RootStack.Screen name="Templates" component={TemplatesScreen} />
+        <RootStack.Screen name="Tags" component={TagsScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

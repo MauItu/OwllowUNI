@@ -29,6 +29,22 @@ export interface Category {
   children?: Category[];
 }
 
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
+  icon: string;
+  createdAt: string;
+  /** Solo en GET /api/tags */
+  transactionCount?: number;
+}
+
+export interface TransactionTag {
+  id: number;
+  transactionId: number;
+  tagId: number;
+}
+
 export interface Transaction {
   id: number;
   type: TxType;
@@ -49,6 +65,7 @@ export interface Transaction {
   categoryName?: string | null;
   categoryColor?: string | null;
   categoryIcon?: string | null;
+  tags?: Pick<Tag, 'id' | 'name' | 'color' | 'icon'>[];
 }
 
 export interface Template {
@@ -107,6 +124,7 @@ export interface BalancePoint {
 export interface TransactionFilters {
   account_id?: number;
   category_id?: number;
+  tag_id?: number;
   type?: TxType;
   from_date?: string;
   to_date?: string;
@@ -125,6 +143,13 @@ export interface TransactionInput {
   toAccountId?: number | null;
   categoryId?: number | null;
   notes?: string | null;
+  tagIds?: number[];
+}
+
+export interface TagInput {
+  name: string;
+  color?: string;
+  icon?: string;
 }
 
 export interface AccountInput {

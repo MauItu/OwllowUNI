@@ -13,6 +13,7 @@ export type RootStackParamList = {
   Accounts: { selectAccountId?: number } | undefined;
   Categories: undefined;
   Templates: undefined;
+  Tags: undefined;
 };
 
 export type TabParamList = {

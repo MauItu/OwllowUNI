@@ -8,6 +8,8 @@ import { Calculator } from '../components/Calculator';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { AccountPicker } from '../components/AccountPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
+import { TagPicker } from '../components/TagPicker';
+import { TagChip } from '../components/TagChip';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
@@ -15,7 +17,7 @@ import { transactionsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { todayISO, nowTime, formatShortDate, parseISOSafe } from '../utils/formatDate';
 import type { RootStackParamList } from '../navigation/types';
-import type { Account, Category, TxType } from '../types';
+import type { Account, Category, Tag, TxType } from '../types';
 
 const TYPE_TABS: { key: TxType; label: string }[] = [
   { key: 'expense', label: 'Gasto' },
@@ -54,12 +56,20 @@ export function AddTransactionScreen() {
   const [initialAmount, setInitialAmount] = useState<number>(
     params.template?.amount ? parseFloat(params.template.amount) : 0,
   );
+  const [selectedTags, setSelectedTags] = useState<Pick<Tag, 'id' | 'name' | 'color' | 'icon'>[]>([]);
   const [saving, setSaving] = useState(false);
 
   const [showCategory, setShowCategory] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [showToAccount, setShowToAccount] = useState(false);
   const [showDate, setShowDate] = useState(false);
+  const [showTags, setShowTags] = useState(false);
+
+  const toggleTag = (tag: Pick<Tag, 'id' | 'name' | 'color' | 'icon'>) => {
+    setSelectedTags((prev) =>
+      prev.some((t) => t.id === tag.id) ? prev.filter((t) => t.id !== tag.id) : [...prev, tag],
+    );
+  };
 
   // Cuenta por defecto: la primera disponible
   useEffect(() => {
@@ -80,6 +90,7 @@ export function AddTransactionScreen() {
         const acc = accounts.find((a) => a.id === tx.accountId) ?? null;
         setAccount(acc);
         if (tx.toAccountId) setToAccount(accounts.find((a) => a.id === tx.toAccountId) ?? null);
+        if (tx.tags) setSelectedTags(tx.tags);
       } catch (err) {
         showError(getErrorMessage(err));
       }
@@ -117,6 +128,7 @@ export function AddTransactionScreen() {
       toAccountId: type === 'transfer' ? toAccount?.id ?? null : null,
       categoryId: type === 'transfer' ? null : category?.id ?? null,
       notes: null,
+      tagIds: selectedTags.map((t) => t.id),
     };
 
     try {
@@ -224,6 +236,25 @@ export function AddTransactionScreen() {
           />
         </View>
 
+        {/* Etiquetas */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tagsRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Pressable
+            style={({ pressed }) => [styles.tagsBtn, pressed && { opacity: 0.7 }]}
+            onPress={() => setShowTags(true)}
+          >
+            <Icon name="tag" size={14} color={theme.colors.accentLight} />
+            <Text style={styles.tagsBtnText}>Etiquetas</Text>
+          </Pressable>
+          {selectedTags.map((tag) => (
+            <TagChip key={tag.id} tag={tag} onRemove={() => toggleTag(tag)} />
+          ))}
+        </ScrollView>
+
         <View style={{ flex: 1 }} />
 
         {/* Calculadora (parte inferior) */}
@@ -273,6 +304,12 @@ export function AddTransactionScreen() {
         }}
         onClose={() => setShowDate(false)}
       />
+      <TagPicker
+        visible={showTags}
+        selectedIds={selectedTags.map((t) => t.id)}
+        onToggle={toggleTag}
+        onClose={() => setShowTags(false)}
+      />
     </Screen>
   );
 }
@@ -314,4 +351,23 @@ const createStyles = (theme: Theme) =>
     paddingVertical: Platform.OS === 'ios' ? theme.spacing.sm + 2 : 2,
   },
   descInput: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md },
+  tagsRow: {
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    alignItems: 'center',
+  },
+  tagsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderStyle: 'dashed',
+  },
+  tagsBtnText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
 });
