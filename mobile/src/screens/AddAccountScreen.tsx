@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { theme, PALETTE } from '../theme';
+import { PALETTE, type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, TextField, PrimaryButton } from '../components/common';
 import { Icon, ACCOUNT_ICONS } from '../components/Icon';
 import { accountsApi, getErrorMessage } from '../api/client';
@@ -19,6 +20,8 @@ const TYPES: { key: AccountType; label: string; icon: string }[] = [
 
 export function AddAccountScreen() {
   const navigation = useNavigation<any>();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const route = useRoute<RouteProp<RootStackParamList, 'AddAccount'>>();
   const editingId = route.params?.accountId;
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
@@ -168,7 +171,8 @@ export function AddAccountScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   content: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl * 2 },
   preview: { alignItems: 'center', marginBottom: theme.spacing.lg, gap: theme.spacing.sm },
   previewIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
@@ -190,8 +194,8 @@ const styles = StyleSheet.create({
   typeText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
   row: { flexDirection: 'row', gap: theme.spacing.sm },
   palette: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-  swatch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
-  swatchActive: { borderColor: '#fff' },
+  swatch: { width: 40, height: 40, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  swatchActive: { borderColor: theme.colors.text },
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
   iconBtn: {
     width: 48,

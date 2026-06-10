@@ -23,11 +23,11 @@ import type {
  * - Configurable también vía EXPO_PUBLIC_API_URL.
  */
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.100:3000/api';
+  process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.2.21:3000/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 5000,
   headers: { 'Content-Type': 'application/json' },
 });
 

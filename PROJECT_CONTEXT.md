@@ -69,7 +69,8 @@ mobile/
     ├── components/             ← Calculator, TransactionCard, AccountCard, CategoryPicker,
     │                              DateRangePicker, BalanceSummary, StatChart, TemplateCard
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks
-    ├── theme/index.ts          ← tema oscuro (colores, spacing, radius, fontSize)
+    ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
+    ├── theme/ThemeContext.tsx  ← ThemeProvider, useTheme(), useThemedStyles()
     ├── utils/                  ← formatCurrency, formatDate, calculatorEngine
     └── types/index.ts          ← tipos compartidos
 ```
@@ -157,7 +158,9 @@ expo ~54.0.0, react 19.1.0, react-native 0.81.5, @react-navigation/* ^7,
 react-native-screens ~4.16, react-native-safe-area-context ~5.6, react-native-gesture-handler ~2.28,
 react-native-reanimated ~4.1 (requiere react-native-worklets 0.5.1 — instalado), react-native-svg 15.12,
 axios ^1.7, zustand ^5, date-fns ^4.1, lucide-react-native ^0.460, @expo/vector-icons ^15
-(requiere expo-font ~14.0 — instalado), expo-status-bar ~3.0, react-native-toast-message ^2.2.
+(requiere expo-font ~14.0 — instalado), expo-status-bar ~3.0, react-native-toast-message ^2.2,
+expo-linear-gradient ~15.0 (gradientes del sistema de temas dual; bundled en Expo Go SDK 54),
+expo-splash-screen ~31.0 (control explícito de splash).
 TypeScript ~5.9, @types/react ~19.1.
 
 > **NO usar:** `victory-native` (removido — arrastra `@shopify/react-native-skia`; las gráficas son
@@ -166,27 +169,119 @@ TypeScript ~5.9, @types/react ~19.1.
 
 ---
 
-## DISEÑO (tema oscuro)
+## DISEÑO — Sistema de temas dual (rediseño jun 2026)
 
+Dos paletas conmutables con un switch en la pantalla "Más". Definidas en `mobile/src/theme/index.ts`;
+el estado vive en `mobile/src/theme/ThemeContext.tsx`.
+
+### MODO CLARO — "Minimalista Nórdico"
 ```ts
 colors: {
-  background:'#0F0F14', surface:'#1A1A24', surfaceLight:'#252535',
-  primary:'#6C5CE7', primaryLight:'#A78BFA', success:'#10B981', danger:'#EF4444',
-  warning:'#F59E0B', text:'#FFFFFF', textSecondary:'#9CA3AF', textMuted:'#6B7280', border:'#2D2D3D',
+  background:'#F8F9FA', surface:'#E9ECEF', surfaceLight:'#FFFFFF', surfaceAccent:'#DDE3E9',
+  primary:'#C1437A',       // rosa viejo — CTA principal
+  primaryDark:'#F1D7E2',   // contenedor suave (teclas operador calculadora)
+  primaryLight:'#A8336B',  // variante legible como TEXTO sobre fondo claro
+  secondary:'#3A60A1',     // azul slate — enlaces/navegación (contraste 5.92:1 ✓)
+  accent:'#7B528C', accentLight:'#9B7DB8',
+  income:'#2E8B57', expense:'#C1437A', transfer:'#3A60A1',
+  text:'#212529', textSecondary:'#6C757D', textMuted:'#99A1A8',
+  border:'#CED4DA', borderLight:'#DEE2E6', statusBar:'#E2E6EA',
 }
-spacing: { xs:4, sm:8, md:16, lg:24, xl:32 }
-borderRadius: { sm:8, md:12, lg:16, xl:24 }
-fontSize: { xs:12, sm:14, md:16, lg:20, xl:28, xxl:36 }
 ```
 
-**Navegación (bottom tabs):** Inicio · Transacciones · Agregar (tab central tipo FAB) · Estadísticas · Más (cuentas, categorías, plantillas).
+### MODO OSCURO — "Orquídea / Morado Velvet"
+```ts
+colors: {
+  background:'#241B35', surface:'#32264A', surfaceLight:'#3C2E58', surfaceAccent:'#473768',
+  primary:'#F72585',       // rosa frambuesa — CTA principal
+  primaryDark:'#A91761',   // teclas operador / pressed
+  primaryLight:'#FF8FC2',  // variante legible como TEXTO sobre fondo oscuro
+  secondary:'#4CC9F0',     // azul turquesa — enlaces/navegación (contraste 8.51:1 ✓)
+  accent:'#7209B7',        // púrpura imperial — SOLO para fondos/fills (1.9:1 como texto)
+  accentLight:'#B47EE8',   // variante legible como texto
+  income:'#4ADE80', expense:'#F72585', transfer:'#4CC9F0',
+  text:'#F4EFFA', textSecondary:'#A393BF', textMuted:'#75689A',
+  border:'#443465', borderLight:'#554478', statusBar:'#1B1428',
+}
+```
 
-**Calculadora:** ocupa mitad inferior de AddTransactionScreen. Botones 0-9, `.`, `+ - × ÷`, `=`, `⌫`, `C`, `✓`.
-Muestra expresión (textSecondary) + resultado (fontSize.xxl). Operaciones encadenadas. Motor en
-`calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Maneja edge cases
-(división por 0, múltiples puntos). Botón ✓ en success/danger según tipo.
-> Sin haptic feedback: `expo-haptics` fue removido (incompatible con Node 22). `Calculator.tsx`
-> ya no importa ni llama `impactAsync`/`ImpactFeedbackStyle`.
+### Tokens compartidos
+```ts
+chart: ['#C1437A','#3A60A1','#7B528C','#2E8B57','#E8A838','#4EADA1','#D4845A','#9B7DB8']
+gradients: { header, cardHighlight, income, expense }   // tuplas de 2 colores por tema (expo-linear-gradient)
+spacing: { xs:4, sm:8, md:16, lg:24, xl:32, xxl:48 }
+borderRadius: { sm:8, md:12, lg:16, xl:24, full:999 }
+fontSize: { xs:11, sm:13, md:15, lg:18, xl:24, xxl:32, hero:40 }
+fontWeight: { regular:'400', medium:'500', semibold:'600', bold:'700' }
+```
+
+### Arquitectura del tema (patrón obligatorio para código nuevo)
+- `ThemeProvider` envuelve la app en `App.tsx`. Default = esquema del sistema (`useColorScheme()`);
+  el toggle de la pantalla "Más" lo sobreescribe en sesión (sin persistencia).
+- `useTheme()` → `{ theme, colors, isDark, toggleTheme }`.
+- **Estilos:** nada de `StyleSheet.create` a nivel de módulo con colores. El patrón es:
+  ```ts
+  const createStyles = (theme: Theme) => StyleSheet.create({ ... });   // al final del archivo
+  // dentro del componente:
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);   // memoizado por tema
+  ```
+- `toastConfig` es una factory `createToastConfig(theme)` que `App.tsx` memoiza.
+- `StatusBar`: `style={isDark ? 'light' : 'dark'}` + `backgroundColor={colors.statusBar}`.
+- `AppNavigator` deriva el tema de React Navigation (`DefaultTheme`/`DarkTheme`) del modo activo.
+
+> **Nota:** los alias `success`/`danger`/`warning` se mantienen en ambos temas apuntando a
+> `income`/`expense`/`accent(-Light)`. Para código nuevo usar SIEMPRE los tokens semánticos.
+> **Accesibilidad:** `primaryLight`/`accentLight` son las variantes para texto; `primary`/`accent`
+> son para fondos (con texto blanco encima). En el oscuro, `accent` (#7209B7) NUNCA como color de texto.
+
+**Splash Screen:** `expo-splash-screen@~31.0` (SDK 54). `App.tsx` llama
+`SplashScreen.preventAutoHideAsync()` al cargar el módulo y `SplashScreen.hideAsync()` en el primer
+`useEffect`. Esto garantiza que la splash se oculta en cuanto el React tree monta. Un `ErrorBoundary`
+global en `App.tsx` captura crashes y muestra un fallback en lugar de congelar la app.
+
+**SafeArea (fix barra de navegación Android):** `app.json` tiene `edgeToEdgeEnabled:true`, así que
+la app dibuja bajo las barras del sistema. El fix:
+- `App.tsx`: `<ErrorBoundary>` + `<SafeAreaProvider>` + `<StatusBar style="light" backgroundColor={bg} translucent />`.
+- `components/common.tsx` → `Screen` usa `<SafeAreaView edges={['top']}>` (inset superior en cada pantalla).
+- `navigation/AppNavigator.tsx` → `CustomTabBar` propio con `useSafeAreaInsets()`:
+  `paddingBottom = Math.max(insets.bottom, 12) + 8` (deja libres los botones back/home/recientes).
+- `BottomSheet.tsx` también respeta `insets.bottom`.
+
+**Navegación (bottom tabs, `CustomTabBar`):** Inicio (house) · Movimientos (arrow-left-right) ·
+Agregar (botón central circular elevado -24, fondo primary, borde del color background) · Estadísticas
+(bar-chart-3) · Más (menu). Tab activo en `primary`, inactivo en `textMuted`, labels `fontSize.xs`.
+El botón central abre el modal `AddTransaction` del root stack.
+
+**HomeScreen:** saludo por hora ("Buenos días/tardes/noches") + fecha; `BalanceSummary` con balance en
+`fontSize.hero` ($ en `accent`) y dos pills (ingresos/gastos); últimas 5 transacciones; pull-to-refresh.
+**Botón flotante (44×44, fondo `accent`, ícono `zap` blanco) abajo-derecha** abre un `BottomSheet` con las
+plantillas (cada una con botón "Usar"); enlace "Gestionar plantillas" lleva al CRUD completo.
+
+**AddTransactionScreen:** tabs de tipo tipo pill con color semántico; fila de chips scrollable
+(cuenta / categoría o destino / fecha); input de descripción opcional; `Calculator` en la mitad inferior.
+
+**TransactionsScreen:** búsqueda pill (`borderRadius.full`), chips de filtro scrollables (tipo + cuenta +
+fecha + limpiar), lista agrupada por fecha, swipe-to-delete (fondo `expense`), FAB `primary` abajo-derecha.
+
+**StatsScreen:** tabs de período scrollables; cards de resumen Ingresos/Gastos + card de Balance neto;
+donut por categoría con leyenda y porcentajes; barras (top redondeado) ingresos vs gastos; línea de
+evolución (`accentLight`); top categorías con barra de progreso.
+
+**AccountsScreen:** card total consolidado con `LinearGradient` (gradiente `cardHighlight`); cuentas como
+cards con borde izquierdo (4px) del color de la cuenta; "+" en el header.
+
+**CategoriesScreen:** tabs pill Gastos/Ingresos (color `expense`/`income`); padres con ícono+color;
+subcategorías colapsables indentadas con línea vertical del color del padre.
+
+**Calculadora:** ocupa mitad inferior de AddTransactionScreen. Botones 0-9, `.`, `+ - × ÷`, `⌫`, `C`, `✓`.
+Números fondo `surfaceLight`; operadores fondo `primaryDark` / texto `primaryLight`; borrar `surfaceAccent`;
+confirmar `✓` ancho doble en color semántico (`income`/`expense`/`transfer`), `borderRadius.xl`.
+Display: expresión (`textMuted`, `fontSize.lg`) + resultado (`fontSize.hero`, coloreado por tipo).
+Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Maneja edge cases.
+> Sin haptic feedback: `expo-haptics` fue removido (incompatible con Node 22).
+
+**Dependencia añadida:** `expo-linear-gradient` (~15.0.8, bundled en Expo Go SDK 54) para los gradientes.
 
 ---
 
@@ -237,6 +332,14 @@ Muestra expresión (textSecondary) + resultado (fontSize.xxl). Operaciones encad
 - **Removidos:** `victory-native` (no se usaba; arrastraba skia) y `expo-haptics` (incompatible con Node 22).
 - **Limpiado:** `Calculator.tsx` (llamadas huérfanas a `impactAsync`), `babel.config.js`
   (quitado el plugin manual de reanimated), `pnpm-workspace.yaml` (clave `allowBuilds` inválida → `onlyBuiltDependencies`).
+
+### Fix splash freeze (jun 2026)
+- **Agregado** `expo-splash-screen@~31.0` — control explícito: `preventAutoHideAsync()` al cargar el módulo,
+  `hideAsync()` en el primer `useEffect` de `App.tsx`.
+- **Agregado** `ErrorBoundary` global en `App.tsx` — si un componente crashea, muestra pantalla de error
+  en lugar de congelar en la splash.
+- **Reducido** timeout de Axios de 15 s → 5 s en `api/client.ts` para fallar rápido si el backend no responde.
+- **Logs de diagnóstico:** `console.log('APP MOUNTED')` en `App.tsx`, `console.log('HOME SCREEN RENDERED')` en `HomeScreen.tsx`.
 
 ## COMANDOS
 

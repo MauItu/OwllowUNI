@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable, Modal, RefreshControl, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { theme, PALETTE } from '../theme';
+import { PALETTE, type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, TextField, PrimaryButton, EmptyState, Loading } from '../components/common';
 import { Icon, CATEGORY_ICONS } from '../components/Icon';
 import { useCategories } from '../hooks/useCategories';
@@ -20,6 +21,8 @@ interface FormState {
 
 export function CategoriesScreen() {
   const navigation = useNavigation<any>();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [tab, setTab] = useState<CategoryType>('expense');
   const { categories, loading, refreshing, refetch } = useCategories(tab);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
@@ -92,11 +95,15 @@ export function CategoriesScreen() {
       />
 
       <View style={styles.tabs}>
-        {(['expense', 'income'] as CategoryType[]).map((t) => (
-          <Pressable key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => setTab(t)}>
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === 'expense' ? 'Gastos' : 'Ingresos'}</Text>
-          </Pressable>
-        ))}
+        {(['expense', 'income'] as CategoryType[]).map((t) => {
+          const active = tab === t;
+          const activeColor = t === 'expense' ? theme.colors.expense : theme.colors.income;
+          return (
+            <Pressable key={t} style={[styles.tab, active && { backgroundColor: activeColor }]} onPress={() => setTab(t)}>
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{t === 'expense' ? 'Gastos' : 'Ingresos'}</Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       {loading && categories.length === 0 ? (
@@ -127,14 +134,22 @@ export function CategoriesScreen() {
                   )}
                 </Pressable>
 
-                {isOpen &&
-                  children.map((child) => (
-                    <Pressable key={child.id} style={styles.childRow} onPress={() => openEdit(child)}>
-                      <View style={[styles.childDot, { backgroundColor: child.color }]} />
-                      <Icon name={child.icon} size={16} color={theme.colors.textSecondary} />
-                      <Text style={styles.childName}>{child.name}</Text>
-                    </Pressable>
-                  ))}
+                {isOpen && (
+                  <View style={styles.childrenWrap}>
+                    <View style={[styles.childLine, { backgroundColor: cat.color }]} />
+                    <View style={{ flex: 1 }}>
+                      {children.map((child) => (
+                        <Pressable key={child.id} style={styles.childRow} onPress={() => openEdit(child)}>
+                          <View style={[styles.childIcon, { backgroundColor: `${child.color}26` }]}>
+                            <Icon name={child.icon} size={14} color={child.color} />
+                          </View>
+                          <Text style={styles.childName}>{child.name}</Text>
+                          <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                )}
               </View>
             );
           })}
@@ -187,30 +202,32 @@ export function CategoriesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  tabs: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm },
-  tab: { flex: 1, paddingVertical: theme.spacing.sm, borderRadius: theme.borderRadius.md, backgroundColor: theme.colors.surface, alignItems: 'center' },
-  tabActive: { backgroundColor: theme.colors.primary },
-  tabText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md },
-  tabTextActive: { color: '#fff', fontWeight: '700' },
-  content: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl * 2 },
-  group: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.md, marginBottom: theme.spacing.sm, overflow: 'hidden' },
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
+  tabs: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.sm },
+  tab: { flex: 1, paddingVertical: theme.spacing.sm + 2, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surfaceLight, alignItems: 'center' },
+  tabText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.medium },
+  tabTextActive: { color: theme.colors.background, fontWeight: theme.fontWeight.bold },
+  content: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
+  group: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, marginBottom: theme.spacing.sm, overflow: 'hidden' },
   parentRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, padding: theme.spacing.md },
-  iconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  parentName: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: '600' },
-  smallBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surfaceLight },
-  childRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.sm, paddingLeft: theme.spacing.xl + theme.spacing.md, paddingRight: theme.spacing.md, borderTopWidth: 1, borderTopColor: theme.colors.border },
-  childDot: { width: 8, height: 8, borderRadius: 4 },
-  childName: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { backgroundColor: theme.colors.surface, borderTopLeftRadius: theme.borderRadius.xl, borderTopRightRadius: theme.borderRadius.xl, padding: theme.spacing.md, maxHeight: '82%' },
-  sheetTitle: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: '700', marginBottom: theme.spacing.md },
+  iconWrap: { width: 42, height: 42, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  parentName: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
+  smallBtn: { width: 30, height: 30, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.surfaceLight },
+  childrenWrap: { flexDirection: 'row', paddingLeft: theme.spacing.lg, paddingRight: theme.spacing.md, paddingBottom: theme.spacing.sm, gap: theme.spacing.md },
+  childLine: { width: 2, borderRadius: 1, marginVertical: theme.spacing.xs },
+  childRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.sm },
+  childIcon: { width: 28, height: 28, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  childName: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.sm },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet: { backgroundColor: theme.colors.surface, borderTopLeftRadius: theme.borderRadius.xl, borderTopRightRadius: theme.borderRadius.xl, padding: theme.spacing.lg, maxHeight: '82%' },
+  sheetTitle: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold, marginBottom: theme.spacing.md },
   label: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginBottom: theme.spacing.sm, marginTop: theme.spacing.sm },
   palette: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-  swatch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
-  swatchActive: { borderColor: '#fff' },
+  swatch: { width: 40, height: 40, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  swatchActive: { borderColor: theme.colors.text },
   iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
   iconBtn: { width: 46, height: 46, borderRadius: theme.borderRadius.md, backgroundColor: theme.colors.surfaceLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
   deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.sm, marginTop: theme.spacing.md, padding: theme.spacing.md },
-  deleteText: { color: theme.colors.danger, fontWeight: '600' },
+  deleteText: { color: theme.colors.expense, fontWeight: theme.fontWeight.semibold },
 });

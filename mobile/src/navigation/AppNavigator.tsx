@@ -1,11 +1,11 @@
 import React from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator, type BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { theme } from '../theme';
+import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from '../components/Icon';
 import type { RootStackParamList, TabParamList } from './types';
 
@@ -22,74 +22,81 @@ import { TemplatesScreen } from '../screens/TemplatesScreen';
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
-const navTheme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    background: theme.colors.background,
-    card: theme.colors.surface,
-    text: theme.colors.text,
-    border: theme.colors.border,
-    primary: theme.colors.primary,
-  },
+const TAB_META: Record<keyof TabParamList, { icon: string; label: string }> = {
+  Home: { icon: 'house', label: 'Inicio' },
+  Transactions: { icon: 'arrow-left-right', label: 'Movimientos' },
+  AddTab: { icon: 'plus', label: '' },
+  Stats: { icon: 'bar-chart-3', label: 'Estadísticas' },
+  More: { icon: 'menu', label: 'Más' },
 };
 
-const TAB_ICONS: Record<keyof TabParamList, string> = {
-  Home: 'house',
-  Transactions: 'list',
-  AddTab: 'plus',
-  Stats: 'pie-chart',
-  More: 'menu',
-};
+/**
+ * Tab bar a medida que respeta el SafeArea inferior (botones de navegación
+ * Android) y eleva el botón central "Agregar" tipo FAB integrado.
+ */
+function CustomTabBar({ state, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const paddingBottom = Math.max(insets.bottom, 12) + 8;
 
-const TAB_LABELS: Record<keyof TabParamList, string> = {
-  Home: 'Inicio',
-  Transactions: 'Movimientos',
-  AddTab: '',
-  Stats: 'Stats',
-  More: 'Más',
-};
-
-/** Botón central tipo FAB que abre el modal de Agregar transacción. */
-function AddTabButton({ children }: BottomTabBarButtonProps) {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   return (
-    <Pressable style={styles.fabWrap} onPress={() => navigation.navigate('AddTransaction')}>
-      <View style={styles.fab}>{children}</View>
-    </Pressable>
+    <View style={[styles.tabBar, { paddingBottom, height: 64 + paddingBottom }]}>
+      {state.routes.map((route, index) => {
+        const meta = TAB_META[route.name as keyof TabParamList];
+        const isFocused = state.index === index;
+        const isAdd = route.name === 'AddTab';
+
+        const onPress = () => {
+          if (isAdd) {
+            navigation.navigate('AddTransaction' as never);
+            return;
+          }
+          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name as never);
+          }
+        };
+
+        if (isAdd) {
+          return (
+            <View key={route.key} style={styles.addSlot}>
+              <Pressable onPress={onPress} style={styles.addFab} hitSlop={8}>
+                <Icon name="plus" size={32} color={theme.colors.background} strokeWidth={2.5} />
+              </Pressable>
+            </View>
+          );
+        }
+
+        const color = isFocused ? theme.colors.primary : theme.colors.textMuted;
+        return (
+          <Pressable key={route.key} style={styles.tabItem} onPress={onPress} hitSlop={4}>
+            <Icon name={meta.icon} size={24} color={color} strokeWidth={isFocused ? 2.4 : 2} />
+            <Text style={[styles.tabLabel, { color }]} numberOfLines={1}>
+              {meta.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
 // Pantalla "fantasma" para el tab central (nunca se muestra; el botón intercepta el press).
 function Noop() {
+  const { theme } = useTheme();
   return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
 }
 
 function Tabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: theme.colors.primaryLight,
-        tabBarInactiveTintColor: theme.colors.textMuted,
-        tabBarLabelStyle: { fontSize: 11 },
-        tabBarIcon: ({ color }) => {
-          const name = TAB_ICONS[route.name as keyof TabParamList];
-          const size = route.name === 'AddTab' ? 28 : 22;
-          const iconColor = route.name === 'AddTab' ? '#fff' : color;
-          return <Icon name={name} size={size} color={iconColor} />;
-        },
-        tabBarLabel: TAB_LABELS[route.name as keyof TabParamList],
-      })}
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Transactions" component={TransactionsScreen} />
-      <Tab.Screen
-        name="AddTab"
-        component={Noop}
-        options={{ tabBarButton: (props) => <AddTabButton {...props} /> }}
-      />
+      <Tab.Screen name="AddTab" component={Noop} />
       <Tab.Screen name="Stats" component={StatsScreen} />
       <Tab.Screen name="More" component={MoreScreen} />
     </Tab.Navigator>
@@ -97,6 +104,19 @@ function Tabs() {
 }
 
 export function AppNavigator() {
+  const { theme, isDark } = useTheme();
+  const base = isDark ? DarkTheme : DefaultTheme;
+  const navTheme = {
+    ...base,
+    colors: {
+      ...base.colors,
+      background: theme.colors.background,
+      card: theme.colors.surface,
+      text: theme.colors.text,
+      border: theme.colors.border,
+      primary: theme.colors.primary,
+    },
+  };
   return (
     <NavigationContainer theme={navTheme}>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
@@ -115,26 +135,33 @@ export function AppNavigator() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   tabBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     backgroundColor: theme.colors.surface,
-    borderTopColor: theme.colors.border,
-    height: 64,
-    paddingBottom: 8,
-    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.borderLight,
+    paddingTop: 10,
   },
-  fabWrap: { top: -18, justifyContent: 'center', alignItems: 'center' },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', gap: 4 },
+  tabLabel: { fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.medium },
+  addSlot: { flex: 1, alignItems: 'center' },
+  addFab: {
+    width: 60,
+    height: 60,
+    borderRadius: theme.borderRadius.full,
     backgroundColor: theme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: -24,
     shadowColor: theme.colors.primary,
     shadowOpacity: 0.5,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
+    borderWidth: 4,
+    borderColor: theme.colors.background,
   },
 });

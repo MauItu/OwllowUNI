@@ -14,7 +14,8 @@ import {
   isAfter,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 import { isoFromDate } from '../utils/formatDate';
 
@@ -30,6 +31,8 @@ const WEEKDAYS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
 /** Selector de rango de fechas con calendario propio (sin dependencias nativas). */
 export function DateRangePicker({ visible, initialFrom, initialTo, onConfirm, onClose }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [month, setMonth] = useState(() => startOfMonth(initialFrom ?? new Date()));
   const [from, setFrom] = useState<Date | null>(initialFrom ?? null);
   const [to, setTo] = useState<Date | null>(initialTo ?? null);
@@ -123,7 +126,8 @@ export function DateRangePicker({ visible, initialFrom, initialTo, onConfirm, on
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: theme.spacing.lg },
   card: {
@@ -138,7 +142,7 @@ const styles = StyleSheet.create({
   weekday: { flex: 1, textAlign: 'center', color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginBottom: theme.spacing.xs },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-  cellInRange: { backgroundColor: 'rgba(108,92,231,0.18)' },
+  cellInRange: { backgroundColor: theme.colors.surfaceAccent },
   cellSelected: { backgroundColor: theme.colors.primary, borderRadius: theme.borderRadius.sm },
   cellText: { color: theme.colors.text, fontSize: theme.fontSize.sm },
   cellTextSelected: { color: '#fff', fontWeight: '700' },

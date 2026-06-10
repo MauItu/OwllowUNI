@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Modal, Pressable, FlatList, StyleSheet } from 'react-native';
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 import { formatCurrency } from '../utils/formatCurrency';
 import type { Account } from '../types';
@@ -15,6 +16,8 @@ interface Props {
 }
 
 export function AccountPicker({ visible, accounts, title = 'Selecciona cuenta', excludeId, onSelect, onClose }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const data = accounts.filter((a) => a.id !== excludeId);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -46,7 +49,8 @@ export function AccountPicker({ visible, accounts, title = 'Selecciona cuenta', 
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
     backgroundColor: theme.colors.surface,

@@ -1,6 +1,6 @@
 import React from 'react';
 import * as Lucide from 'lucide-react-native';
-import { theme } from '../theme';
+import { useTheme } from '../theme/ThemeContext';
 
 type IconComponent = React.ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 const registry = Lucide as unknown as Record<string, IconComponent>;
@@ -25,10 +25,11 @@ function toPascal(name: string): string {
  * Renderiza un ícono de Lucide a partir de su nombre en kebab-case.
  * Si el nombre no existe, usa un ícono por defecto.
  */
-export function Icon({ name, size = 22, color = theme.colors.text, strokeWidth = 2 }: IconProps) {
+export function Icon({ name, size = 22, color, strokeWidth = 2 }: IconProps) {
+  const { colors } = useTheme();
   const key = name ? toPascal(name) : 'CircleHelp';
   const LucideIcon: IconComponent = registry[key] ?? registry.CircleHelp ?? registry.HelpCircle;
-  return <LucideIcon size={size} color={color} strokeWidth={strokeWidth} />;
+  return <LucideIcon size={size} color={color ?? colors.text} strokeWidth={strokeWidth} />;
 }
 
 // Íconos disponibles para escoger en formularios de cuentas/categorías.

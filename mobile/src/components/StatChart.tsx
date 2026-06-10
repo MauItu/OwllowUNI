@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, G, Circle, Rect, Polyline, Line, Text as SvgText } from 'react-native-svg';
-import { theme } from '../theme';
+import Svg, { Path, G, Circle, Polyline, Line, Text as SvgText } from 'react-native-svg';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { formatCurrency } from '../utils/formatCurrency';
 
 // ───────────────────────── Donut ─────────────────────────
@@ -16,6 +17,13 @@ function polarToCartesian(cx: number, cy: number, r: number, angle: number) {
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
+/** Rectángulo con esquinas superiores redondeadas (para barras). */
+function topRoundedRect(x: number, y: number, w: number, h: number, r: number): string {
+  const radius = Math.min(r, w / 2, h);
+  if (h <= 0) return '';
+  return `M ${x} ${y + h} L ${x} ${y + radius} Q ${x} ${y} ${x + radius} ${y} L ${x + w - radius} ${y} Q ${x + w} ${y} ${x + w} ${y + radius} L ${x + w} ${y + h} Z`;
+}
+
 function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
   const start = polarToCartesian(cx, cy, r, endAngle);
   const end = polarToCartesian(cx, cy, r, startAngle);
@@ -24,6 +32,8 @@ function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle
 }
 
 export function DonutChart({ data, size = 180, centerLabel }: { data: DonutSlice[]; size?: number; centerLabel?: string }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const total = data.reduce((acc, d) => acc + d.value, 0);
   const stroke = 26;
   const r = (size - stroke) / 2;
@@ -71,6 +81,8 @@ interface BarPoint {
 }
 
 export function BarChart({ data, height = 200, currency = 'COP' }: { data: BarPoint[]; height?: number; currency?: string }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const width = 320;
   const padding = { left: 8, right: 8, top: 10, bottom: 26 };
   const chartW = width - padding.left - padding.right;
@@ -99,8 +111,8 @@ export function BarChart({ data, height = 200, currency = 'COP' }: { data: BarPo
           const expH = (d.expense / max) * chartH;
           return (
             <G key={i}>
-              <Rect x={gx - barW - 1} y={padding.top + chartH - incH} width={barW} height={incH} rx={3} fill={theme.colors.success} />
-              <Rect x={gx + 1} y={padding.top + chartH - expH} width={barW} height={expH} rx={3} fill={theme.colors.danger} />
+              <Path d={topRoundedRect(gx - barW - 1, padding.top + chartH - incH, barW, incH, theme.borderRadius.sm)} fill={theme.colors.income} />
+              <Path d={topRoundedRect(gx + 1, padding.top + chartH - expH, barW, expH, theme.borderRadius.sm)} fill={theme.colors.expense} />
               <SvgText x={gx} y={height - 8} fontSize={9} fill={theme.colors.textMuted} textAnchor="middle">
                 {d.label}
               </SvgText>
@@ -109,8 +121,8 @@ export function BarChart({ data, height = 200, currency = 'COP' }: { data: BarPo
         })}
       </Svg>
       <View style={styles.legend}>
-        <Legend color={theme.colors.success} text="Ingresos" />
-        <Legend color={theme.colors.danger} text="Gastos" />
+        <Legend color={theme.colors.income} text="Ingresos" />
+        <Legend color={theme.colors.expense} text="Gastos" />
       </View>
     </View>
   );
@@ -123,6 +135,8 @@ interface LinePoint {
 }
 
 export function LineChart({ data, height = 180 }: { data: LinePoint[]; height?: number }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const width = 320;
   const padding = { left: 8, right: 8, top: 12, bottom: 24 };
   const chartW = width - padding.left - padding.right;
@@ -151,15 +165,16 @@ export function LineChart({ data, height = 180 }: { data: LinePoint[]; height?: 
 
   return (
     <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-      <Polyline points={polyline} fill="none" stroke={theme.colors.primary} strokeWidth={2.5} strokeLinejoin="round" />
+      <Polyline points={polyline} fill="none" stroke={theme.colors.accentLight} strokeWidth={2.5} strokeLinejoin="round" />
       {coords.map((c, i) => (
-        <Circle key={i} cx={c.x} cy={c.y} r={2.5} fill={theme.colors.primaryLight} />
+        <Circle key={i} cx={c.x} cy={c.y} r={2.5} fill={theme.colors.accentLight} />
       ))}
     </Svg>
   );
 }
 
 function Legend({ color, text }: { color: string; text: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.legendItem}>
       <View style={[styles.legendDot, { backgroundColor: color }]} />
@@ -168,7 +183,8 @@ function Legend({ color, text }: { color: string; text: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   emptyChart: { alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm },
   donutCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },

@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, SectionList, Pressable, TextInput, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, SectionList, Pressable, TextInput, RefreshControl, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, EmptyState, ErrorState } from '../components/common';
 import { TransactionCard } from '../components/TransactionCard';
 import { AccountPicker } from '../components/AccountPicker';
@@ -26,6 +27,8 @@ const TYPE_FILTERS: { key: TxType | 'all'; label: string }[] = [
 
 export function TransactionsScreen() {
   const navigation = useNavigation<any>();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const route = useRoute<RouteProp<TabParamList, 'Transactions'>>();
   const { accounts } = useAccounts();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
@@ -75,8 +78,7 @@ export function TransactionsScreen() {
 
   const renderRightActions = (t: Transaction) => (
     <Pressable style={styles.deleteAction} onPress={() => remove(t)}>
-      <Icon name="trash-2" size={22} color="#fff" />
-      <Text style={styles.deleteText}>Eliminar</Text>
+      <Icon name="trash-2" size={22} color="#FFFFFF" />
     </Pressable>
   );
 
@@ -101,8 +103,8 @@ export function TransactionsScreen() {
         )}
       </View>
 
-      {/* Chips de tipo */}
-      <View style={styles.chipsRow}>
+      {/* Chips de filtro (scroll horizontal) */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
         {TYPE_FILTERS.map((f) => (
           <Pressable
             key={f.key}
@@ -112,35 +114,33 @@ export function TransactionsScreen() {
             <Text style={[styles.chipText, typeFilter === f.key && styles.chipTextActive]}>{f.label}</Text>
           </Pressable>
         ))}
-      </View>
-
-      {/* Filtros cuenta / fecha */}
-      <View style={styles.filterRow}>
-        <Pressable style={[styles.filterBtn, accountId != null && styles.filterBtnActive]} onPress={() => setShowAccount(true)}>
-          <Icon name="wallet" size={15} color={accountId != null ? theme.colors.primaryLight : theme.colors.textSecondary} />
-          <Text style={styles.filterText} numberOfLines={1}>
+        <View style={styles.chipDivider} />
+        <Pressable style={[styles.chip, styles.chipIcon, accountId != null && styles.chipActive]} onPress={() => setShowAccount(true)}>
+          <Icon name="wallet" size={14} color={accountId != null ? theme.colors.background : theme.colors.textSecondary} />
+          <Text style={[styles.chipText, accountId != null && styles.chipTextActive]} numberOfLines={1}>
             {selectedAccount ? selectedAccount.name : 'Cuenta'}
           </Text>
         </Pressable>
-        <Pressable style={[styles.filterBtn, range.from != null && styles.filterBtnActive]} onPress={() => setShowDate(true)}>
-          <Icon name="calendar" size={15} color={range.from != null ? theme.colors.primaryLight : theme.colors.textSecondary} />
-          <Text style={styles.filterText} numberOfLines={1}>
-            {range.from ? `${formatShortDate(range.from)}` : 'Fecha'}
+        <Pressable style={[styles.chip, styles.chipIcon, range.from != null && styles.chipActive]} onPress={() => setShowDate(true)}>
+          <Icon name="calendar" size={14} color={range.from != null ? theme.colors.background : theme.colors.textSecondary} />
+          <Text style={[styles.chipText, range.from != null && styles.chipTextActive]} numberOfLines={1}>
+            {range.from ? formatShortDate(range.from) : 'Fecha'}
           </Text>
         </Pressable>
         {hasFilters && (
           <Pressable
-            style={styles.clearBtn}
+            style={[styles.chip, styles.chipIcon]}
             onPress={() => {
               setTypeFilter('all');
               setAccountId(undefined);
               setRange({});
             }}
           >
-            <Icon name="x" size={16} color={theme.colors.danger} />
+            <Icon name="x" size={14} color={theme.colors.expense} />
+            <Text style={[styles.chipText, { color: theme.colors.expense }]}>Limpiar</Text>
           </Pressable>
         )}
-      </View>
+      </ScrollView>
 
       {error && transactions.length === 0 ? (
         <ErrorState message={error} onRetry={refresh} />
@@ -150,6 +150,7 @@ export function TransactionsScreen() {
           keyExtractor={(item) => String(item.id)}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.colors.primary} />}
           onEndReachedThreshold={0.4}
           onEndReached={() => hasMore && loadMore()}
@@ -173,6 +174,11 @@ export function TransactionsScreen() {
         />
       )}
 
+      {/* FAB agregar */}
+      <Pressable style={styles.fab} onPress={() => navigation.navigate('AddTransaction')}>
+        <Icon name="plus" size={26} color={theme.colors.background} strokeWidth={2.4} />
+      </Pressable>
+
       <AccountPicker
         visible={showAccount}
         accounts={accounts}
@@ -195,49 +201,51 @@ export function TransactionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
-    backgroundColor: theme.colors.surface,
-    marginHorizontal: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surfaceLight,
+    marginHorizontal: theme.spacing.lg,
+    borderRadius: theme.borderRadius.full,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm + 2,
   },
   searchInput: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, paddingVertical: 2 },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, marginTop: theme.spacing.sm },
-  chip: { paddingHorizontal: theme.spacing.md, paddingVertical: 6, borderRadius: theme.borderRadius.xl, backgroundColor: theme.colors.surface },
+  chipsRow: { gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, alignItems: 'center' },
+  chip: { paddingHorizontal: theme.spacing.md, paddingVertical: 7, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface },
+  chipIcon: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   chipActive: { backgroundColor: theme.colors.primary },
-  chipText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
-  chipTextActive: { color: '#fff', fontWeight: '700' },
-  filterRow: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, marginTop: theme.spacing.sm, alignItems: 'center' },
-  filterBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  filterBtnActive: { borderColor: theme.colors.primary },
-  filterText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, flexShrink: 1 },
-  clearBtn: { width: 38, height: 38, borderRadius: theme.borderRadius.md, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' },
-  list: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.sm, paddingBottom: theme.spacing.xl * 2 },
-  sectionHeader: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: '700', marginTop: theme.spacing.md, marginBottom: theme.spacing.xs },
+  chipText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium, maxWidth: 130 },
+  chipTextActive: { color: theme.colors.background, fontWeight: theme.fontWeight.bold },
+  chipDivider: { width: 1, height: 20, backgroundColor: theme.colors.border, marginHorizontal: theme.spacing.xs },
+  list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xs, paddingBottom: theme.spacing.xxl + theme.spacing.xl },
+  sectionHeader: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.bold, marginTop: theme.spacing.md, marginBottom: theme.spacing.xs },
   deleteAction: {
-    backgroundColor: theme.colors.danger,
+    backgroundColor: theme.colors.expense,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 96,
+    width: 72,
     marginBottom: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-    gap: 4,
+    borderRadius: theme.borderRadius.lg,
+    marginLeft: theme.spacing.sm,
   },
-  deleteText: { color: '#fff', fontSize: theme.fontSize.xs, fontWeight: '600' },
+  fab: {
+    position: 'absolute',
+    right: theme.spacing.lg,
+    bottom: theme.spacing.lg,
+    width: 56,
+    height: 56,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: theme.colors.primary,
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
+  },
 });

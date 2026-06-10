@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 import { formatCurrency } from '../utils/formatCurrency';
 import type { Template } from '../types';
@@ -12,20 +13,23 @@ interface Props {
 }
 
 export function TemplateCard({ template, onPress, compact }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const color = template.categoryColor ?? theme.colors.primary;
+  const amountColor = template.type === 'income' ? theme.colors.income : theme.colors.expense;
   const sign = template.type === 'income' ? '+' : '-';
 
   if (compact) {
     return (
       <Pressable onPress={() => onPress?.(template)} style={({ pressed }) => [styles.compact, pressed && { opacity: 0.7 }]}>
-        <View style={[styles.iconWrap, { backgroundColor: `${color}22` }]}>
+        <View style={[styles.iconWrap, { backgroundColor: `${color}26` }]}>
           <Icon name={template.categoryIcon ?? 'bookmark'} size={18} color={color} />
         </View>
         <Text style={styles.compactName} numberOfLines={1}>
           {template.name}
         </Text>
         {template.amount != null && (
-          <Text style={styles.compactAmount} numberOfLines={1}>
+          <Text style={[styles.compactAmount, { color: amountColor }]} numberOfLines={1}>
             {formatCurrency(template.amount)}
           </Text>
         )}
@@ -34,8 +38,8 @@ export function TemplateCard({ template, onPress, compact }: Props) {
   }
 
   return (
-    <Pressable onPress={() => onPress?.(template)} style={({ pressed }) => [styles.card, pressed && { opacity: 0.7 }]}>
-      <View style={[styles.iconWrap, { backgroundColor: `${color}22` }]}>
+    <Pressable onPress={() => onPress?.(template)} style={({ pressed }) => [styles.card, pressed && { backgroundColor: theme.colors.surfaceLight }]}>
+      <View style={[styles.iconWrap, { backgroundColor: `${color}26` }]}>
         <Icon name={template.categoryIcon ?? 'bookmark'} size={20} color={color} />
       </View>
       <View style={styles.info}>
@@ -43,15 +47,12 @@ export function TemplateCard({ template, onPress, compact }: Props) {
           {template.name}
         </Text>
         <Text style={styles.meta} numberOfLines={1}>
-          {(template.categoryName ?? 'Sin categoría')}
+          {template.categoryName ?? 'Sin categoría'}
           {template.accountName ? ` · ${template.accountName}` : ''} · Usada {template.useCount}×
         </Text>
       </View>
       {template.amount != null && (
-        <Text
-          style={[styles.amount, { color: template.type === 'income' ? theme.colors.success : theme.colors.danger }]}
-          numberOfLines={1}
-        >
+        <Text style={[styles.amount, { color: amountColor }]} numberOfLines={1}>
           {sign}
           {formatCurrency(template.amount)}
         </Text>
@@ -60,29 +61,30 @@ export function TemplateCard({ template, onPress, compact }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.lg,
     padding: theme.spacing.md,
     gap: theme.spacing.md,
     marginBottom: theme.spacing.sm,
   },
-  iconWrap: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  iconWrap: { width: 42, height: 42, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
   info: { flex: 1 },
-  name: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: '600' },
+  name: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
   meta: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs, marginTop: 2 },
-  amount: { fontSize: theme.fontSize.md, fontWeight: '700' },
+  amount: { fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
   compact: {
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.lg,
     padding: theme.spacing.md,
-    width: 130,
+    width: 140,
     marginRight: theme.spacing.sm,
     gap: theme.spacing.xs,
   },
-  compactName: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: '600' },
-  compactAmount: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs },
+  compactName: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
+  compactAmount: { fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold },
 });

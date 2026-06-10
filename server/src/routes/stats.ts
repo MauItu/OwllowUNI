@@ -91,19 +91,20 @@ statsRouter.get(
     const group = (req.query.group as string) || 'day'; // day | week | month
     const trunc = group === 'month' ? 'month' : group === 'week' ? 'week' : 'day';
 
+    // `trunc` ya está saneado a 'day'|'week'|'month': inyectarlo con sql.raw
+    // para que SELECT y GROUP BY compartan exactamente la misma expresión
+    // (como bind param $1, Postgres no puede igualarlas y rechaza el GROUP BY).
+    const bucketExpr = sql`DATE_TRUNC(${sql.raw(`'${trunc}'`)}, ${transactions.date}::timestamp)`;
     const rows = await db
       .select({
-        bucket: sql<string>`TO_CHAR(DATE_TRUNC(${trunc}, ${transactions.date}::timestamp), 'YYYY-MM-DD')`,
+        bucket: sql<string>`TO_CHAR(${bucketExpr}, 'YYYY-MM-DD')`,
         type: transactions.type,
         total: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
       })
       .from(transactions)
       .where(and(gte(transactions.date, from), lte(transactions.date, to)))
-      .groupBy(
-        sql`DATE_TRUNC(${trunc}, ${transactions.date}::timestamp)`,
-        transactions.type,
-      )
-      .orderBy(sql`DATE_TRUNC(${trunc}, ${transactions.date}::timestamp)`);
+      .groupBy(bucketExpr, transactions.type)
+      .orderBy(bucketExpr);
 
     const map = new Map<string, { date: string; income: number; expense: number }>();
     for (const r of rows) {

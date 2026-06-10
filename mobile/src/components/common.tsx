@@ -9,25 +9,35 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { theme } from '../theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 
-/** Contenedor base de pantalla con fondo e insets superiores. */
+/** Contenedor base de pantalla: fondo + inset superior (status bar). */
 export function Screen({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
-  const insets = useSafeAreaInsets();
-  return <View style={[styles.screen, { paddingTop: insets.top }, style]}>{children}</View>;
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  return (
+    <SafeAreaView edges={['top']} style={[styles.screen, style]}>
+      {children}
+    </SafeAreaView>
+  );
 }
 
 export function ScreenHeader({
   title,
+  subtitle,
   onBack,
   right,
 }: {
   title: string;
+  subtitle?: string;
   onBack?: () => void;
   right?: React.ReactNode;
 }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.header}>
       {onBack ? (
@@ -37,9 +47,16 @@ export function ScreenHeader({
       ) : (
         <View style={styles.headerBtn} />
       )}
-      <Text style={styles.headerTitle} numberOfLines={1}>
-        {title}
-      </Text>
+      <View style={styles.headerTitleWrap}>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        {!!subtitle && (
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        )}
+      </View>
       <View style={styles.headerBtn}>{right}</View>
     </View>
   );
@@ -48,7 +65,7 @@ export function ScreenHeader({
 export function PrimaryButton({
   label,
   onPress,
-  color = theme.colors.primary,
+  color,
   disabled,
   loading,
   icon,
@@ -60,17 +77,20 @@ export function PrimaryButton({
   loading?: boolean;
   icon?: string;
 }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const bg = color ?? theme.colors.primary;
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
-      style={({ pressed }) => [styles.button, { backgroundColor: color }, (disabled || loading) && { opacity: 0.5 }, pressed && { opacity: 0.8 }]}
+      style={({ pressed }) => [styles.button, { backgroundColor: bg }, (disabled || loading) && { opacity: 0.5 }, pressed && { opacity: 0.85 }]}
     >
       {loading ? (
-        <ActivityIndicator color="#fff" />
+        <ActivityIndicator color={theme.colors.background} />
       ) : (
         <>
-          {icon && <Icon name={icon} size={18} color="#fff" />}
+          {icon && <Icon name={icon} size={18} color={theme.colors.background} strokeWidth={2.4} />}
           <Text style={styles.buttonText}>{label}</Text>
         </>
       )}
@@ -79,6 +99,8 @@ export function PrimaryButton({
 }
 
 export function TextField({ label, ...props }: { label?: string } & TextInputProps) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.field}>
       {label && <Text style={styles.fieldLabel}>{label}</Text>}
@@ -107,12 +129,14 @@ export function SelectRow({
   iconColor?: string;
   onPress: () => void;
 }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <Pressable style={({ pressed }) => [styles.selectRow, pressed && { opacity: 0.7 }]} onPress={onPress}>
         {icon && (
-          <View style={[styles.selectIcon, { backgroundColor: `${iconColor ?? theme.colors.primary}22` }]}>
+          <View style={[styles.selectIcon, { backgroundColor: `${iconColor ?? theme.colors.primary}26` }]}>
             <Icon name={icon} size={18} color={iconColor ?? theme.colors.primary} />
           </View>
         )}
@@ -126,6 +150,7 @@ export function SelectRow({
 }
 
 export function SectionTitle({ title, action }: { title: string; action?: React.ReactNode }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.sectionTitle}>
       <Text style={styles.sectionTitleText}>{title}</Text>
@@ -135,15 +160,21 @@ export function SectionTitle({ title, action }: { title: string; action?: React.
 }
 
 export function EmptyState({ icon = 'inbox', text }: { icon?: string; text: string }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.empty}>
-      <Icon name={icon} size={42} color={theme.colors.textMuted} />
+      <View style={styles.emptyIcon}>
+        <Icon name={icon} size={36} color={theme.colors.textMuted} />
+      </View>
       <Text style={styles.emptyText}>{text}</Text>
     </View>
   );
 }
 
 export function Loading() {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.loading}>
       <ActivityIndicator color={theme.colors.primary} size="large" />
@@ -152,9 +183,13 @@ export function Loading() {
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.empty}>
-      <Icon name="cloud-off" size={42} color={theme.colors.danger} />
+      <View style={styles.emptyIcon}>
+        <Icon name="cloud-off" size={36} color={theme.colors.expense} />
+      </View>
       <Text style={styles.emptyText}>{message}</Text>
       {onRetry && (
         <Pressable onPress={onRetry} style={styles.retry}>
@@ -165,26 +200,29 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
   },
   headerBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { flex: 1, textAlign: 'center', color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: '700' },
+  headerTitleWrap: { flex: 1, alignItems: 'center' },
+  headerTitle: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },
+  headerSubtitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs, marginTop: 1 },
   button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.spacing.sm,
     paddingVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.lg,
   },
-  buttonText: { color: '#fff', fontSize: theme.fontSize.md, fontWeight: '700' },
+  buttonText: { color: theme.colors.background, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
   field: { marginBottom: theme.spacing.md },
   fieldLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginBottom: theme.spacing.xs },
   input: {
@@ -194,6 +232,8 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
     color: theme.colors.text,
     fontSize: theme.fontSize.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   selectRow: {
     flexDirection: 'row',
@@ -203,14 +243,17 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.md,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
-  selectIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  selectIcon: { width: 32, height: 32, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
   selectValue: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md },
   sectionTitle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.sm },
-  sectionTitleText: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: '700' },
-  empty: { alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl, gap: theme.spacing.sm },
+  sectionTitleText: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },
+  empty: { alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl, gap: theme.spacing.md },
+  emptyIcon: { width: 72, height: 72, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, textAlign: 'center' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
-  retry: { marginTop: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm, backgroundColor: theme.colors.surfaceLight, borderRadius: theme.borderRadius.md },
-  retryText: { color: theme.colors.primaryLight, fontWeight: '600' },
+  retry: { marginTop: theme.spacing.xs, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm, backgroundColor: theme.colors.surfaceLight, borderRadius: theme.borderRadius.md },
+  retryText: { color: theme.colors.primaryLight, fontWeight: theme.fontWeight.semibold },
 });

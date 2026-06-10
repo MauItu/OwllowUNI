@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, Modal, Pressable, FlatList, StyleSheet } from 'react-native';
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 import { useCategories } from '../hooks/useCategories';
 import type { Category } from '../types';
@@ -18,6 +19,8 @@ interface Props {
  * (con opción de usar la categoría padre directamente).
  */
 export function CategoryPicker({ visible, type, onSelect, onClose }: Props) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { categories, loading } = useCategories(type);
   const [parent, setParent] = useState<Category | null>(null);
 
@@ -94,7 +97,8 @@ export function CategoryPicker({ visible, type, onSelect, onClose }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: {
     backgroundColor: theme.colors.surface,

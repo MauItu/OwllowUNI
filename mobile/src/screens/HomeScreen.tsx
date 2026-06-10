@@ -1,11 +1,14 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, RefreshControl, Pressable, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { theme } from '../theme';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, SectionTitle, EmptyState } from '../components/common';
 import { BalanceSummary } from '../components/BalanceSummary';
 import { TransactionCard } from '../components/TransactionCard';
-import { TemplateCard } from '../components/TemplateCard';
+import { BottomSheet } from '../components/BottomSheet';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useStats } from '../hooks/useStats';
@@ -13,10 +16,22 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useTemplates } from '../hooks/useTemplates';
 import { useAppStore } from '../stores/appStore';
 import { currentMonthRange } from '../utils/formatDate';
+import { formatCurrency } from '../utils/formatCurrency';
 import { templatesApi } from '../api/client';
 import { showError } from '../components/toastConfig';
+import type { Template } from '../types';
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Buenos días';
+  if (h < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
 
 export function HomeScreen() {
+  console.log('HOME SCREEN RENDERED');
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<any>();
   const { totalBalance, loading: loadingAccounts, refetch: refetchAccounts } = useAccounts();
   const { from, to } = currentMonthRange();
@@ -26,17 +41,20 @@ export function HomeScreen() {
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const setPendingTemplate = useAppStore((s) => s.setPendingTemplate);
 
-  const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([refetchAccounts(true), refetchStats(true), refreshTx(), refetchTemplates(true)]);
     setRefreshing(false);
   }, [refetchAccounts, refetchStats, refreshTx, refetchTemplates]);
 
-  const useTemplate = async (template: (typeof templates)[number]) => {
+  const useTemplate = async (template: Template) => {
+    setSheetOpen(false);
     try {
       await templatesApi.use(template.id);
-    } catch (err) {
+    } catch {
       showError('No se pudo registrar el uso de la plantilla');
     }
     setPendingTemplate(template);
@@ -44,15 +62,16 @@ export function HomeScreen() {
     navigation.navigate('AddTransaction', { template });
   };
 
-  const topTemplates = templates.slice(0, 3);
+  const today = format(new Date(), "EEEE, d 'de' MMMM", { locale: es });
+  const dateLabel = today.charAt(0).toUpperCase() + today.slice(1);
   const latest = transactions.slice(0, 5);
 
   return (
     <Screen>
       <View style={styles.topBar}>
-        <View>
-          <Text style={styles.greeting}>Hola 👋</Text>
-          <Text style={styles.subtitle}>Tu resumen financiero</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.greeting}>{greeting()}</Text>
+          <Text style={styles.date}>{dateLabel}</Text>
         </View>
         <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Accounts')}>
           <Icon name="wallet" size={22} color={theme.colors.text} />
@@ -64,26 +83,11 @@ export function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
-        <BalanceSummary
-          totalBalance={totalBalance}
-          income={summary.income}
-          expense={summary.expense}
-        />
-
-        {topTemplates.length > 0 && (
-          <View style={styles.section}>
-            <SectionTitle title="Plantillas frecuentes" />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {topTemplates.map((t) => (
-                <TemplateCard key={t.id} template={t} compact onPress={useTemplate} />
-              ))}
-            </ScrollView>
-          </View>
-        )}
+        <BalanceSummary totalBalance={totalBalance} income={summary.income} expense={summary.expense} />
 
         <View style={styles.section}>
           <SectionTitle
-            title="Últimos movimientos"
+            title="Últimas transacciones"
             action={
               <Pressable onPress={() => navigation.navigate('Transactions')}>
                 <Text style={styles.seeAll}>Ver todo</Text>
@@ -99,22 +103,97 @@ export function HomeScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Botón flotante de plantillas */}
+      <Pressable style={styles.templatesFab} onPress={() => setSheetOpen(true)}>
+        <Icon name="zap" size={20} color="#FFFFFF" strokeWidth={2.4} />
+      </Pressable>
+
+      <BottomSheet visible={sheetOpen} title="Plantillas" onClose={() => setSheetOpen(false)} maxHeight="70%">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: theme.spacing.md }}>
+          {templates.length === 0 ? (
+            <EmptyState icon="bookmark" text="No tienes plantillas todavía." />
+          ) : (
+            templates.map((t) => {
+              const color = t.categoryColor ?? theme.colors.primary;
+              const amountColor = t.type === 'income' ? theme.colors.income : theme.colors.expense;
+              return (
+                <View key={t.id} style={styles.tplRow}>
+                  <View style={[styles.tplIcon, { backgroundColor: `${color}26` }]}>
+                    <Icon name={t.categoryIcon ?? 'bookmark'} size={18} color={color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tplName} numberOfLines={1}>{t.name}</Text>
+                    <Text style={styles.tplMeta} numberOfLines={1}>
+                      {t.categoryName ?? 'Sin categoría'}
+                      {t.amount != null ? ` · ${formatCurrency(t.amount)}` : ''}
+                    </Text>
+                  </View>
+                  <Pressable style={styles.tplUse} onPress={() => useTemplate(t)}>
+                    <Text style={styles.tplUseText}>Usar</Text>
+                  </Pressable>
+                  <View style={[styles.tplAccent, { backgroundColor: amountColor }]} />
+                </View>
+              );
+            })
+          )}
+          <Pressable style={styles.manage} onPress={() => { setSheetOpen(false); navigation.navigate('Templates'); }}>
+            <Icon name="settings-2" size={16} color={theme.colors.textSecondary} />
+            <Text style={styles.manageText}>Gestionar plantillas</Text>
+          </Pressable>
+        </ScrollView>
+      </BottomSheet>
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
   },
-  greeting: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: '800' },
-  subtitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
-  iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl * 2 },
-  section: { marginTop: theme.spacing.lg },
-  seeAll: { color: theme.colors.primaryLight, fontSize: theme.fontSize.sm, fontWeight: '600' },
+  greeting: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold },
+  date: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 2 },
+  iconBtn: { width: 44, height: 44, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' },
+  content: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md, paddingBottom: theme.spacing.xxl },
+  section: { marginTop: theme.spacing.xl },
+  seeAll: { color: theme.colors.primaryLight, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
+  templatesFab: {
+    position: 'absolute',
+    right: theme.spacing.lg,
+    bottom: theme.spacing.lg,
+    width: 44,
+    height: 44,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: theme.colors.accent,
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  tplRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    overflow: 'hidden',
+  },
+  tplIcon: { width: 38, height: 38, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  tplName: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
+  tplMeta: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs, marginTop: 2 },
+  tplUse: { backgroundColor: theme.colors.primary, borderRadius: theme.borderRadius.full, paddingHorizontal: theme.spacing.md, paddingVertical: 6 },
+  tplUseText: { color: '#FFFFFF', fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.bold },
+  tplAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
+  manage: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.md, marginTop: theme.spacing.xs },
+  manageText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
 });

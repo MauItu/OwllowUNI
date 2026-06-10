@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, FlatList, Pressable, Modal, ScrollView, RefreshControl, StyleSheet } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, TextField, PrimaryButton, SelectRow, EmptyState, Loading } from '../components/common';
 import { TemplateCard } from '../components/TemplateCard';
 import { CategoryPicker } from '../components/CategoryPicker';
@@ -27,6 +28,8 @@ const emptyForm: FormState = { name: '', type: 'expense', amount: '', account: n
 
 export function TemplatesScreen() {
   const navigation = useNavigation<any>();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const { templates, loading, refreshing, refetch } = useTemplates();
   const { accounts } = useAccounts();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
@@ -128,10 +131,10 @@ export function TemplatesScreen() {
                 {(['expense', 'income'] as CategoryType[]).map((t) => (
                   <Pressable
                     key={t}
-                    style={[styles.typeTab, form.type === t && { backgroundColor: t === 'expense' ? theme.colors.danger : theme.colors.success }]}
+                    style={[styles.typeTab, form.type === t && { backgroundColor: t === 'expense' ? theme.colors.expense : theme.colors.income }]}
                     onPress={() => setForm({ ...form, type: t, category: null })}
                   >
-                    <Text style={[styles.typeTabText, form.type === t && { color: '#fff', fontWeight: '700' }]}>
+                    <Text style={[styles.typeTabText, form.type === t && styles.typeTabTextActive]}>
                       {t === 'expense' ? 'Gasto' : 'Ingreso'}
                     </Text>
                   </Pressable>
@@ -193,13 +196,15 @@ export function TemplatesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  list: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl * 2 },
-  deleteAction: { backgroundColor: theme.colors.danger, justifyContent: 'center', alignItems: 'center', width: 80, marginBottom: theme.spacing.sm, borderRadius: theme.borderRadius.md },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: { backgroundColor: theme.colors.surface, borderTopLeftRadius: theme.borderRadius.xl, borderTopRightRadius: theme.borderRadius.xl, padding: theme.spacing.md, maxHeight: '82%' },
-  sheetTitle: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: '700', marginBottom: theme.spacing.md },
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
+  list: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
+  deleteAction: { backgroundColor: theme.colors.expense, justifyContent: 'center', alignItems: 'center', width: 72, marginBottom: theme.spacing.sm, borderRadius: theme.borderRadius.lg, marginLeft: theme.spacing.sm },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet: { backgroundColor: theme.colors.surface, borderTopLeftRadius: theme.borderRadius.xl, borderTopRightRadius: theme.borderRadius.xl, padding: theme.spacing.lg, maxHeight: '82%' },
+  sheetTitle: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold, marginBottom: theme.spacing.md },
   typeTabs: { flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.md },
-  typeTab: { flex: 1, paddingVertical: theme.spacing.sm, borderRadius: theme.borderRadius.md, backgroundColor: theme.colors.surfaceLight, alignItems: 'center' },
-  typeTabText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
+  typeTab: { flex: 1, paddingVertical: theme.spacing.sm + 2, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surfaceLight, alignItems: 'center' },
+  typeTabText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+  typeTabTextActive: { color: theme.colors.background, fontWeight: theme.fontWeight.bold },
 });

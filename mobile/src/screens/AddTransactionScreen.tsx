@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
-import { theme } from '../theme';
-import { Screen, ScreenHeader, SelectRow, TextField } from '../components/common';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
+import { Screen, ScreenHeader } from '../components/common';
 import { Calculator } from '../components/Calculator';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { AccountPicker } from '../components/AccountPicker';
@@ -16,14 +17,27 @@ import { todayISO, nowTime, formatShortDate, parseISOSafe } from '../utils/forma
 import type { RootStackParamList } from '../navigation/types';
 import type { Account, Category, TxType } from '../types';
 
-const TYPE_TABS: { key: TxType; label: string; color: string }[] = [
-  { key: 'expense', label: 'Gasto', color: theme.colors.danger },
-  { key: 'income', label: 'Ingreso', color: theme.colors.success },
-  { key: 'transfer', label: 'Transferencia', color: theme.colors.primary },
+const TYPE_TABS: { key: TxType; label: string }[] = [
+  { key: 'expense', label: 'Gasto' },
+  { key: 'income', label: 'Ingreso' },
+  { key: 'transfer', label: 'Transferencia' },
 ];
+
+function Chip({ icon, label, iconColor, onPress }: { icon: string; label: string; iconColor?: string; onPress: () => void }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  return (
+    <Pressable style={({ pressed }) => [styles.chip, pressed && { opacity: 0.7 }]} onPress={onPress}>
+      <Icon name={icon} size={16} color={iconColor ?? theme.colors.textSecondary} />
+      <Text style={styles.chipText} numberOfLines={1}>{label}</Text>
+    </Pressable>
+  );
+}
 
 export function AddTransactionScreen() {
   const navigation = useNavigation<any>();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const route = useRoute<RouteProp<RootStackParamList, 'AddTransaction'>>();
   const params = route.params ?? {};
   const editingId = params.transactionId;
@@ -37,7 +51,6 @@ export function AddTransactionScreen() {
   const [date, setDate] = useState<string>(todayISO());
   const [time, setTime] = useState<string>(nowTime());
   const [description, setDescription] = useState<string>(params.template?.description ?? '');
-  const [notes, setNotes] = useState<string>('');
   const [initialAmount, setInitialAmount] = useState<number>(
     params.template?.amount ? parseFloat(params.template.amount) : 0,
   );
@@ -63,7 +76,6 @@ export function AddTransactionScreen() {
         setDate(tx.date);
         setTime(tx.time);
         setDescription(tx.description ?? '');
-        setNotes(tx.notes ?? '');
         setInitialAmount(parseFloat(tx.amount));
         const acc = accounts.find((a) => a.id === tx.accountId) ?? null;
         setAccount(acc);
@@ -74,11 +86,6 @@ export function AddTransactionScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId, accounts.length]);
-
-  const headerColor = useMemo(
-    () => TYPE_TABS.find((t) => t.key === type)?.color ?? theme.colors.primary,
-    [type],
-  );
 
   const save = async (amount: number) => {
     if (amount <= 0) {
@@ -109,7 +116,7 @@ export function AddTransactionScreen() {
       accountId: account.id,
       toAccountId: type === 'transfer' ? toAccount?.id ?? null : null,
       categoryId: type === 'transfer' ? null : category?.id ?? null,
-      notes: notes.trim() || null,
+      notes: null,
     };
 
     try {
@@ -150,66 +157,74 @@ export function AddTransactionScreen() {
                 }
               }}
             >
-              <Icon name="trash-2" size={20} color={theme.colors.danger} />
+              <Icon name="trash-2" size={20} color={theme.colors.expense} />
             </Pressable>
           ) : null
         }
       />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {/* Tabs de tipo */}
+        {/* Tabs de tipo (pills) */}
         <View style={styles.tabs}>
-          {TYPE_TABS.map((t) => (
-            <Pressable
-              key={t.key}
-              style={[styles.tab, type === t.key && { backgroundColor: t.color }]}
-              onPress={() => setType(t.key)}
-            >
-              <Text style={[styles.tabText, type === t.key && { color: '#fff', fontWeight: '700' }]}>{t.label}</Text>
-            </Pressable>
-          ))}
+          {TYPE_TABS.map((t) => {
+            const active = type === t.key;
+            return (
+              <Pressable
+                key={t.key}
+                style={[styles.tab, active && { backgroundColor: theme.colors[t.key] }]}
+                onPress={() => setType(t.key)}
+              >
+                <Text style={[styles.tabText, active && styles.tabTextActive]}>{t.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {/* Formulario (parte superior, desplazable) */}
-        <ScrollView style={styles.form} contentContainerStyle={{ paddingBottom: theme.spacing.md }} keyboardShouldPersistTaps="handled">
-          <SelectRow
-            label="Cuenta"
-            value={account ? account.name : null}
-            placeholder="Seleccionar cuenta"
+        {/* Chips de cuenta / categoría / fecha */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Chip
             icon={account?.icon ?? 'wallet'}
-            iconColor={account?.color}
+            iconColor={account?.color ?? theme.colors.primary}
+            label={account ? account.name : 'Cuenta'}
             onPress={() => setShowAccount(true)}
           />
-
           {type === 'transfer' ? (
-            <SelectRow
-              label="Cuenta destino"
-              value={toAccount ? toAccount.name : null}
-              placeholder="Seleccionar destino"
-              icon={toAccount?.icon ?? 'wallet'}
-              iconColor={toAccount?.color}
+            <Chip
+              icon={toAccount?.icon ?? 'arrow-right'}
+              iconColor={toAccount?.color ?? theme.colors.transfer}
+              label={toAccount ? toAccount.name : 'Destino'}
               onPress={() => setShowToAccount(true)}
             />
           ) : (
-            <SelectRow
-              label="Categoría"
-              value={category ? category.name : null}
-              placeholder="Seleccionar categoría"
+            <Chip
               icon={category?.icon ?? 'shapes'}
-              iconColor={category?.color}
+              iconColor={category?.color ?? theme.colors.accent}
+              label={category ? category.name : 'Categoría'}
               onPress={() => setShowCategory(true)}
             />
           )}
-
-          <View style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <SelectRow label="Fecha" value={formatShortDate(date)} icon="calendar" onPress={() => setShowDate(true)} />
-            </View>
-          </View>
-
-          <TextField label="Descripción" value={description} onChangeText={setDescription} placeholder="Opcional" />
-          <TextField label="Notas" value={notes} onChangeText={setNotes} placeholder="Opcional" multiline />
+          <Chip icon="calendar" label={formatShortDate(date)} onPress={() => setShowDate(true)} />
         </ScrollView>
+
+        {/* Descripción opcional */}
+        <View style={styles.descWrap}>
+          <Icon name="pencil" size={16} color={theme.colors.textMuted} />
+          <TextInput
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Añade una descripción (opcional)"
+            placeholderTextColor={theme.colors.textMuted}
+            style={styles.descInput}
+            returnKeyType="done"
+          />
+        </View>
+
+        <View style={{ flex: 1 }} />
 
         {/* Calculadora (parte inferior) */}
         <Calculator
@@ -262,16 +277,41 @@ export function AddTransactionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  tabs: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, marginBottom: theme.spacing.sm },
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
+  tabs: { flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, marginBottom: theme.spacing.md },
   tab: {
     flex: 1,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.md,
-    backgroundColor: theme.colors.surface,
+    paddingVertical: theme.spacing.sm + 2,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.surfaceLight,
     alignItems: 'center',
   },
-  tabText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
-  form: { flexGrow: 0, paddingHorizontal: theme.spacing.md, maxHeight: '42%' },
-  row: { flexDirection: 'row', gap: theme.spacing.sm },
+  tabText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+  tabTextActive: { color: theme.colors.background, fontWeight: theme.fontWeight.bold },
+  chipsRow: { gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  chipText: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium, maxWidth: 140 },
+  descWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: Platform.OS === 'ios' ? theme.spacing.sm + 2 : 2,
+  },
+  descInput: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md },
 });

@@ -1,10 +1,23 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import type { ToastConfig } from 'react-native-toast-message';
-import { theme } from '../theme';
+import type { Theme } from '../theme';
 import { Icon } from './Icon';
 
-function Base({ color, icon, text1, text2 }: { color: string; icon: string; text1?: string; text2?: string }) {
+function Base({
+  theme,
+  color,
+  icon,
+  text1,
+  text2,
+}: {
+  theme: Theme;
+  color: string;
+  icon: string;
+  text1?: string;
+  text2?: string;
+}) {
+  const styles = createStyles(theme);
   return (
     <View style={[styles.container, { borderLeftColor: color }]}>
       <Icon name={icon} size={20} color={color} />
@@ -16,39 +29,43 @@ function Base({ color, icon, text1, text2 }: { color: string; icon: string; text
   );
 }
 
-export const toastConfig: ToastConfig = {
-  success: ({ text1, text2 }) => (
-    <Base color={theme.colors.success} icon="circle-check" text1={text1} text2={text2} />
-  ),
-  error: ({ text1, text2 }) => (
-    <Base color={theme.colors.danger} icon="circle-alert" text1={text1} text2={text2} />
-  ),
-  info: ({ text1, text2 }) => (
-    <Base color={theme.colors.primary} icon="info" text1={text1} text2={text2} />
-  ),
-};
+/** Config de toasts dependiente del tema activo (se crea en App.tsx). */
+export function createToastConfig(theme: Theme): ToastConfig {
+  return {
+    success: ({ text1, text2 }) => (
+      <Base theme={theme} color={theme.colors.success} icon="circle-check" text1={text1} text2={text2} />
+    ),
+    error: ({ text1, text2 }) => (
+      <Base theme={theme} color={theme.colors.danger} icon="circle-alert" text1={text1} text2={text2} />
+    ),
+    info: ({ text1, text2 }) => (
+      <Base theme={theme} color={theme.colors.secondary} icon="info" text1={text1} text2={text2} />
+    ),
+  };
+}
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.surfaceLight,
-    borderLeftWidth: 4,
-    borderRadius: theme.borderRadius.md,
-    paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.md,
-    marginHorizontal: theme.spacing.md,
-    gap: theme.spacing.sm,
-    width: '92%',
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  textWrap: { flex: 1 },
-  title: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: '600' },
-  subtitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 2 },
-});
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.surfaceLight,
+      borderLeftWidth: 4,
+      borderRadius: theme.borderRadius.md,
+      paddingVertical: theme.spacing.md,
+      paddingHorizontal: theme.spacing.md,
+      marginHorizontal: theme.spacing.md,
+      gap: theme.spacing.sm,
+      width: '92%',
+      shadowColor: '#000',
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    textWrap: { flex: 1 },
+    title: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: '600' },
+    subtitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 2 },
+  });
 
 // Helpers para disparar toasts desde cualquier parte.
 import Toast from 'react-native-toast-message';

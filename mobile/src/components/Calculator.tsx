@@ -1,7 +1,8 @@
 import React, { useMemo, useReducer } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 import {
   reduce,
@@ -25,12 +26,14 @@ function reducer(state: CalcState, key: CalcKey): CalcState {
 }
 
 export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm }: CalculatorProps) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [state, dispatch] = useReducer(
     reducer,
     initialValue > 0 ? initialState(String(initialValue)) : initialState('0'),
   );
 
-  const confirmColor = type === 'income' ? theme.colors.success : type === 'transfer' ? theme.colors.primary : theme.colors.danger;
+  const accentColor = type === 'income' ? theme.colors.income : type === 'transfer' ? theme.colors.transfer : theme.colors.expense;
   const value = useMemo(() => currentValue(state), [state]);
   const expr = expressionString(state);
 
@@ -66,7 +69,7 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
         <Text style={styles.expression} numberOfLines={1}>
           {expr || ' '}
         </Text>
-        <Text style={styles.result} numberOfLines={1} adjustsFontSizeToFit>
+        <Text style={[styles.result, { color: accentColor }]} numberOfLines={1} adjustsFontSizeToFit>
           {state.current === 'Error' ? 'Error' : formatCurrency(value, currency)}
         </Text>
       </View>
@@ -113,9 +116,9 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
           </View>
           <Pressable
             onPress={handleConfirm}
-            style={({ pressed }) => [styles.confirm, { backgroundColor: confirmColor }, pressed && styles.keyPressed]}
+            style={({ pressed }) => [styles.confirm, { backgroundColor: accentColor }, pressed && styles.keyPressed]}
           >
-            <Icon name="check" size={32} color="#FFFFFF" />
+            <Icon name="check" size={34} color={theme.colors.background} strokeWidth={2.6} />
           </Pressable>
         </View>
       </View>
@@ -123,38 +126,43 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
   );
 }
 
-const styles = StyleSheet.create({
-  container: { backgroundColor: '#13131B', borderTopLeftRadius: theme.borderRadius.xl, borderTopRightRadius: theme.borderRadius.xl, paddingBottom: theme.spacing.md },
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
+  container: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.borderRadius.xl,
+    borderTopRightRadius: theme.borderRadius.xl,
+    paddingBottom: theme.spacing.md,
+  },
   display: {
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.md,
     paddingBottom: theme.spacing.sm,
     alignItems: 'flex-end',
-    minHeight: 90,
+    minHeight: 96,
     justifyContent: 'center',
   },
-  expression: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, height: 22 },
-  result: { color: theme.colors.text, fontSize: theme.fontSize.xxl, fontWeight: '700' },
+  expression: { color: theme.colors.textMuted, fontSize: theme.fontSize.lg, height: 24 },
+  result: { fontSize: theme.fontSize.hero, fontWeight: theme.fontWeight.bold, letterSpacing: -1 },
   pad: { paddingHorizontal: theme.spacing.sm, gap: theme.spacing.sm },
   row: { flexDirection: 'row', gap: theme.spacing.sm },
   col3: { flex: 3, gap: theme.spacing.sm },
   key: {
     backgroundColor: theme.colors.surfaceLight,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.lg,
     height: 58,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  keyOp: { backgroundColor: 'rgba(108,92,231,0.18)' },
-  keyAction: { backgroundColor: theme.colors.surface },
+  keyOp: { backgroundColor: theme.colors.primaryDark },
+  keyAction: { backgroundColor: theme.colors.surfaceAccent },
   keyPressed: { opacity: 0.6 },
-  keyText: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: '500' },
-  keyTextOp: { color: theme.colors.primaryLight, fontWeight: '700' },
+  keyText: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.medium },
+  keyTextOp: { color: theme.colors.primaryLight, fontWeight: theme.fontWeight.bold },
   confirm: {
     flex: 1,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    // ocupa el alto de las dos filas inferiores
   },
 });

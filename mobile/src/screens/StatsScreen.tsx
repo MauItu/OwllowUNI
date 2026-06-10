@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet } from 'react-native';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, SectionTitle } from '../components/common';
 import { DonutChart, BarChart, LineChart } from '../components/StatChart';
 import { DateRangePicker } from '../components/DateRangePicker';
@@ -26,6 +27,8 @@ function groupFor(period: StatsPeriod): 'day' | 'week' | 'month' {
 }
 
 export function StatsScreen() {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [period, setPeriod] = useState<StatsPeriod>('month');
   const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
   const [showDate, setShowDate] = useState(false);
@@ -43,7 +46,9 @@ export function StatsScreen() {
     const rest = byCategory.slice(5).reduce((acc, c) => acc + c.total, 0);
     if (rest > 0) top.push({ value: rest, color: theme.colors.textMuted, label: 'Otros' });
     return top;
-  }, [byCategory]);
+  }, [byCategory, theme]);
+
+  const donutTotal = donutData.reduce((acc, d) => acc + d.value, 0);
 
   const barData = useMemo(
     () =>
@@ -95,14 +100,17 @@ export function StatsScreen() {
           </Text>
         )}
 
-        {/* Resumen */}
+        {/* Resumen: Ingresos / Gastos / Balance */}
         <View style={styles.summaryRow}>
-          <SummaryCard label="Ingresos" value={summary.income} color={theme.colors.success} icon="arrow-down-left" />
-          <SummaryCard label="Gastos" value={summary.expense} color={theme.colors.danger} icon="arrow-up-right" />
+          <SummaryCard label="Ingresos" value={summary.income} color={theme.colors.income} icon="arrow-down-left" />
+          <SummaryCard label="Gastos" value={summary.expense} color={theme.colors.expense} icon="arrow-up-right" />
         </View>
-        <View style={[styles.netCard, { borderColor: summary.balance >= 0 ? theme.colors.success : theme.colors.danger }]}>
+        <View style={[styles.netCard, { borderLeftColor: summary.balance >= 0 ? theme.colors.income : theme.colors.expense }]}>
+          <View style={[styles.netIcon, { backgroundColor: `${summary.balance >= 0 ? theme.colors.income : theme.colors.expense}26` }]}>
+            <Icon name="wallet" size={18} color={summary.balance >= 0 ? theme.colors.income : theme.colors.expense} />
+          </View>
           <Text style={styles.netLabel}>Balance neto</Text>
-          <Text style={[styles.netValue, { color: summary.balance >= 0 ? theme.colors.success : theme.colors.danger }]}>
+          <Text style={[styles.netValue, { color: summary.balance >= 0 ? theme.colors.income : theme.colors.expense }]} numberOfLines={1} adjustsFontSizeToFit>
             {formatCurrency(summary.balance)}
           </Text>
         </View>
@@ -113,14 +121,16 @@ export function StatsScreen() {
           <View style={styles.donutWrap}>
             <DonutChart data={donutData} centerLabel={formatCurrency(summary.expense)} />
             <View style={styles.legendList}>
-              {donutData.map((d, i) => (
-                <View key={i} style={styles.legendRow}>
-                  <View style={[styles.legendDot, { backgroundColor: d.color }]} />
-                  <Text style={styles.legendLabel} numberOfLines={1}>
-                    {d.label}
-                  </Text>
-                </View>
-              ))}
+              {donutData.map((d, i) => {
+                const pct = donutTotal > 0 ? Math.round((d.value / donutTotal) * 100) : 0;
+                return (
+                  <View key={i} style={styles.legendRow}>
+                    <View style={[styles.legendDot, { backgroundColor: d.color }]} />
+                    <Text style={styles.legendLabel} numberOfLines={1}>{d.label}</Text>
+                    <Text style={styles.legendPct}>{pct}%</Text>
+                  </View>
+                );
+              })}
             </View>
           </View>
         </View>
@@ -145,14 +155,12 @@ export function StatsScreen() {
           ) : (
             byCategory.slice(0, 6).map((c) => (
               <View key={`${c.categoryId}`} style={styles.rankRow}>
-                <View style={[styles.rankIcon, { backgroundColor: `${c.color}22` }]}>
+                <View style={[styles.rankIcon, { backgroundColor: `${c.color}26` }]}>
                   <Icon name={c.icon} size={16} color={c.color} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={styles.rankTop}>
-                    <Text style={styles.rankName} numberOfLines={1}>
-                      {c.name}
-                    </Text>
+                    <Text style={styles.rankName} numberOfLines={1}>{c.name}</Text>
                     <Text style={styles.rankValue}>{formatCurrency(c.total)}</Text>
                   </View>
                   <View style={styles.progressTrack}>
@@ -180,9 +188,10 @@ export function StatsScreen() {
 }
 
 function SummaryCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.summaryCard}>
-      <View style={[styles.summaryIcon, { backgroundColor: `${color}22` }]}>
+      <View style={[styles.summaryIcon, { backgroundColor: `${color}26` }]}>
         <Icon name={icon} size={16} color={color} />
       </View>
       <Text style={styles.summaryLabel}>{label}</Text>
@@ -201,33 +210,36 @@ function safeFormat(dateStr: string, pattern: string): string {
   }
 }
 
-const styles = StyleSheet.create({
-  content: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl * 2 },
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
+  content: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   periods: { gap: theme.spacing.sm, paddingVertical: theme.spacing.xs },
-  periodChip: { paddingHorizontal: theme.spacing.md, paddingVertical: 6, borderRadius: theme.borderRadius.xl, backgroundColor: theme.colors.surface },
+  periodChip: { paddingHorizontal: theme.spacing.md, paddingVertical: 7, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface },
   periodChipActive: { backgroundColor: theme.colors.primary },
-  periodText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
-  periodTextActive: { color: '#fff', fontWeight: '700' },
+  periodText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+  periodTextActive: { color: theme.colors.background, fontWeight: theme.fontWeight.bold },
   rangeLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: theme.spacing.xs },
   summaryRow: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.md },
-  summaryCard: { flex: 1, backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, gap: theme.spacing.xs },
-  summaryIcon: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  summaryCard: { flex: 1, backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, gap: theme.spacing.xs },
+  summaryIcon: { width: 32, height: 32, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
   summaryLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
-  summaryValue: { fontSize: theme.fontSize.lg, fontWeight: '800' },
-  netCard: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, marginTop: theme.spacing.sm, borderLeftWidth: 4, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  netLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md },
-  netValue: { fontSize: theme.fontSize.lg, fontWeight: '800' },
+  summaryValue: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold },
+  netCard: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, marginTop: theme.spacing.sm, borderLeftWidth: 4, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+  netIcon: { width: 32, height: 32, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  netLabel: { flex: 1, color: theme.colors.textSecondary, fontSize: theme.fontSize.md },
+  netValue: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold, maxWidth: '50%' },
   card: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, marginTop: theme.spacing.md },
   donutWrap: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
-  legendList: { flex: 1, gap: theme.spacing.xs },
+  legendList: { flex: 1, gap: theme.spacing.sm },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, flexShrink: 1 },
+  legendLabel: { flex: 1, color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
+  legendPct: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
   emptyText: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, textAlign: 'center', paddingVertical: theme.spacing.md },
   rankRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
-  rankIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  rankIcon: { width: 32, height: 32, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
   rankTop: { flexDirection: 'row', justifyContent: 'space-between' },
-  rankName: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: '600', flex: 1 },
+  rankName: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold, flex: 1 },
   rankValue: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
   progressTrack: { height: 6, backgroundColor: theme.colors.surfaceLight, borderRadius: 3, marginTop: 4, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 3 },

@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { theme } from '../theme';
+import { type Theme } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
-import { formatCurrency } from '../utils/formatCurrency';
+import { formatCurrency, currencySymbol } from '../utils/formatCurrency';
 
 interface Props {
   totalBalance: number;
@@ -12,67 +13,75 @@ interface Props {
 }
 
 export function BalanceSummary({ totalBalance, income, expense, currency = 'COP' }: Props) {
-  const total = income + expense;
-  const incomePct = total > 0 ? (income / total) * 100 : 0;
-  const expensePct = total > 0 ? (expense / total) * 100 : 0;
+  const { theme } = useTheme();
+  const styles = useThemedStyles(createStyles);
+  const symbol = currencySymbol(currency);
+  const amount = formatCurrency(totalBalance, currency, { showSymbol: false });
 
   return (
-    <View style={styles.card}>
+    <View style={styles.wrap}>
       <Text style={styles.label}>Balance total</Text>
-      <Text style={styles.total} numberOfLines={1} adjustsFontSizeToFit>
-        {formatCurrency(totalBalance, currency)}
-      </Text>
-
-      {/* Barra ingresos vs gastos */}
-      <View style={styles.bar}>
-        <View style={[styles.barFill, { backgroundColor: theme.colors.success, flex: incomePct || 0.0001 }]} />
-        <View style={[styles.barFill, { backgroundColor: theme.colors.danger, flex: expensePct || 0.0001 }]} />
+      <View style={styles.heroRow}>
+        <Text style={styles.heroSymbol}>{symbol}</Text>
+        <Text style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>
+          {amount}
+        </Text>
       </View>
 
-      <View style={styles.row}>
-        <View style={styles.metric}>
-          <View style={[styles.dot, { backgroundColor: theme.colors.success }]}>
-            <Icon name="arrow-down-left" size={14} color="#fff" />
-          </View>
-          <View>
-            <Text style={styles.metricLabel}>Ingresos</Text>
-            <Text style={[styles.metricValue, { color: theme.colors.success }]}>{formatCurrency(income, currency)}</Text>
-          </View>
-        </View>
-        <View style={styles.metric}>
-          <View style={[styles.dot, { backgroundColor: theme.colors.danger }]}>
-            <Icon name="arrow-up-right" size={14} color="#fff" />
-          </View>
-          <View>
-            <Text style={styles.metricLabel}>Gastos</Text>
-            <Text style={[styles.metricValue, { color: theme.colors.danger }]}>{formatCurrency(expense, currency)}</Text>
-          </View>
-        </View>
+      <View style={styles.pills}>
+        <Pill
+          icon="arrow-down-left"
+          label="Ingresos"
+          value={formatCurrency(income, currency)}
+          color={theme.colors.income}
+        />
+        <Pill
+          icon="arrow-up-right"
+          label="Gastos"
+          value={formatCurrency(expense, currency)}
+          color={theme.colors.expense}
+        />
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.lg,
-  },
+function Pill({ icon, label, value, color }: { icon: string; label: string; value: string; color: string }) {
+  const styles = useThemedStyles(createStyles);
+  return (
+    <View style={styles.pill}>
+      <View style={[styles.pillIcon, { backgroundColor: `${color}26` }]}>
+        <Icon name={icon} size={18} color={color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.pillLabel}>{label}</Text>
+        <Text style={[styles.pillValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>
+          {value}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
+  wrap: { paddingHorizontal: theme.spacing.xs },
   label: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
-  total: { color: theme.colors.text, fontSize: theme.fontSize.xxl, fontWeight: '800', marginTop: theme.spacing.xs },
-  bar: {
+  heroRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: theme.spacing.xs },
+  heroSymbol: { color: theme.colors.accent, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.semibold, marginTop: 4, marginRight: 2 },
+  hero: { color: theme.colors.text, fontSize: theme.fontSize.hero, fontWeight: theme.fontWeight.bold, letterSpacing: -1 },
+  pills: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.lg },
+  pill: {
+    flex: 1,
     flexDirection: 'row',
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginVertical: theme.spacing.md,
+    alignItems: 'center',
+    gap: theme.spacing.sm,
     backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.xl,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
   },
-  barFill: { height: '100%' },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
-  metric: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
-  dot: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  metricLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs },
-  metricValue: { fontSize: theme.fontSize.md, fontWeight: '700' },
+  pillIcon: { width: 34, height: 34, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  pillLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs },
+  pillValue: { fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold, marginTop: 1 },
 });
