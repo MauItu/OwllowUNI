@@ -6,6 +6,7 @@ import { transactionsRouter } from './routes/transactions.js';
 import { templatesRouter } from './routes/templates.js';
 import { statsRouter } from './routes/stats.js';
 import { tagsRouter } from './routes/tags.js';
+import { savingsRouter } from './routes/savings.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -25,6 +26,7 @@ app.use('/api/transactions', transactionsRouter);
 app.use('/api/templates', templatesRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/tags', tagsRouter);
+app.use('/api/savings', savingsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

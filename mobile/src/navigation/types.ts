@@ -14,6 +14,9 @@ export type RootStackParamList = {
   Categories: undefined;
   Templates: undefined;
   Tags: undefined;
+  Savings: undefined;
+  AddSavingsGoal: { goalId?: number } | undefined;
+  SavingsDetail: { goalId: number };
 };
 
 export type TabParamList = {

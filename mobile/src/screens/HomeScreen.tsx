@@ -8,6 +8,7 @@ import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, SectionTitle, EmptyState } from '../components/common';
 import { BalanceSummary } from '../components/BalanceSummary';
+import { HomeSummaryCard } from '../components/HomeSummaryCard';
 import { TransactionCard } from '../components/TransactionCard';
 import { BottomSheet } from '../components/BottomSheet';
 import { Icon } from '../components/Icon';
@@ -15,6 +16,7 @@ import { useAccounts } from '../hooks/useAccounts';
 import { useStats } from '../hooks/useStats';
 import { useTransactions } from '../hooks/useTransactions';
 import { useTemplates } from '../hooks/useTemplates';
+import { useSavings } from '../hooks/useSavings';
 import { useAppStore } from '../stores/appStore';
 import { currentMonthRange } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -39,6 +41,7 @@ export function HomeScreen() {
   const { summary, refetch: refetchStats } = useStats(from, to);
   const { transactions, refresh: refreshTx } = useTransactions({}, 5);
   const { templates, refetch: refetchTemplates } = useTemplates();
+  const { summary: savingsSummary, refetch: refetchSavings } = useSavings();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const setPendingTemplate = useAppStore((s) => s.setPendingTemplate);
 
@@ -47,9 +50,9 @@ export function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchAccounts(true), refetchStats(true), refreshTx(), refetchTemplates(true)]);
+    await Promise.all([refetchAccounts(true), refetchStats(true), refreshTx(), refetchTemplates(true), refetchSavings(true)]);
     setRefreshing(false);
-  }, [refetchAccounts, refetchStats, refreshTx, refetchTemplates]);
+  }, [refetchAccounts, refetchStats, refreshTx, refetchTemplates, refetchSavings]);
 
   const useTemplate = async (template: Template) => {
     setSheetOpen(false);
@@ -90,6 +93,22 @@ export function HomeScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
         <BalanceSummary totalBalance={totalBalance} income={summary.income} expense={summary.expense} />
+
+        {savingsSummary && savingsSummary.activeGoals + savingsSummary.completedGoals > 0 && (
+          <HomeSummaryCard
+            icon="piggy-bank"
+            color={theme.colors.income}
+            title="Metas de ahorro"
+            subtitle={
+              savingsSummary.activeGoals === 1
+                ? '1 meta activa'
+                : `${savingsSummary.activeGoals} metas activas`
+            }
+            value={formatCurrency(savingsSummary.totalSaved)}
+            valueColor={theme.colors.income}
+            onPress={() => navigation.navigate('Savings')}
+          />
+        )}
 
         <View style={styles.section}>
           <SectionTitle

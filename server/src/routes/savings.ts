@@ -1,0 +1,216 @@
+import { Router } from 'express';
+import { eq, desc, asc, sql, count } from 'drizzle-orm';
+import { z } from 'zod';
+import { db } from '../db/connection.js';
+import { savingsGoals, savingsContributions, accounts, type SavingsGoal } from '../db/schema.js';
+import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+
+export const savingsRouter = Router();
+
+const goalSchema = z.object({
+  name: z.string().min(1).max(100),
+  targetAmount: z.coerce.number().positive(),
+  deadline: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+  color: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/)
+    .optional(),
+  icon: z.string().max(50).optional(),
+  accountId: z.number().int().optional().nullable(),
+  notes: z.string().optional().nullable(),
+});
+
+const contributionSchema = z.object({
+  amount: z.coerce.number().positive(),
+  type: z.enum(['deposit', 'withdrawal']),
+  description: z.string().max(255).optional().nullable(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+// GET /api/savings — metas (activas primero, luego completadas)
+savingsRouter.get(
+  '/',
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({
+        id: savingsGoals.id,
+        name: savingsGoals.name,
+        targetAmount: savingsGoals.targetAmount,
+        currentAmount: savingsGoals.currentAmount,
+        deadline: savingsGoals.deadline,
+        color: savingsGoals.color,
+        icon: savingsGoals.icon,
+        isCompleted: savingsGoals.isCompleted,
+        completedAt: savingsGoals.completedAt,
+        accountId: savingsGoals.accountId,
+        notes: savingsGoals.notes,
+        createdAt: savingsGoals.createdAt,
+        updatedAt: savingsGoals.updatedAt,
+        accountName: accounts.name,
+      })
+      .from(savingsGoals)
+      .leftJoin(accounts, eq(savingsGoals.accountId, accounts.id))
+      .orderBy(asc(savingsGoals.isCompleted), desc(savingsGoals.createdAt));
+    res.json(rows);
+  }),
+);
+
+// GET /api/savings/summary — totales y conteo de metas
+savingsRouter.get(
+  '/summary',
+  asyncHandler(async (_req, res) => {
+    const [row] = await db
+      .select({
+        totalSaved: sql<string>`COALESCE(SUM(${savingsGoals.currentAmount}), 0)`,
+        totalTarget: sql<string>`COALESCE(SUM(${savingsGoals.targetAmount}), 0)`,
+        activeGoals: count(sql`CASE WHEN ${savingsGoals.isCompleted} = false THEN 1 END`),
+        completedGoals: count(sql`CASE WHEN ${savingsGoals.isCompleted} = true THEN 1 END`),
+      })
+      .from(savingsGoals);
+
+    const totalSaved = Number(row.totalSaved);
+    const totalTarget = Number(row.totalTarget);
+    res.json({
+      totalSaved,
+      totalTarget,
+      totalRemaining: Math.max(0, totalTarget - totalSaved),
+      activeGoals: Number(row.activeGoals),
+      completedGoals: Number(row.completedGoals),
+    });
+  }),
+);
+
+// GET /api/savings/:id — meta con sus contribuciones
+savingsRouter.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const [goal] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, id));
+    if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
+
+    const contributions = await db
+      .select()
+      .from(savingsContributions)
+      .where(eq(savingsContributions.goalId, id))
+      .orderBy(desc(savingsContributions.date), desc(savingsContributions.id));
+
+    res.json({ ...goal, contributions });
+  }),
+);
+
+// POST /api/savings
+savingsRouter.post(
+  '/',
+  asyncHandler(async (req, res) => {
+    const data = goalSchema.parse(req.body);
+    const [row] = await db
+      .insert(savingsGoals)
+      .values({
+        name: data.name,
+        targetAmount: data.targetAmount.toFixed(2),
+        deadline: data.deadline ?? null,
+        ...(data.color && { color: data.color }),
+        ...(data.icon && { icon: data.icon }),
+        accountId: data.accountId ?? null,
+        notes: data.notes ?? null,
+      })
+      .returning();
+    res.status(201).json(row);
+  }),
+);
+
+// PUT /api/savings/:id
+savingsRouter.put(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const data = goalSchema.partial().parse(req.body);
+
+    const [old] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, id));
+    if (!old) throw new ApiError(404, 'Meta de ahorro no encontrada');
+
+    // Si cambia el objetivo, recalcular el estado de completitud
+    const target = data.targetAmount != null ? data.targetAmount : Number(old.targetAmount);
+    const completedNow = Number(old.currentAmount) >= target;
+
+    const [row] = await db
+      .update(savingsGoals)
+      .set({
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.targetAmount !== undefined && { targetAmount: data.targetAmount.toFixed(2) }),
+        ...(data.deadline !== undefined && { deadline: data.deadline }),
+        ...(data.color !== undefined && { color: data.color }),
+        ...(data.icon !== undefined && { icon: data.icon }),
+        ...(data.accountId !== undefined && { accountId: data.accountId }),
+        ...(data.notes !== undefined && { notes: data.notes }),
+        isCompleted: completedNow,
+        completedAt: completedNow ? old.completedAt ?? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(savingsGoals.id, id))
+      .returning();
+    res.json(row);
+  }),
+);
+
+// DELETE /api/savings/:id — cascade en contribuciones
+savingsRouter.delete(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const deleted = await db.delete(savingsGoals).where(eq(savingsGoals.id, id)).returning();
+    if (deleted.length === 0) throw new ApiError(404, 'Meta de ahorro no encontrada');
+    res.json({ success: true });
+  }),
+);
+
+// POST /api/savings/:id/contribute — depósito o retiro
+savingsRouter.post(
+  '/:id/contribute',
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const data = contributionSchema.parse(req.body);
+
+    const [goal] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, id));
+    if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
+
+    const current = Number(goal.currentAmount);
+    if (data.type === 'withdrawal' && data.amount > current) {
+      throw new ApiError(400, 'No puedes retirar más de lo ahorrado');
+    }
+
+    const newAmount = data.type === 'deposit' ? current + data.amount : current - data.amount;
+    const completed = newAmount >= Number(goal.targetAmount);
+
+    const insertStmt = db
+      .insert(savingsContributions)
+      .values({
+        goalId: id,
+        amount: data.amount.toFixed(2),
+        type: data.type,
+        description: data.description ?? null,
+        date: data.date,
+      })
+      .returning();
+
+    const updateStmt = db
+      .update(savingsGoals)
+      .set({
+        currentAmount: newAmount.toFixed(2),
+        isCompleted: completed,
+        completedAt: completed ? goal.completedAt ?? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(savingsGoals.id, id))
+      .returning();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results = await db.batch([insertStmt, updateStmt] as any);
+    const updated = (results[1] as SavingsGoal[])[0];
+    res.status(201).json(updated);
+  }),
+);

@@ -11,6 +11,10 @@ import type {
   TemplateInput,
   Tag,
   TagInput,
+  SavingsGoal,
+  SavingsGoalInput,
+  ContributionInput,
+  SavingsSummary,
   Paginated,
   StatsSummary,
   CategoryStat,
@@ -94,6 +98,19 @@ export const tagsApi = {
   update: (id: number, data: Partial<TagInput>) =>
     api.put<Tag>(`/tags/${id}`, data).then((r) => r.data),
   remove: (id: number) => api.delete(`/tags/${id}`).then((r) => r.data),
+};
+
+// ─────────────────────── Metas de ahorro ────────────────────
+export const savingsApi = {
+  list: () => api.get<SavingsGoal[]>('/savings').then((r) => r.data),
+  get: (id: number) => api.get<SavingsGoal>(`/savings/${id}`).then((r) => r.data),
+  create: (data: SavingsGoalInput) => api.post<SavingsGoal>('/savings', data).then((r) => r.data),
+  update: (id: number, data: Partial<SavingsGoalInput>) =>
+    api.put<SavingsGoal>(`/savings/${id}`, data).then((r) => r.data),
+  remove: (id: number) => api.delete(`/savings/${id}`).then((r) => r.data),
+  contribute: (id: number, data: ContributionInput) =>
+    api.post<SavingsGoal>(`/savings/${id}/contribute`, data).then((r) => r.data),
+  summary: () => api.get<SavingsSummary>('/savings/summary').then((r) => r.data),
 };
 
 // ─────────────────────────── Stats ──────────────────────────

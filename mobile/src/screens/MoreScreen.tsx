@@ -17,6 +17,7 @@ export function MoreScreen() {
     { label: 'Categorías', description: 'Organiza ingresos y gastos', icon: 'shapes', route: 'Categories', color: theme.colors.accentLight },
     { label: 'Plantillas', description: 'Movimientos frecuentes', icon: 'zap', route: 'Templates', color: theme.colors.income },
     { label: 'Etiquetas', description: 'Etiqueta libre para tus movimientos', icon: 'tag', route: 'Tags', color: theme.colors.secondary },
+    { label: 'Metas de ahorro', description: 'Ahorra para tus objetivos', icon: 'piggy-bank', route: 'Savings', color: theme.colors.income },
   ];
 
   return (

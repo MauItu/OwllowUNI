@@ -102,6 +102,37 @@ export const transactionTags = pgTable(
   }),
 );
 
+// ─────────────────────────── savings_goals ──────────────────────────
+export const savingsGoals = pgTable('savings_goals', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  targetAmount: decimal('target_amount', { precision: 15, scale: 2 }).notNull(),
+  currentAmount: decimal('current_amount', { precision: 15, scale: 2 }).default('0').notNull(),
+  deadline: date('deadline'),
+  color: varchar('color', { length: 7 }).default('#2E8B57').notNull(),
+  icon: varchar('icon', { length: 50 }).default('piggy-bank').notNull(),
+  isCompleted: boolean('is_completed').default(false).notNull(),
+  completedAt: timestamp('completed_at'),
+  accountId: integer('account_id').references(() => accounts.id),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ──────────────────────── savings_contributions ─────────────────────
+export const savingsContributions = pgTable('savings_contributions', {
+  id: serial('id').primaryKey(),
+  goalId: integer('goal_id')
+    .references(() => savingsGoals.id, { onDelete: 'cascade' })
+    .notNull(),
+  amount: decimal('amount', { precision: 15, scale: 2 }).notNull(),
+  type: varchar('type', { length: 10 }).notNull(), // deposit | withdrawal
+  description: varchar('description', { length: 255 }),
+  date: date('date').notNull(),
+  transactionId: integer('transaction_id').references(() => transactions.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // ───────────────────────────── relations ────────────────────────────
 export const accountsRelations = relations(accounts, ({ many }) => ({
   transactions: many(transactions),
@@ -115,6 +146,25 @@ export const categoriesRelations = relations(categories, ({ one, many }) => ({
   }),
   children: many(categories, { relationName: 'category_parent' }),
   transactions: many(transactions),
+}));
+
+export const savingsGoalsRelations = relations(savingsGoals, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [savingsGoals.accountId],
+    references: [accounts.id],
+  }),
+  contributions: many(savingsContributions),
+}));
+
+export const savingsContributionsRelations = relations(savingsContributions, ({ one }) => ({
+  goal: one(savingsGoals, {
+    fields: [savingsContributions.goalId],
+    references: [savingsGoals.id],
+  }),
+  transaction: one(transactions, {
+    fields: [savingsContributions.transactionId],
+    references: [transactions.id],
+  }),
 }));
 
 export const tagsRelations = relations(tags, ({ many }) => ({
@@ -172,3 +222,7 @@ export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type TransactionTag = typeof transactionTags.$inferSelect;
 export type NewTransactionTag = typeof transactionTags.$inferInsert;
+export type SavingsGoal = typeof savingsGoals.$inferSelect;
+export type NewSavingsGoal = typeof savingsGoals.$inferInsert;
+export type SavingsContribution = typeof savingsContributions.$inferSelect;
+export type NewSavingsContribution = typeof savingsContributions.$inferInsert;

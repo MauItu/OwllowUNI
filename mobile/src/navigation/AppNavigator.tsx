@@ -19,6 +19,9 @@ import { AddAccountScreen } from '../screens/AddAccountScreen';
 import { CategoriesScreen } from '../screens/CategoriesScreen';
 import { TemplatesScreen } from '../screens/TemplatesScreen';
 import { TagsScreen } from '../screens/TagsScreen';
+import { SavingsScreen } from '../screens/SavingsScreen';
+import { AddSavingsGoalScreen } from '../screens/AddSavingsGoalScreen';
+import { SavingsDetailScreen } from '../screens/SavingsDetailScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -134,6 +137,9 @@ export function AppNavigator() {
         <RootStack.Screen name="Categories" component={CategoriesScreen} />
         <RootStack.Screen name="Templates" component={TemplatesScreen} />
         <RootStack.Screen name="Tags" component={TagsScreen} />
+        <RootStack.Screen name="Savings" component={SavingsScreen} />
+        <RootStack.Screen name="AddSavingsGoal" component={AddSavingsGoalScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="SavingsDetail" component={SavingsDetailScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

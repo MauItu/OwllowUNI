@@ -180,3 +180,61 @@ export interface TemplateInput {
 }
 
 export type StatsPeriod = 'today' | 'week' | 'month' | 'year' | 'custom';
+
+// ───────────────────────── Metas de ahorro ─────────────────────────
+export type ContributionType = 'deposit' | 'withdrawal';
+
+export interface SavingsGoal {
+  id: number;
+  name: string;
+  targetAmount: string;
+  currentAmount: string;
+  deadline: string | null;
+  color: string;
+  icon: string;
+  isCompleted: boolean;
+  completedAt: string | null;
+  accountId: number | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  accountName?: string | null;
+  /** Solo en GET /api/savings/:id */
+  contributions?: SavingsContribution[];
+}
+
+export interface SavingsContribution {
+  id: number;
+  goalId: number;
+  amount: string;
+  type: ContributionType;
+  description: string | null;
+  date: string;
+  transactionId: number | null;
+  createdAt: string;
+}
+
+export interface SavingsGoalInput {
+  name: string;
+  targetAmount: number;
+  deadline?: string | null;
+  color?: string;
+  icon?: string;
+  accountId?: number | null;
+  notes?: string | null;
+}
+
+export interface ContributionInput {
+  amount: number;
+  type: ContributionType;
+  description?: string | null;
+  date: string;
+}
+
+export interface SavingsSummary {
+  totalSaved: number;
+  totalTarget: number;
+  totalRemaining: number;
+  activeGoals: number;
+  completedGoals: number;
+}
