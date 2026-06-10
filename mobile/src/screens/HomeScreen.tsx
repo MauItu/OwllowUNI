@@ -17,6 +17,7 @@ import { useStats } from '../hooks/useStats';
 import { useTransactions } from '../hooks/useTransactions';
 import { useTemplates } from '../hooks/useTemplates';
 import { useSavings } from '../hooks/useSavings';
+import { useDebts } from '../hooks/useDebts';
 import { useAppStore } from '../stores/appStore';
 import { currentMonthRange } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -42,6 +43,7 @@ export function HomeScreen() {
   const { transactions, refresh: refreshTx } = useTransactions({}, 5);
   const { templates, refetch: refetchTemplates } = useTemplates();
   const { summary: savingsSummary, refetch: refetchSavings } = useSavings();
+  const { summary: debtsSummary, refetch: refetchDebts } = useDebts();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const setPendingTemplate = useAppStore((s) => s.setPendingTemplate);
 
@@ -50,9 +52,9 @@ export function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchAccounts(true), refetchStats(true), refreshTx(), refetchTemplates(true), refetchSavings(true)]);
+    await Promise.all([refetchAccounts(true), refetchStats(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true)]);
     setRefreshing(false);
-  }, [refetchAccounts, refetchStats, refreshTx, refetchTemplates, refetchSavings]);
+  }, [refetchAccounts, refetchStats, refreshTx, refetchTemplates, refetchSavings, refetchDebts]);
 
   const useTemplate = async (template: Template) => {
     setSheetOpen(false);
@@ -107,6 +109,18 @@ export function HomeScreen() {
             value={formatCurrency(savingsSummary.totalSaved)}
             valueColor={theme.colors.income}
             onPress={() => navigation.navigate('Savings')}
+          />
+        )}
+
+        {debtsSummary && debtsSummary.activeDebts + debtsSummary.activeLoans > 0 && (
+          <HomeSummaryCard
+            icon="landmark"
+            color={theme.colors.expense}
+            title="Deudas"
+            subtitle={`Debo ${formatCurrency(debtsSummary.totalDebt)} · Me deben ${formatCurrency(debtsSummary.totalLoan)}`}
+            value={formatCurrency(debtsSummary.netBalance)}
+            valueColor={debtsSummary.netBalance < 0 ? theme.colors.expense : theme.colors.income}
+            onPress={() => navigation.navigate('Debts')}
           />
         )}
 

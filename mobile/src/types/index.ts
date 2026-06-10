@@ -238,3 +238,68 @@ export interface SavingsSummary {
   activeGoals: number;
   completedGoals: number;
 }
+
+// ──────────────────────── Deudas y préstamos ───────────────────────
+/** debt = yo debo (pasivo) · loan = me deben (activo) */
+export type DebtType = 'debt' | 'loan';
+
+export interface Debt {
+  id: number;
+  name: string;
+  type: DebtType;
+  totalAmount: string;
+  remainingAmount: string;
+  interestRate: string | null;
+  creditorDebtor: string | null;
+  startDate: string;
+  dueDate: string | null;
+  color: string;
+  icon: string;
+  isPaidOff: boolean;
+  paidOffAt: string | null;
+  notes: string | null;
+  accountId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  accountName?: string | null;
+  /** Solo en GET /api/debts/:id */
+  payments?: DebtPayment[];
+}
+
+export interface DebtPayment {
+  id: number;
+  debtId: number;
+  amount: string;
+  date: string;
+  description: string | null;
+  transactionId: number | null;
+  createdAt: string;
+}
+
+export interface DebtInput {
+  name: string;
+  type: DebtType;
+  totalAmount: number;
+  interestRate?: number | null;
+  creditorDebtor?: string | null;
+  startDate: string;
+  dueDate?: string | null;
+  color?: string;
+  icon?: string;
+  notes?: string | null;
+  accountId?: number | null;
+}
+
+export interface DebtPaymentInput {
+  amount: number;
+  date: string;
+  description?: string | null;
+}
+
+export interface DebtsSummary {
+  totalDebt: number;
+  totalLoan: number;
+  netBalance: number;
+  activeDebts: number;
+  activeLoans: number;
+}

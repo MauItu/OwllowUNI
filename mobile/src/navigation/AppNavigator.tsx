@@ -22,6 +22,9 @@ import { TagsScreen } from '../screens/TagsScreen';
 import { SavingsScreen } from '../screens/SavingsScreen';
 import { AddSavingsGoalScreen } from '../screens/AddSavingsGoalScreen';
 import { SavingsDetailScreen } from '../screens/SavingsDetailScreen';
+import { DebtsScreen } from '../screens/DebtsScreen';
+import { AddDebtScreen } from '../screens/AddDebtScreen';
+import { DebtDetailScreen } from '../screens/DebtDetailScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -140,6 +143,9 @@ export function AppNavigator() {
         <RootStack.Screen name="Savings" component={SavingsScreen} />
         <RootStack.Screen name="AddSavingsGoal" component={AddSavingsGoalScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="SavingsDetail" component={SavingsDetailScreen} />
+        <RootStack.Screen name="Debts" component={DebtsScreen} />
+        <RootStack.Screen name="AddDebt" component={AddDebtScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="DebtDetail" component={DebtDetailScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

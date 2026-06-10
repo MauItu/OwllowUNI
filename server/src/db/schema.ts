@@ -133,6 +133,40 @@ export const savingsContributions = pgTable('savings_contributions', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// ─────────────────────────────── debts ──────────────────────────────
+export const debts = pgTable('debts', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  type: varchar('type', { length: 10 }).notNull(), // debt (yo debo) | loan (me deben)
+  totalAmount: decimal('total_amount', { precision: 15, scale: 2 }).notNull(),
+  remainingAmount: decimal('remaining_amount', { precision: 15, scale: 2 }).notNull(),
+  interestRate: decimal('interest_rate', { precision: 5, scale: 2 }), // % anual, informativo
+  creditorDebtor: varchar('creditor_debtor', { length: 100 }),
+  startDate: date('start_date').notNull(),
+  dueDate: date('due_date'),
+  color: varchar('color', { length: 7 }).default('#C1437A').notNull(),
+  icon: varchar('icon', { length: 50 }).default('landmark').notNull(),
+  isPaidOff: boolean('is_paid_off').default(false).notNull(),
+  paidOffAt: timestamp('paid_off_at'),
+  notes: text('notes'),
+  accountId: integer('account_id').references(() => accounts.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ─────────────────────────── debt_payments ──────────────────────────
+export const debtPayments = pgTable('debt_payments', {
+  id: serial('id').primaryKey(),
+  debtId: integer('debt_id')
+    .references(() => debts.id, { onDelete: 'cascade' })
+    .notNull(),
+  amount: decimal('amount', { precision: 15, scale: 2 }).notNull(),
+  date: date('date').notNull(),
+  description: varchar('description', { length: 255 }),
+  transactionId: integer('transaction_id').references(() => transactions.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // ───────────────────────────── relations ────────────────────────────
 export const accountsRelations = relations(accounts, ({ many }) => ({
   transactions: many(transactions),
@@ -163,6 +197,25 @@ export const savingsContributionsRelations = relations(savingsContributions, ({ 
   }),
   transaction: one(transactions, {
     fields: [savingsContributions.transactionId],
+    references: [transactions.id],
+  }),
+}));
+
+export const debtsRelations = relations(debts, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [debts.accountId],
+    references: [accounts.id],
+  }),
+  payments: many(debtPayments),
+}));
+
+export const debtPaymentsRelations = relations(debtPayments, ({ one }) => ({
+  debt: one(debts, {
+    fields: [debtPayments.debtId],
+    references: [debts.id],
+  }),
+  transaction: one(transactions, {
+    fields: [debtPayments.transactionId],
     references: [transactions.id],
   }),
 }));
@@ -226,3 +279,7 @@ export type SavingsGoal = typeof savingsGoals.$inferSelect;
 export type NewSavingsGoal = typeof savingsGoals.$inferInsert;
 export type SavingsContribution = typeof savingsContributions.$inferSelect;
 export type NewSavingsContribution = typeof savingsContributions.$inferInsert;
+export type Debt = typeof debts.$inferSelect;
+export type NewDebt = typeof debts.$inferInsert;
+export type DebtPayment = typeof debtPayments.$inferSelect;
+export type NewDebtPayment = typeof debtPayments.$inferInsert;

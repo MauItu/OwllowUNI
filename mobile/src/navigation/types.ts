@@ -17,6 +17,9 @@ export type RootStackParamList = {
   Savings: undefined;
   AddSavingsGoal: { goalId?: number } | undefined;
   SavingsDetail: { goalId: number };
+  Debts: undefined;
+  AddDebt: { debtId?: number } | undefined;
+  DebtDetail: { debtId: number };
 };
 
 export type TabParamList = {

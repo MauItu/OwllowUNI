@@ -15,6 +15,10 @@ import type {
   SavingsGoalInput,
   ContributionInput,
   SavingsSummary,
+  Debt,
+  DebtInput,
+  DebtPaymentInput,
+  DebtsSummary,
   Paginated,
   StatsSummary,
   CategoryStat,
@@ -111,6 +115,19 @@ export const savingsApi = {
   contribute: (id: number, data: ContributionInput) =>
     api.post<SavingsGoal>(`/savings/${id}/contribute`, data).then((r) => r.data),
   summary: () => api.get<SavingsSummary>('/savings/summary').then((r) => r.data),
+};
+
+// ────────────────────── Deudas y préstamos ──────────────────
+export const debtsApi = {
+  list: () => api.get<Debt[]>('/debts').then((r) => r.data),
+  get: (id: number) => api.get<Debt>(`/debts/${id}`).then((r) => r.data),
+  create: (data: DebtInput) => api.post<Debt>('/debts', data).then((r) => r.data),
+  update: (id: number, data: Partial<DebtInput>) =>
+    api.put<Debt>(`/debts/${id}`, data).then((r) => r.data),
+  remove: (id: number) => api.delete(`/debts/${id}`).then((r) => r.data),
+  pay: (id: number, data: DebtPaymentInput) =>
+    api.post<Debt>(`/debts/${id}/pay`, data).then((r) => r.data),
+  summary: () => api.get<DebtsSummary>('/debts/summary').then((r) => r.data),
 };
 
 // ─────────────────────────── Stats ──────────────────────────
