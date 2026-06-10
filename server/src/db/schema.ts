@@ -167,6 +167,74 @@ export const debtPayments = pgTable('debt_payments', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// ─────────────────────────── split_groups ───────────────────────────
+export const splitGroups = pgTable('split_groups', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: varchar('description', { length: 255 }),
+  icon: varchar('icon', { length: 50 }).default('users').notNull(),
+  color: varchar('color', { length: 7 }).default('#3A60A1').notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ─────────────────────────── split_members ──────────────────────────
+export const splitMembers = pgTable(
+  'split_members',
+  {
+    id: serial('id').primaryKey(),
+    groupId: integer('group_id')
+      .references(() => splitGroups.id, { onDelete: 'cascade' })
+      .notNull(),
+    name: varchar('name', { length: 100 }).notNull(),
+    // Exactamente uno por grupo debe ser is_me=true (representa al usuario)
+    isMe: boolean('is_me').default(false).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueGroupMemberName: unique().on(t.groupId, t.name),
+  }),
+);
+
+// ────────────────────────── split_expenses ──────────────────────────
+export const splitExpenses = pgTable('split_expenses', {
+  id: serial('id').primaryKey(),
+  groupId: integer('group_id')
+    .references(() => splitGroups.id, { onDelete: 'cascade' })
+    .notNull(),
+  description: varchar('description', { length: 255 }).notNull(),
+  totalAmount: decimal('total_amount', { precision: 15, scale: 2 }).notNull(),
+  paidByMemberId: integer('paid_by_member_id')
+    .references(() => splitMembers.id)
+    .notNull(),
+  date: date('date').notNull(),
+  transactionId: integer('transaction_id').references(() => transactions.id),
+  categoryId: integer('category_id').references(() => categories.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ─────────────────────────── split_shares ───────────────────────────
+export const splitShares = pgTable(
+  'split_shares',
+  {
+    id: serial('id').primaryKey(),
+    expenseId: integer('expense_id')
+      .references(() => splitExpenses.id, { onDelete: 'cascade' })
+      .notNull(),
+    memberId: integer('member_id')
+      .references(() => splitMembers.id, { onDelete: 'cascade' })
+      .notNull(),
+    amount: decimal('amount', { precision: 15, scale: 2 }).notNull(),
+    isSettled: boolean('is_settled').default(false).notNull(),
+    settledAt: timestamp('settled_at'),
+  },
+  (t) => ({
+    uniqueExpenseMember: unique().on(t.expenseId, t.memberId),
+  }),
+);
+
 // ───────────────────────────── relations ────────────────────────────
 export const accountsRelations = relations(accounts, ({ many }) => ({
   transactions: many(transactions),
@@ -262,6 +330,50 @@ export const templatesRelations = relations(templates, ({ one }) => ({
   }),
 }));
 
+export const splitGroupsRelations = relations(splitGroups, ({ many }) => ({
+  members: many(splitMembers),
+  expenses: many(splitExpenses),
+}));
+
+export const splitMembersRelations = relations(splitMembers, ({ one, many }) => ({
+  group: one(splitGroups, {
+    fields: [splitMembers.groupId],
+    references: [splitGroups.id],
+  }),
+  shares: many(splitShares),
+}));
+
+export const splitExpensesRelations = relations(splitExpenses, ({ one, many }) => ({
+  group: one(splitGroups, {
+    fields: [splitExpenses.groupId],
+    references: [splitGroups.id],
+  }),
+  paidBy: one(splitMembers, {
+    fields: [splitExpenses.paidByMemberId],
+    references: [splitMembers.id],
+  }),
+  category: one(categories, {
+    fields: [splitExpenses.categoryId],
+    references: [categories.id],
+  }),
+  transaction: one(transactions, {
+    fields: [splitExpenses.transactionId],
+    references: [transactions.id],
+  }),
+  shares: many(splitShares),
+}));
+
+export const splitSharesRelations = relations(splitShares, ({ one }) => ({
+  expense: one(splitExpenses, {
+    fields: [splitShares.expenseId],
+    references: [splitExpenses.id],
+  }),
+  member: one(splitMembers, {
+    fields: [splitShares.memberId],
+    references: [splitMembers.id],
+  }),
+}));
+
 // ─────────────────────────────── types ──────────────────────────────
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
@@ -283,3 +395,11 @@ export type Debt = typeof debts.$inferSelect;
 export type NewDebt = typeof debts.$inferInsert;
 export type DebtPayment = typeof debtPayments.$inferSelect;
 export type NewDebtPayment = typeof debtPayments.$inferInsert;
+export type SplitGroup = typeof splitGroups.$inferSelect;
+export type NewSplitGroup = typeof splitGroups.$inferInsert;
+export type SplitMember = typeof splitMembers.$inferSelect;
+export type NewSplitMember = typeof splitMembers.$inferInsert;
+export type SplitExpense = typeof splitExpenses.$inferSelect;
+export type NewSplitExpense = typeof splitExpenses.$inferInsert;
+export type SplitShare = typeof splitShares.$inferSelect;
+export type NewSplitShare = typeof splitShares.$inferInsert;

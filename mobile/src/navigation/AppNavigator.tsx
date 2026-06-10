@@ -25,6 +25,10 @@ import { SavingsDetailScreen } from '../screens/SavingsDetailScreen';
 import { DebtsScreen } from '../screens/DebtsScreen';
 import { AddDebtScreen } from '../screens/AddDebtScreen';
 import { DebtDetailScreen } from '../screens/DebtDetailScreen';
+import { SplitsScreen } from '../screens/SplitsScreen';
+import { AddSplitGroupScreen } from '../screens/AddSplitGroupScreen';
+import { SplitGroupDetailScreen } from '../screens/SplitGroupDetailScreen';
+import { AddSplitExpenseScreen } from '../screens/AddSplitExpenseScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -146,6 +150,10 @@ export function AppNavigator() {
         <RootStack.Screen name="Debts" component={DebtsScreen} />
         <RootStack.Screen name="AddDebt" component={AddDebtScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="DebtDetail" component={DebtDetailScreen} />
+        <RootStack.Screen name="Splits" component={SplitsScreen} />
+        <RootStack.Screen name="AddSplitGroup" component={AddSplitGroupScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="SplitGroupDetail" component={SplitGroupDetailScreen} />
+        <RootStack.Screen name="AddSplitExpense" component={AddSplitExpenseScreen} options={{ presentation: 'modal' }} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

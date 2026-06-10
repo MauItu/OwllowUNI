@@ -18,6 +18,7 @@ import { useTransactions } from '../hooks/useTransactions';
 import { useTemplates } from '../hooks/useTemplates';
 import { useSavings } from '../hooks/useSavings';
 import { useDebts } from '../hooks/useDebts';
+import { useSplits } from '../hooks/useSplits';
 import { useAppStore } from '../stores/appStore';
 import { currentMonthRange } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -44,6 +45,7 @@ export function HomeScreen() {
   const { templates, refetch: refetchTemplates } = useTemplates();
   const { summary: savingsSummary, refetch: refetchSavings } = useSavings();
   const { summary: debtsSummary, refetch: refetchDebts } = useDebts();
+  const { summary: splitsSummary, refetch: refetchSplits } = useSplits();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const setPendingTemplate = useAppStore((s) => s.setPendingTemplate);
 
@@ -52,9 +54,9 @@ export function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchAccounts(true), refetchStats(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true)]);
+    await Promise.all([refetchAccounts(true), refetchStats(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true), refetchSplits(true)]);
     setRefreshing(false);
-  }, [refetchAccounts, refetchStats, refreshTx, refetchTemplates, refetchSavings, refetchDebts]);
+  }, [refetchAccounts, refetchStats, refreshTx, refetchTemplates, refetchSavings, refetchDebts, refetchSplits]);
 
   const useTemplate = async (template: Template) => {
     setSheetOpen(false);
@@ -121,6 +123,18 @@ export function HomeScreen() {
             value={formatCurrency(debtsSummary.netBalance)}
             valueColor={debtsSummary.netBalance < 0 ? theme.colors.expense : theme.colors.income}
             onPress={() => navigation.navigate('Debts')}
+          />
+        )}
+
+        {splitsSummary && (splitsSummary.totalOwedToMe > 0 || splitsSummary.totalIOwe > 0) && (
+          <HomeSummaryCard
+            icon="users"
+            color={theme.colors.accentLight}
+            title="Gastos compartidos"
+            subtitle={`Me deben ${formatCurrency(splitsSummary.totalOwedToMe)} · Debo ${formatCurrency(splitsSummary.totalIOwe)}`}
+            value={formatCurrency(splitsSummary.netBalance)}
+            valueColor={splitsSummary.netBalance < 0 ? theme.colors.expense : theme.colors.income}
+            onPress={() => navigation.navigate('Splits')}
           />
         )}
 

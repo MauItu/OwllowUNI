@@ -303,3 +303,100 @@ export interface DebtsSummary {
   activeDebts: number;
   activeLoans: number;
 }
+
+// ──────────────────────── Gastos compartidos ───────────────────────
+export interface SplitMember {
+  id: number;
+  groupId: number;
+  name: string;
+  isMe: boolean;
+  createdAt: string;
+}
+
+export interface SplitGroup {
+  id: number;
+  name: string;
+  description: string | null;
+  icon: string;
+  color: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  members?: SplitMember[];
+  /** Balance del miembro is_me (positivo = me deben). Solo en GET /api/splits */
+  myBalance?: number;
+}
+
+export interface SplitShare {
+  id: number;
+  expenseId: number;
+  memberId: number;
+  amount: string;
+  isSettled: boolean;
+  settledAt: string | null;
+}
+
+export interface SplitExpense {
+  id: number;
+  groupId: number;
+  description: string;
+  totalAmount: string;
+  paidByMemberId: number;
+  date: string;
+  transactionId: number | null;
+  categoryId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  paidByName?: string;
+  categoryName?: string | null;
+  categoryIcon?: string | null;
+  categoryColor?: string | null;
+  shares?: SplitShare[];
+}
+
+export interface SplitGroupInput {
+  name: string;
+  description?: string | null;
+  icon?: string;
+  color?: string;
+  members?: { name: string; isMe?: boolean }[];
+}
+
+export interface SplitMemberInput {
+  name: string;
+  isMe?: boolean;
+}
+
+export interface SplitExpenseInput {
+  description: string;
+  totalAmount: number;
+  paidByMemberId: number;
+  date: string;
+  categoryId?: number | null;
+  shares: { memberId: number; amount: number }[];
+}
+
+export interface SplitTransfer {
+  fromMemberId: number;
+  toMemberId: number;
+  amount: number;
+}
+
+export interface SplitBalances {
+  members: (SplitMember & { balance: number })[];
+  transfers: SplitTransfer[];
+}
+
+export interface SettleInput {
+  fromMemberId: number;
+  toMemberId: number;
+  amount: number;
+  date?: string;
+}
+
+export interface SplitsSummary {
+  totalOwedToMe: number;
+  totalIOwe: number;
+  netBalance: number;
+  groups: { groupId: number; groupName: string; myBalance: number }[];
+}

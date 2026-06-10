@@ -19,6 +19,15 @@ import type {
   DebtInput,
   DebtPaymentInput,
   DebtsSummary,
+  SplitGroup,
+  SplitGroupInput,
+  SplitMember,
+  SplitMemberInput,
+  SplitExpense,
+  SplitExpenseInput,
+  SplitBalances,
+  SettleInput,
+  SplitsSummary,
   Paginated,
   StatsSummary,
   CategoryStat,
@@ -128,6 +137,29 @@ export const debtsApi = {
   pay: (id: number, data: DebtPaymentInput) =>
     api.post<Debt>(`/debts/${id}/pay`, data).then((r) => r.data),
   summary: () => api.get<DebtsSummary>('/debts/summary').then((r) => r.data),
+};
+
+// ─────────────────────── Gastos compartidos ─────────────────
+export const splitsApi = {
+  list: () => api.get<SplitGroup[]>('/splits').then((r) => r.data),
+  get: (id: number) => api.get<SplitGroup>(`/splits/${id}`).then((r) => r.data),
+  create: (data: SplitGroupInput) => api.post<SplitGroup>('/splits', data).then((r) => r.data),
+  update: (id: number, data: Partial<Omit<SplitGroupInput, 'members'>>) =>
+    api.put<SplitGroup>(`/splits/${id}`, data).then((r) => r.data),
+  remove: (id: number) => api.delete(`/splits/${id}`).then((r) => r.data),
+  addMember: (groupId: number, data: SplitMemberInput) =>
+    api.post<SplitMember>(`/splits/${groupId}/members`, data).then((r) => r.data),
+  removeMember: (groupId: number, memberId: number) =>
+    api.delete(`/splits/${groupId}/members/${memberId}`).then((r) => r.data),
+  expenses: (groupId: number) =>
+    api.get<SplitExpense[]>(`/splits/${groupId}/expenses`).then((r) => r.data),
+  addExpense: (groupId: number, data: SplitExpenseInput) =>
+    api.post<SplitExpense>(`/splits/${groupId}/expenses`, data).then((r) => r.data),
+  balances: (groupId: number) =>
+    api.get<SplitBalances>(`/splits/${groupId}/balances`).then((r) => r.data),
+  settle: (groupId: number, data: SettleInput) =>
+    api.post(`/splits/${groupId}/settle`, data).then((r) => r.data),
+  summary: () => api.get<SplitsSummary>('/splits/summary').then((r) => r.data),
 };
 
 // ─────────────────────────── Stats ──────────────────────────
