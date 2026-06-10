@@ -116,9 +116,9 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
           </View>
           <Pressable
             onPress={handleConfirm}
-            style={({ pressed }) => [styles.confirm, { backgroundColor: accentColor }, pressed && styles.keyPressed]}
+            style={({ pressed }) => [styles.confirm, pressed && styles.keyPressed]}
           >
-            <Icon name="check" size={34} color={theme.colors.background} strokeWidth={2.6} />
+            <Icon name="check" size={34} color="#FFFFFF" strokeWidth={2.6} />
           </Pressable>
         </View>
       </View>
@@ -162,7 +162,13 @@ const createStyles = (theme: Theme) =>
   confirm: {
     flex: 1,
     borderRadius: theme.borderRadius.xl,
+    backgroundColor: theme.colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: theme.colors.primary,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
 });

@@ -48,6 +48,8 @@ const createStyles = (theme: Theme) =>
     padding: theme.spacing.md,
     gap: theme.spacing.md,
     marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
     borderLeftWidth: 4,
   },
   iconWrap: { width: 48, height: 48, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },

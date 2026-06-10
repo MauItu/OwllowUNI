@@ -19,6 +19,9 @@ export function TransactionCard({ transaction: t, onPress }: Props) {
   const amountColor =
     t.type === 'income' ? theme.colors.income : t.type === 'expense' ? theme.colors.expense : theme.colors.transfer;
   const iconColor = isTransfer ? theme.colors.transfer : t.categoryColor ?? theme.colors.primary;
+  // Borde izquierdo: rosa gastos, azul ingresos, morado transferencias
+  const edgeColor =
+    t.type === 'expense' ? theme.colors.primary : t.type === 'income' ? theme.colors.secondary : theme.colors.accentLight;
   const iconName = isTransfer ? 'arrow-left-right' : t.categoryIcon ?? 'circle';
   const title = t.description?.trim() || t.categoryName || (isTransfer ? 'Transferencia' : 'Sin categoría');
 
@@ -29,7 +32,7 @@ export function TransactionCard({ transaction: t, onPress }: Props) {
   return (
     <Pressable
       onPress={() => onPress?.(t)}
-      style={({ pressed }) => [styles.card, pressed && { backgroundColor: theme.colors.surfaceLight }]}
+      style={({ pressed }) => [styles.card, { borderLeftColor: edgeColor }, pressed && { backgroundColor: theme.colors.surfaceLight }]}
     >
       <View style={[styles.iconWrap, { backgroundColor: `${iconColor}26` }]}>
         <Icon name={iconName} size={20} color={iconColor} />
@@ -62,6 +65,9 @@ const createStyles = (theme: Theme) =>
     padding: theme.spacing.md,
     gap: theme.spacing.md,
     marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    borderLeftWidth: 4,
   },
   iconWrap: { width: 44, height: 44, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
   info: { flex: 1 },

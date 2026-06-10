@@ -84,6 +84,8 @@ const createStyles = (theme: Theme) =>
       borderRadius: theme.borderRadius.lg,
       padding: theme.spacing.md,
       marginBottom: theme.spacing.sm,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
     },
     iconWrap: { width: 46, height: 46, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
     label: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },

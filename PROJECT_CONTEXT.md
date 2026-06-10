@@ -207,13 +207,26 @@ colors: {
 
 ### Tokens compartidos
 ```ts
-chart: ['#C1437A','#3A60A1','#7B528C','#2E8B57','#E8A838','#4EADA1','#D4845A','#9B7DB8']
-gradients: { header, cardHighlight, income, expense }   // tuplas de 2 colores por tema (expo-linear-gradient)
+// chart es POR TEMA: rosa/azul/morado SIEMPRE como los 3 primeros colores
+// claro:  ['#C1437A','#3A60A1','#7B528C', ...] · oscuro: ['#F72585','#4CC9F0','#9D4EDD', ...]
+gradients: { header, cardHighlight, balance, progress, income, expense }   // tuplas de 2 colores por tema
 spacing: { xs:4, sm:8, md:16, lg:24, xl:32, xxl:48 }
 borderRadius: { sm:8, md:12, lg:16, xl:24, full:999 }
 fontSize: { xs:11, sm:13, md:15, lg:18, xl:24, xxl:32, hero:40 }
 fontWeight: { regular:'400', medium:'500', semibold:'600', bold:'700' }
 ```
+
+### Paleta protagonista (punch-up jun 2026)
+Rosa/azul/morado son PROTAGONISTAS, no acentos: `ScreenHeader` y el topBar del Home llevan
+`LinearGradient` rosa→morado con texto blanco; `BalanceSummary` y la card total de Cuentas usan
+`gradients.balance` (texto blanco, pills translúcidas); `PrimaryButton` sin color explícito usa el
+gradiente rosa→morado; el confirmar de la calculadora es `primary` sólido con glow; las barras de
+progreso de Stats usan `gradients.progress` (rosa→azul/turquesa); el donut colorea por
+`theme.colors.chart` (no por el color de la categoría); los chips activos (filtros y períodos)
+alternan primary/secondary/accent; `TransactionCard` lleva borde izquierdo 4px (rosa=gasto,
+azul=ingreso, morado=transfer); en oscuro las cards llevan `cardBorder` (#443465) y el tab bar usa
+`tabActive` turquesa + dot rosa bajo el tab seleccionado (en claro: tab activo rosa); los empty
+states tienen una ilustración SVG de tres círculos con los colores de la bandera bisexual.
 
 ### Arquitectura del tema (patrón obligatorio para código nuevo)
 - `ThemeProvider` envuelve la app en `App.tsx`. Default = esquema del sistema (`useColorScheme()`);

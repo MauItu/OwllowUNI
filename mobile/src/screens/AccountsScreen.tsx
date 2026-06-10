@@ -34,7 +34,7 @@ export function AccountsScreen() {
         onBack={() => navigation.goBack()}
         right={
           <Pressable onPress={() => navigation.navigate('AddAccount')} hitSlop={10}>
-            <Icon name="plus" size={24} color={theme.colors.primaryLight} />
+            <Icon name="plus" size={24} color="#FFFFFF" />
           </Pressable>
         }
       />
@@ -46,7 +46,7 @@ export function AccountsScreen() {
         style={styles.totalCard}
       >
         <View style={styles.totalIcon}>
-          <Icon name="layers" size={20} color={theme.colors.accentLight} />
+          <Icon name="layers" size={20} color="#FFFFFF" />
         </View>
         <Text style={styles.totalLabel}>Total consolidado</Text>
         <Text style={styles.totalValue} numberOfLines={1} adjustsFontSizeToFit>
@@ -80,11 +80,14 @@ const createStyles = (theme: Theme) =>
     marginBottom: theme.spacing.md,
     borderRadius: theme.borderRadius.xl,
     padding: theme.spacing.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.borderLight,
+    shadowColor: theme.colors.primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
   },
-  totalIcon: { width: 40, height: 40, borderRadius: theme.borderRadius.full, backgroundColor: `${theme.colors.accentLight}26`, alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.sm },
-  totalLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
-  totalValue: { color: theme.colors.text, fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold, marginTop: theme.spacing.xs, letterSpacing: -0.5 },
+  totalIcon: { width: 40, height: 40, borderRadius: theme.borderRadius.full, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center', marginBottom: theme.spacing.sm },
+  totalLabel: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm },
+  totalValue: { color: '#FFFFFF', fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold, marginTop: theme.spacing.xs, letterSpacing: -0.5 },
   list: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
 });

@@ -89,7 +89,7 @@ export function CategoriesScreen() {
         onBack={() => navigation.goBack()}
         right={
           <Pressable onPress={() => openNew(null)} hitSlop={10}>
-            <Icon name="plus" size={24} color={theme.colors.primaryLight} />
+            <Icon name="plus" size={24} color="#FFFFFF" />
           </Pressable>
         }
       />

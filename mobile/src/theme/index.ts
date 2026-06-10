@@ -50,6 +50,11 @@ export interface ThemeColors {
   // Bordes
   border: string;
   borderLight: string;
+  cardBorder: string; // borde sutil de cards (visible solo en oscuro)
+
+  // Tab bar
+  tabActive: string;
+  tabInactive: string;
 
   // Barra de estado del sistema
   statusBar: string;
@@ -59,8 +64,10 @@ export interface ThemeColors {
 }
 
 export interface ThemeGradients {
-  header: GradientTuple;
+  header: GradientTuple; // rosa → morado, texto blanco encima
   cardHighlight: GradientTuple;
+  balance: GradientTuple; // card de balance total, texto blanco
+  progress: GradientTuple; // barras de progreso rosa → azul
   income: GradientTuple;
   expense: GradientTuple;
 }
@@ -78,9 +85,15 @@ const shared = {
   } as const satisfies Record<string, '400' | '500' | '600' | '700'>,
 } as const;
 
-const chart = [
+// Rosa, azul y morado SIEMPRE como los 3 primeros colores de las gráficas.
+const chartLight = [
   '#C1437A', '#3A60A1', '#7B528C', '#2E8B57',
   '#E8A838', '#4EADA1', '#D4845A', '#9B7DB8',
+] as const;
+
+const chartDark = [
+  '#F72585', '#4CC9F0', '#9D4EDD', '#4ADE80',
+  '#FF8FC2', '#B47EE8', '#E8A838', '#4EADA1',
 ] as const;
 
 export interface Theme {
@@ -123,13 +136,19 @@ export const lightTheme: Theme = {
 
     border: '#CED4DA',
     borderLight: '#DEE2E6',
+    cardBorder: 'transparent',
+
+    tabActive: '#C1437A', // tab activo rosa
+    tabInactive: '#ADB5BD', // inactivo gris claro
 
     statusBar: '#E2E6EA',
-    chart,
+    chart: chartLight,
   },
   gradients: {
-    header: ['#F8F9FA', '#E9ECEF'],
-    cardHighlight: ['#FDF4F8', '#EFE3EE'],
+    header: ['#C1437A', '#7B528C'], // rosa → morado
+    cardHighlight: ['#C1437A', '#7B528C'],
+    balance: ['#C1437A', '#7B528C'],
+    progress: ['#C1437A', '#3A60A1'], // rosa → azul
     income: ['#2E8B57', '#3DA56C'],
     expense: ['#A8336B', '#C1437A'],
   },
@@ -167,13 +186,19 @@ export const darkTheme: Theme = {
 
     border: '#443465',
     borderLight: '#554478',
+    cardBorder: '#443465', // borde sutil púrpura en cards
+
+    tabActive: '#4CC9F0', // íconos activos turquesa (+ dot rosa)
+    tabInactive: '#75689A',
 
     statusBar: '#1B1428',
-    chart,
+    chart: chartDark,
   },
   gradients: {
-    header: ['#241B35', '#32264A'],
-    cardHighlight: ['#3C2E58', '#32264A'],
+    header: ['#F72585', '#7209B7'], // rosa frambuesa → púrpura
+    cardHighlight: ['#7209B7', '#F72585'],
+    balance: ['#7209B7', '#F72585'], // púrpura → rosa
+    progress: ['#F72585', '#4CC9F0'], // rosa → turquesa
     income: ['#2FA45C', '#4ADE80'],
     expense: ['#A91761', '#F72585'],
   },

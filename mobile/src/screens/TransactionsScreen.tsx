@@ -76,6 +76,9 @@ export function TransactionsScreen() {
     }
   };
 
+  // Chips activos alternan los tres colores de la bandera
+  const chipTrio = [theme.colors.primary, theme.colors.secondary, theme.colors.accent];
+
   const renderRightActions = (t: Transaction) => (
     <Pressable style={styles.deleteAction} onPress={() => remove(t)}>
       <Icon name="trash-2" size={22} color="#FFFFFF" />
@@ -105,24 +108,24 @@ export function TransactionsScreen() {
 
       {/* Chips de filtro (scroll horizontal) */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-        {TYPE_FILTERS.map((f) => (
+        {TYPE_FILTERS.map((f, i) => (
           <Pressable
             key={f.key}
-            style={[styles.chip, typeFilter === f.key && styles.chipActive]}
+            style={[styles.chip, typeFilter === f.key && { backgroundColor: chipTrio[i % 3] }]}
             onPress={() => setTypeFilter(f.key)}
           >
             <Text style={[styles.chipText, typeFilter === f.key && styles.chipTextActive]}>{f.label}</Text>
           </Pressable>
         ))}
         <View style={styles.chipDivider} />
-        <Pressable style={[styles.chip, styles.chipIcon, accountId != null && styles.chipActive]} onPress={() => setShowAccount(true)}>
-          <Icon name="wallet" size={14} color={accountId != null ? theme.colors.background : theme.colors.textSecondary} />
+        <Pressable style={[styles.chip, styles.chipIcon, accountId != null && { backgroundColor: theme.colors.secondary }]} onPress={() => setShowAccount(true)}>
+          <Icon name="wallet" size={14} color={accountId != null ? '#FFFFFF' : theme.colors.textSecondary} />
           <Text style={[styles.chipText, accountId != null && styles.chipTextActive]} numberOfLines={1}>
             {selectedAccount ? selectedAccount.name : 'Cuenta'}
           </Text>
         </Pressable>
-        <Pressable style={[styles.chip, styles.chipIcon, range.from != null && styles.chipActive]} onPress={() => setShowDate(true)}>
-          <Icon name="calendar" size={14} color={range.from != null ? theme.colors.background : theme.colors.textSecondary} />
+        <Pressable style={[styles.chip, styles.chipIcon, range.from != null && { backgroundColor: theme.colors.accent }]} onPress={() => setShowDate(true)}>
+          <Icon name="calendar" size={14} color={range.from != null ? '#FFFFFF' : theme.colors.textSecondary} />
           <Text style={[styles.chipText, range.from != null && styles.chipTextActive]} numberOfLines={1}>
             {range.from ? formatShortDate(range.from) : 'Fecha'}
           </Text>
@@ -217,9 +220,8 @@ const createStyles = (theme: Theme) =>
   chipsRow: { gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, alignItems: 'center' },
   chip: { paddingHorizontal: theme.spacing.md, paddingVertical: 7, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface },
   chipIcon: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  chipActive: { backgroundColor: theme.colors.primary },
   chipText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium, maxWidth: 130 },
-  chipTextActive: { color: theme.colors.background, fontWeight: theme.fontWeight.bold },
+  chipTextActive: { color: '#FFFFFF', fontWeight: theme.fontWeight.bold },
   chipDivider: { width: 1, height: 20, backgroundColor: theme.colors.border, marginHorizontal: theme.spacing.xs },
   list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xs, paddingBottom: theme.spacing.xxl + theme.spacing.xl },
   sectionHeader: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.bold, marginTop: theme.spacing.md, marginBottom: theme.spacing.xs },

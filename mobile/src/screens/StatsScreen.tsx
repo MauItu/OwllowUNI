@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { type Theme } from '../theme';
@@ -40,9 +41,11 @@ export function StatsScreen() {
 
   const { summary, byCategory, timeline, balanceEvolution, refreshing, refetch } = useStats(from, to, groupFor(period));
 
-  // Donut: top 5 + Otros
+  // Donut: top 5 + Otros. Colores de la paleta del tema (rosa/azul/morado primero).
   const donutData = useMemo(() => {
-    const top = byCategory.slice(0, 5).map((c) => ({ value: c.total, color: c.color, label: c.name }));
+    const top = byCategory
+      .slice(0, 5)
+      .map((c, i) => ({ value: c.total, color: theme.colors.chart[i % theme.colors.chart.length], label: c.name }));
     const rest = byCategory.slice(5).reduce((acc, c) => acc + c.total, 0);
     if (rest > 0) top.push({ value: rest, color: theme.colors.textMuted, label: 'Otros' });
     return top;
@@ -84,10 +87,15 @@ export function StatsScreen() {
       >
         {/* Selector de período */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.periods}>
-          {PERIODS.map((p) => (
+          {PERIODS.map((p, i) => (
             <Pressable
               key={p.key}
-              style={[styles.periodChip, period === p.key && styles.periodChipActive]}
+              style={[
+                styles.periodChip,
+                period === p.key && {
+                  backgroundColor: [theme.colors.primary, theme.colors.secondary, theme.colors.accent][i % 3],
+                },
+              ]}
               onPress={() => onSelectPeriod(p.key)}
             >
               <Text style={[styles.periodText, period === p.key && styles.periodTextActive]}>{p.label}</Text>
@@ -164,7 +172,12 @@ export function StatsScreen() {
                     <Text style={styles.rankValue}>{formatCurrency(c.total)}</Text>
                   </View>
                   <View style={styles.progressTrack}>
-                    <View style={[styles.progressFill, { width: `${Math.min(100, c.percentage)}%`, backgroundColor: c.color }]} />
+                    <LinearGradient
+                      colors={theme.gradients.progress}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[styles.progressFill, { width: `${Math.min(100, c.percentage)}%` }]}
+                    />
                   </View>
                 </View>
                 <Text style={styles.rankPct}>{c.percentage}%</Text>
@@ -215,12 +228,11 @@ const createStyles = (theme: Theme) =>
   content: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   periods: { gap: theme.spacing.sm, paddingVertical: theme.spacing.xs },
   periodChip: { paddingHorizontal: theme.spacing.md, paddingVertical: 7, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface },
-  periodChipActive: { backgroundColor: theme.colors.primary },
   periodText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
-  periodTextActive: { color: theme.colors.background, fontWeight: theme.fontWeight.bold },
+  periodTextActive: { color: '#FFFFFF', fontWeight: theme.fontWeight.bold },
   rangeLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: theme.spacing.xs },
   summaryRow: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.md },
-  summaryCard: { flex: 1, backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, gap: theme.spacing.xs },
+  summaryCard: { flex: 1, backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.cardBorder },
   summaryIcon: { width: 32, height: 32, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
   summaryLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
   summaryValue: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold },
@@ -228,7 +240,7 @@ const createStyles = (theme: Theme) =>
   netIcon: { width: 32, height: 32, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
   netLabel: { flex: 1, color: theme.colors.textSecondary, fontSize: theme.fontSize.md },
   netValue: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold, maxWidth: '50%' },
-  card: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, marginTop: theme.spacing.md },
+  card: { backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, marginTop: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.cardBorder },
   donutWrap: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
   legendList: { flex: 1, gap: theme.spacing.sm },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },

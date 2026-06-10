@@ -36,7 +36,7 @@ const TAB_META: Record<keyof TabParamList, { icon: string; label: string }> = {
  */
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
   const paddingBottom = Math.max(insets.bottom, 12) + 8;
 
@@ -68,13 +68,15 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           );
         }
 
-        const color = isFocused ? theme.colors.primary : theme.colors.textMuted;
+        const color = isFocused ? theme.colors.tabActive : theme.colors.tabInactive;
         return (
           <Pressable key={route.key} style={styles.tabItem} onPress={onPress} hitSlop={4}>
             <Icon name={meta.icon} size={24} color={color} strokeWidth={isFocused ? 2.4 : 2} />
             <Text style={[styles.tabLabel, { color }]} numberOfLines={1}>
               {meta.label}
             </Text>
+            {/* En oscuro, el tab seleccionado lleva un dot rosa debajo */}
+            {isDark && <View style={[styles.tabDot, !isFocused && { opacity: 0 }]} />}
           </Pressable>
         );
       })}
@@ -147,6 +149,7 @@ const createStyles = (theme: Theme) =>
   },
   tabItem: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', gap: 4 },
   tabLabel: { fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.medium },
+  tabDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: theme.colors.primary, marginTop: 1 },
   addSlot: { flex: 1, alignItems: 'center' },
   addFab: {
     width: 60,

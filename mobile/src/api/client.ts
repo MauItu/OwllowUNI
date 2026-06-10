@@ -17,13 +17,10 @@ import type {
 } from '../types';
 
 /**
- * URL base del backend.
- * - En desarrollo apunta a tu PC. Cambia esta IP por la de tu máquina en la LAN
- *   (NO uses localhost: el emulador/dispositivo no lo resuelve).
- * - Configurable también vía EXPO_PUBLIC_API_URL.
+ * URL base del backend: la IP de tu PC en la LAN (NO uses localhost:
+ * el dispositivo no lo resuelve). Cámbiala aquí si cambia tu IP.
  */
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.2.21:3000/api';
+export const API_BASE_URL = 'http://192.168.0.12:3000/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

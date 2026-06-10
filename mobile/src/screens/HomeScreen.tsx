@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, ScrollView, RefreshControl, Pressable, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -68,15 +69,20 @@ export function HomeScreen() {
 
   return (
     <Screen>
-      <View style={styles.topBar}>
+      <LinearGradient
+        colors={theme.gradients.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.topBar}
+      >
         <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>{greeting()}</Text>
           <Text style={styles.date}>{dateLabel}</Text>
         </View>
         <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Accounts')}>
-          <Icon name="wallet" size={22} color={theme.colors.text} />
+          <Icon name="wallet" size={22} color="#FFFFFF" />
         </Pressable>
-      </View>
+      </LinearGradient>
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -154,12 +160,14 @@ const createStyles = (theme: Theme) =>
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: theme.spacing.md,
+    borderBottomLeftRadius: theme.borderRadius.lg,
+    borderBottomRightRadius: theme.borderRadius.lg,
   },
-  greeting: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold },
-  date: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 2 },
-  iconBtn: { width: 44, height: 44, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' },
-  content: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md, paddingBottom: theme.spacing.xxl },
+  greeting: { color: '#FFFFFF', fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold },
+  date: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm, marginTop: 2 },
+  iconBtn: { width: 44, height: 44, borderRadius: theme.borderRadius.full, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  content: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   section: { marginTop: theme.spacing.xl },
   seeAll: { color: theme.colors.primaryLight, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
   templatesFab: {

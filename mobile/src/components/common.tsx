@@ -10,6 +10,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle } from 'react-native-svg';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
@@ -39,10 +41,15 @@ export function ScreenHeader({
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   return (
-    <View style={styles.header}>
+    <LinearGradient
+      colors={theme.gradients.header}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={styles.header}
+    >
       {onBack ? (
         <Pressable onPress={onBack} hitSlop={12} style={styles.headerBtn}>
-          <Icon name="chevron-left" size={26} color={theme.colors.text} />
+          <Icon name="chevron-left" size={26} color="#FFFFFF" />
         </Pressable>
       ) : (
         <View style={styles.headerBtn} />
@@ -58,7 +65,7 @@ export function ScreenHeader({
         )}
       </View>
       <View style={styles.headerBtn}>{right}</View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -79,21 +86,25 @@ export function PrimaryButton({
 }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const bg = color ?? theme.colors.primary;
+  // Sin color explícito, el botón usa el gradiente rosa→morado del tema.
+  const gradient: readonly [string, string] = color ? [color, color] : theme.gradients.header;
+  const content = loading ? (
+    <ActivityIndicator color="#FFFFFF" />
+  ) : (
+    <>
+      {icon && <Icon name={icon} size={18} color="#FFFFFF" strokeWidth={2.4} />}
+      <Text style={styles.buttonText}>{label}</Text>
+    </>
+  );
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
-      style={({ pressed }) => [styles.button, { backgroundColor: bg }, (disabled || loading) && { opacity: 0.5 }, pressed && { opacity: 0.85 }]}
+      style={({ pressed }) => [(disabled || loading) && { opacity: 0.5 }, pressed && { opacity: 0.85 }]}
     >
-      {loading ? (
-        <ActivityIndicator color={theme.colors.background} />
-      ) : (
-        <>
-          {icon && <Icon name={icon} size={18} color={theme.colors.background} strokeWidth={2.4} />}
-          <Text style={styles.buttonText}>{label}</Text>
-        </>
-      )}
+      <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.button}>
+        {content}
+      </LinearGradient>
     </Pressable>
   );
 }
@@ -164,8 +175,16 @@ export function EmptyState({ icon = 'inbox', text }: { icon?: string; text: stri
   const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.empty}>
-      <View style={styles.emptyIcon}>
-        <Icon name={icon} size={36} color={theme.colors.textMuted} />
+      <View style={styles.emptyArt}>
+        {/* Tres círculos superpuestos con los colores de la bandera bisexual */}
+        <Svg width={120} height={84} viewBox="0 0 120 84">
+          <Circle cx={38} cy={42} r={34} fill={theme.colors.primary} opacity={0.3} />
+          <Circle cx={60} cy={42} r={34} fill={theme.colors.accent} opacity={0.32} />
+          <Circle cx={82} cy={42} r={34} fill={theme.colors.secondary} opacity={0.3} />
+        </Svg>
+        <View style={styles.emptyIconOverlay} pointerEvents="none">
+          <Icon name={icon} size={34} color={theme.colors.primaryLight} strokeWidth={1.8} />
+        </View>
       </View>
       <Text style={styles.emptyText}>{text}</Text>
     </View>
@@ -208,12 +227,15 @@ const createStyles = (theme: Theme) =>
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm + 2,
+    borderBottomLeftRadius: theme.borderRadius.lg,
+    borderBottomRightRadius: theme.borderRadius.lg,
+    marginBottom: theme.spacing.sm,
   },
   headerBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitleWrap: { flex: 1, alignItems: 'center' },
-  headerTitle: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },
-  headerSubtitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs, marginTop: 1 },
+  headerTitle: { color: '#FFFFFF', fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold },
+  headerSubtitle: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.xs, marginTop: 1 },
   button: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -222,7 +244,7 @@ const createStyles = (theme: Theme) =>
     paddingVertical: theme.spacing.md,
     borderRadius: theme.borderRadius.lg,
   },
-  buttonText: { color: theme.colors.background, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
+  buttonText: { color: '#FFFFFF', fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
   field: { marginBottom: theme.spacing.md },
   fieldLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginBottom: theme.spacing.xs },
   input: {
@@ -251,7 +273,9 @@ const createStyles = (theme: Theme) =>
   sectionTitle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.sm },
   sectionTitleText: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },
   empty: { alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl, gap: theme.spacing.md },
+  emptyArt: { alignItems: 'center', justifyContent: 'center' },
   emptyIcon: { width: 72, height: 72, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface, alignItems: 'center', justifyContent: 'center' },
+  emptyIconOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, textAlign: 'center' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: theme.spacing.xl },
   retry: { marginTop: theme.spacing.xs, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm, backgroundColor: theme.colors.surfaceLight, borderRadius: theme.borderRadius.md },
