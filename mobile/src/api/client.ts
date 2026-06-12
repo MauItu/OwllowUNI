@@ -34,6 +34,11 @@ import type {
   CategoryStat,
   TimelinePoint,
   BalancePoint,
+  ExportFormat,
+  ExportFilters,
+  ImportTransactionRow,
+  ImportResult,
+  Insight,
 } from '../types';
 
 /**
@@ -93,6 +98,22 @@ export const transactionsApi = {
   update: (id: number, data: TransactionInput) =>
     api.put<Transaction>(`/transactions/${id}`, data).then((r) => r.data),
   remove: (id: number) => api.delete(`/transactions/${id}`).then((r) => r.data),
+};
+
+// ─────────────────────── Importar / Exportar ────────────────
+export const importExportApi = {
+  /** Descarga el contenido del archivo (texto CSV o JSON) según el formato. */
+  export: (format: ExportFormat, filters: ExportFilters = {}) =>
+    api
+      .get<string>('/transactions/export', {
+        params: { format, ...filters },
+        responseType: 'text',
+        // Evita que Axios intente parsear el CSV/JSON: lo queremos como texto crudo.
+        transformResponse: (d) => d,
+      })
+      .then((r) => r.data),
+  import: (transactions: ImportTransactionRow[]) =>
+    api.post<ImportResult>('/transactions/import', { transactions }).then((r) => r.data),
 };
 
 // ───────────────────────── Templates ────────────────────────
@@ -163,6 +184,11 @@ export const splitsApi = {
   settlements: (groupId: number) =>
     api.get<SplitSettlement[]>(`/splits/${groupId}/settlements`).then((r) => r.data),
   summary: () => api.get<SplitsSummary>('/splits/summary').then((r) => r.data),
+};
+
+// ────────────────────────── Insights ────────────────────────
+export const insightsApi = {
+  list: () => api.get<Insight[]>('/insights').then((r) => r.data),
 };
 
 // ─────────────────────────── Stats ──────────────────────────

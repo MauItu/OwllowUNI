@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, Pressable, StyleSheet, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { format } from 'date-fns';
@@ -9,11 +9,13 @@ import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, SectionTitle, EmptyState } from '../components/common';
 import { BalanceSummary } from '../components/BalanceSummary';
 import { HomeSummaryCard } from '../components/HomeSummaryCard';
+import { InsightCard } from '../components/InsightCard';
 import { TransactionCard } from '../components/TransactionCard';
 import { BottomSheet } from '../components/BottomSheet';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useStats } from '../hooks/useStats';
+import { useInsights } from '../hooks/useInsights';
 import { useTransactions } from '../hooks/useTransactions';
 import { useTemplates } from '../hooks/useTemplates';
 import { useSavings } from '../hooks/useSavings';
@@ -25,6 +27,9 @@ import { formatCurrency } from '../utils/formatCurrency';
 import { templatesApi } from '../api/client';
 import { showError } from '../components/toastConfig';
 import type { Template } from '../types';
+
+// Ancho de cada InsightCard en el carrusel (deja ver un poco de la siguiente).
+const CARD_WIDTH = Math.round(Dimensions.get('window').width * 0.8);
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -41,6 +46,7 @@ export function HomeScreen() {
   const { totalBalance, loading: loadingAccounts, refetch: refetchAccounts } = useAccounts();
   const { from, to } = currentMonthRange();
   const { summary, refetch: refetchStats } = useStats(from, to);
+  const { insights, refetch: refetchInsights } = useInsights();
   const { transactions, refresh: refreshTx } = useTransactions({}, 5);
   const { templates, refetch: refetchTemplates } = useTemplates();
   const { summary: savingsSummary, refetch: refetchSavings } = useSavings();
@@ -54,9 +60,9 @@ export function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchAccounts(true), refetchStats(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true), refetchSplits(true)]);
+    await Promise.all([refetchAccounts(true), refetchStats(true), refetchInsights(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true), refetchSplits(true)]);
     setRefreshing(false);
-  }, [refetchAccounts, refetchStats, refreshTx, refetchTemplates, refetchSavings, refetchDebts, refetchSplits]);
+  }, [refetchAccounts, refetchStats, refetchInsights, refreshTx, refetchTemplates, refetchSavings, refetchDebts, refetchSplits]);
 
   const useTemplate = async (template: Template) => {
     setSheetOpen(false);
@@ -73,6 +79,7 @@ export function HomeScreen() {
   const today = format(new Date(), "EEEE, d 'de' MMMM", { locale: es });
   const dateLabel = today.charAt(0).toUpperCase() + today.slice(1);
   const latest = transactions.slice(0, 5);
+  const homeInsights = insights.slice(0, 3); // carrusel: máximo 3
 
   return (
     <Screen>
@@ -97,6 +104,36 @@ export function HomeScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
         <BalanceSummary totalBalance={totalBalance} income={summary.income} expense={summary.expense} />
+
+        {homeInsights.length > 0 && (
+          <View style={styles.insightsSection}>
+            <SectionTitle
+              title="Insights"
+              action={
+                <Pressable onPress={() => navigation.navigate('Insights')}>
+                  <Text style={styles.seeAll}>Ver todos</Text>
+                </Pressable>
+              }
+            />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              decelerationRate="fast"
+              snapToInterval={CARD_WIDTH + theme.spacing.sm}
+              snapToAlignment="start"
+              contentContainerStyle={styles.carousel}
+            >
+              {homeInsights.map((insight) => (
+                <InsightCard
+                  key={insight.id}
+                  insight={insight}
+                  style={{ width: CARD_WIDTH }}
+                  onPress={() => navigation.navigate('Insights')}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {savingsSummary && savingsSummary.activeGoals + savingsSummary.completedGoals > 0 && (
           <HomeSummaryCard
@@ -216,6 +253,8 @@ const createStyles = (theme: Theme) =>
   iconBtn: { width: 44, height: 44, borderRadius: theme.borderRadius.full, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   section: { marginTop: theme.spacing.xl },
+  insightsSection: { marginTop: theme.spacing.lg },
+  carousel: { gap: theme.spacing.sm, paddingRight: theme.spacing.lg, paddingVertical: theme.spacing.xs },
   seeAll: { color: theme.colors.primaryLight, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
   templatesFab: {
     position: 'absolute',

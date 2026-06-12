@@ -13,6 +13,7 @@ export function MoreScreen() {
   const styles = useThemedStyles(createStyles);
 
   const items: { label: string; description: string; icon: string; route: string; color: string }[] = [
+    { label: 'Insights', description: 'Análisis automático de tus gastos', icon: 'lightbulb', route: 'Insights', color: theme.colors.accentLight },
     { label: 'Cuentas', description: 'Gestiona tus cuentas y tarjetas', icon: 'wallet', route: 'Accounts', color: theme.colors.primary },
     { label: 'Categorías', description: 'Organiza ingresos y gastos', icon: 'shapes', route: 'Categories', color: theme.colors.accentLight },
     { label: 'Plantillas', description: 'Movimientos frecuentes', icon: 'zap', route: 'Templates', color: theme.colors.income },
@@ -46,6 +47,19 @@ export function MoreScreen() {
         <View style={styles.sectionGap}>
           <SectionTitle title="Ajustes" />
         </View>
+        <Pressable
+          style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}
+          onPress={() => navigation.navigate('ImportExport')}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.secondary}22` }]}>
+            <Icon name="arrow-down-up" size={22} color={theme.colors.secondary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Importar / Exportar</Text>
+            <Text style={styles.description}>Respalda o restaura tus movimientos (CSV/JSON)</Text>
+          </View>
+          <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
+        </Pressable>
         <Pressable
           style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}
           onPress={() => navigation.navigate('SettingsNotifications')}

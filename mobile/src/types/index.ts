@@ -413,6 +413,58 @@ export interface SplitsSummary {
   groups: { groupId: number; groupName: string; myBalance: number }[];
 }
 
+// ──────────────────────── Insights financieros ─────────────────────
+export type InsightSeverity = 'info' | 'warning' | 'positive';
+export type InsightType =
+  | 'comparativa_categoria'
+  | 'proyeccion_mes'
+  | 'racha_registro'
+  | 'top_crecimiento'
+  | 'patron_semanal'
+  | 'balance_salud';
+
+export interface Insight {
+  id: string;
+  type: InsightType;
+  severity: InsightSeverity;
+  title: string;
+  message: string;
+  /** Número crudo; el cliente lo formatea según `type` (moneda / % / días). */
+  value?: number;
+  categoryId?: number;
+}
+
+// ──────────────────────── Importar / Exportar ──────────────────────
+export type ExportFormat = 'csv' | 'json';
+
+export interface ExportFilters {
+  from?: string;
+  to?: string;
+  accountId?: number;
+  categoryId?: number;
+  type?: TxType;
+}
+
+/** Fila normalizada enviada a POST /api/transactions/import. */
+export interface ImportTransactionRow {
+  date: string;
+  time: string;
+  type: string;
+  amount: string;
+  description: string;
+  account: string;
+  toAccount: string;
+  category: string;
+  subcategory: string;
+  tags: string;
+  notes: string;
+}
+
+export interface ImportResult {
+  imported: number;
+  errors: { row: number; reason: string }[];
+}
+
 export interface SplitSettlement {
   id: number;
   groupId: number;

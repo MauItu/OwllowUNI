@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { type Theme } from '../theme';
@@ -28,6 +29,7 @@ function groupFor(period: StatsPeriod): 'day' | 'week' | 'month' {
 }
 
 export function StatsScreen() {
+  const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const [period, setPeriod] = useState<StatsPeriod>('month');
@@ -78,7 +80,14 @@ export function StatsScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="Estadísticas" />
+      <ScreenHeader
+        title="Estadísticas"
+        right={
+          <Pressable onPress={() => navigation.navigate('Insights')} hitSlop={12}>
+            <Icon name="lightbulb" size={22} color="#FFFFFF" />
+          </Pressable>
+        }
+      />
 
       <ScrollView
         contentContainerStyle={styles.content}

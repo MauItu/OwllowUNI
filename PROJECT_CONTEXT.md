@@ -51,7 +51,8 @@ server/
 │   │   ├── tags.ts
 │   │   ├── savings.ts
 │   │   ├── debts.ts
-│   │   └── splits.ts
+│   │   ├── splits.ts
+│   │   └── insights.ts        ← insights financieros (agregación SQL determinística)
 │   └── middleware/
 │       └── errorHandler.ts
 └── drizzle/                    ← migraciones generadas por drizzle-kit
@@ -72,21 +73,21 @@ mobile/
     │                              reprogramar por entidad con identifiers determinísticos, sync global)
     ├── hooks/                  ← useAccounts, useTransactions, useCategories, useTemplates,
     │                              useStats, useTags, useSavings, useDebts, useSplits,
-    │                              useNotificationSettings
+    │                              useNotificationSettings, useInsights
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
     ├── screens/                ← Home, Transactions, AddTransaction, Accounts, AddAccount,
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense, More,
-    │                              SettingsNotifications
+    │                              SettingsNotifications, ImportExport, Insights
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
-    │                              DebtCard, HomeSummaryCard, BottomSheet, Icon, common
+    │                              DebtCard, HomeSummaryCard, InsightCard, BottomSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks
     ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
     ├── theme/ThemeContext.tsx  ← ThemeProvider, useTheme(), useThemedStyles()
-    ├── utils/                  ← formatCurrency, formatDate, calculatorEngine
+    ├── utils/                  ← formatCurrency, formatDate, calculatorEngine, csv (parser propio + csvToImportRows)
     └── types/index.ts          ← tipos compartidos
 ```
 
@@ -208,6 +209,8 @@ mobile/
 - `POST   /api/transactions` — crea y actualiza balance
 - `PUT    /api/transactions/:id` — recalcula balances
 - `DELETE /api/transactions/:id` — recalcula balance
+- `GET    /api/transactions/export` — query: `format=csv|json, from, to, accountId?, categoryId?, type?`. Devuelve el archivo con `Content-Disposition: attachment`. **CSV**: UTF-8 con BOM (Excel + tildes), separador coma, filas CRLF, columnas `fecha, hora, tipo, monto, descripción, cuenta, cuenta destino, categoría, subcategoría, etiquetas` (separadas por `;`)`, notas`. `tipo` se exporta en español (Ingreso/Gasto/Transferencia); `categoría/subcategoría` se derivan del `parentId` (si la categoría es hija → categoría=padre, subcategoría=hija). **JSON**: arreglo de filas normalizadas (mismo shape que acepta el import). Ruta registrada **antes** de `/:id`.
+- `POST   /api/transactions/import` — body `{ transactions: NormalizedRow[] }` (o un arreglo directo). Valida cada fila: tipo (acepta español o inglés), monto numérico > 0, fecha `yyyy-MM-dd`, cuenta existente (match por nombre case-insensitive; transfer exige cuenta destino), categoría opcional (match por subcategoría→categoría; si no existe, `null`). Cada importada actualiza `current_balance` como una creación normal (`db.batch`). Respuesta `{ imported: n, errors: [{ row, reason }] }`. **El CSV exportado es round-trippable** (export → import sin errores). Las etiquetas no se importan (solo informativas en el CSV).
 
 ### Templates
 - `GET    /api/templates` — orden `use_count DESC`
@@ -259,6 +262,24 @@ mobile/
 - `POST   /api/splits/:groupId/settle` — `{ fromMemberId, toMemberId, amount, date?, accountId? }`; marca shares pareados como settled (antiguos primero), persiste en `split_settlements` y, si involucra a `is_me` con `accountId`, crea transacción `income`(me pagan)/`expense`(yo pago); si la simplificación redirigió deudas, registra el remanente como gasto "Liquidación"
 - `GET    /api/splits/:groupId/settlements` — historial de liquidaciones del grupo
 
+### Insights (análisis automático)
+- `GET /api/insights` — devuelve `Insight[]` del mes actual, calculados por **agregación SQL determinística**
+  (sin IA/LLM). Cada insight: `{ id, type, severity: 'info'|'warning'|'positive', title, message, value?, categoryId? }`
+  (textos en español; `value` es número crudo, el cliente lo formatea). Tipos:
+  - `comparativa_categoria` — categorías cuyo gasto del mes supera en ≥20% el promedio de los **3 meses previos**
+    (`value`=gasto, `categoryId`, % de variación en `message`). Hasta 3, ordenadas por variación.
+  - `proyeccion_mes` — con el gasto diario promedio del mes en curso, proyecta el cierre y lo compara vs el mes
+    anterior (`value`=proyectado). Requiere **≥7 días de historia** y **≥7 días transcurridos** del mes.
+  - `racha_registro` — días consecutivos con registro; si `≥3` días **sin** registrar → recordatorio (warning),
+    si racha `≥3` → positivo (`value`=días).
+  - `top_crecimiento` — la categoría que más creció en gasto vs el mes anterior (`value`=gasto, `categoryId`).
+  - `patron_semanal` — día de la semana con mayor gasto promedio (últimas 8 semanas; requiere ≥14 días de historia
+    y un día con ≥2 fechas registradas).
+  - `balance_salud` — % del ingreso del mes ya gastado (`value`=%); alerta si >90% (warning), positivo si ≤60%.
+  > **Degradación elegante:** cada insight solo aparece si hay datos suficientes (divisiones por cero y cuentas
+  > nuevas controladas; sin historial devuelve `[]`). Se ordenan warning → positive → info. El shape está pensado
+  > para que a futuro un LLM pueda generar/enriquecer `message` sin tocar el resto del contrato.
+
 ---
 
 ## STACK
@@ -276,7 +297,11 @@ expo-linear-gradient ~15.0 (gradientes del sistema de temas dual; bundled en Exp
 expo-splash-screen ~31.0 (control explícito de splash),
 expo-notifications ~0.32.17 (notificaciones LOCALES programadas; carga lazy — ver "Notificaciones locales"),
 @react-native-async-storage/async-storage 2.2.0 (persistencia de preferencias de notificaciones),
-expo-constants ~18.0.13 (detección de entorno Expo Go para deshabilitar notificaciones).
+expo-constants ~18.0.13 (detección de entorno Expo Go para deshabilitar notificaciones),
+expo-file-system ~19.0.23 (escribir/leer archivos de export/import — se usa la **API legacy** vía
+`import * as FileSystem from 'expo-file-system/legacy'`: `cacheDirectory`, `writeAsStringAsync`,
+`readAsStringAsync`, `EncodingType.UTF8`), expo-sharing ~14.0.8 (compartir el archivo exportado),
+expo-document-picker ~14.0.8 (seleccionar el CSV a importar).
 TypeScript ~5.9, @types/react ~19.1.
 
 > **NO usar:** `victory-native` (removido — arrastra `@shopify/react-native-skia`; las gráficas son
@@ -434,7 +459,23 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia (con `AccountChips` cuando me involucra, como confirmación explícita del movimiento), lista cronológica de gastos y FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional y **cuenta cuando pago yo** (descuenta de la cuenta real). Card en Home si hay balances pendientes.
 13. **Hora editable** en gastos/ingresos (`TimePicker` propio, BottomSheet de 2 columnas 24h) junto al chip de fecha en `AddTransaction`.
 14. **Íconos y colores ampliados:** `ACCOUNT_ICONS` (25) y `CATEGORY_ICONS` (60) en `Icon.tsx`, `PALETTE` (24) en `theme/index.ts` (los 12 originales primero). Selectores en grilla (`flexWrap`). `components/AccountChips.tsx` = selector inline de cuenta para BottomSheets.
-15. **Notificaciones locales y recordatorios:** `SettingsNotificationsScreen` (sección "Ajustes" de "Más") con estado de permisos (amable: explica antes de pedir, y si están denegados muestra botón "Abrir ajustes" → `Linking.openSettings()`), toggle + selector de hora del recordatorio diario ("No olvides registrar tus gastos de hoy", default 8:00 PM vía `TimePicker`), y toggles para alertas de deudas y metas. Preferencias persistidas en AsyncStorage (`useNotificationSettings`). Todo con `scheduleNotificationAsync` (local, sin push ni servidores). **Alertas de deudas:** una 7 días antes del vencimiento y otra el día del vencimiento; se reprograman al crear/editar (`AddDebt`) y al saldar (`DebtDetail` → se cancelan si queda saldada o se elimina). **Alertas de metas:** 7 días antes de la fecha límite; se reprograman al crear/editar/contribuir y se cancelan al completar/eliminar. Centralizado en `src/services/notifications.ts` (ver "Notificaciones locales").
+15. **Importar / Exportar:** `ImportExportScreen` (sección "Ajustes" de "Más"). **Exportar:** filtros de tipo
+    (chips), cuenta (`AccountChips`, "Todas"), rango de fechas (`DateRangePicker`) y categoría (`CategoryPicker`);
+    botones "Exportar CSV"/"Exportar JSON" → descarga con `expo-file-system` (legacy) a `cacheDirectory` y abre el
+    diálogo de compartir con `expo-sharing`. **Importar:** "Seleccionar archivo CSV" (`expo-document-picker`),
+    parseo en el cliente con un parser CSV propio (`utils/csv.ts` → `parseCSV` maneja comillas/comas escapadas y
+    BOM; `csvToImportRows` mapea columnas por nombre de cabecera, tolerante a tildes y orden), vista previa de las
+    primeras 10 filas + total, botón "Importar X transacciones" y resumen final con importadas vs errores (lista de
+    fila + motivo). Refresca los datos con `triggerRefresh()` de Zustand tras importar. CSV round-trippable
+    (mismas columnas que exporta).
+16. **Notificaciones locales y recordatorios:** `SettingsNotificationsScreen` (sección "Ajustes" de "Más") con estado de permisos (amable: explica antes de pedir, y si están denegados muestra botón "Abrir ajustes" → `Linking.openSettings()`), toggle + selector de hora del recordatorio diario ("No olvides registrar tus gastos de hoy", default 8:00 PM vía `TimePicker`), y toggles para alertas de deudas y metas. Preferencias persistidas en AsyncStorage (`useNotificationSettings`). Todo con `scheduleNotificationAsync` (local, sin push ni servidores). **Alertas de deudas:** una 7 días antes del vencimiento y otra el día del vencimiento; se reprograman al crear/editar (`AddDebt`) y al saldar (`DebtDetail` → se cancelan si queda saldada o se elimina). **Alertas de metas:** 7 días antes de la fecha límite; se reprograman al crear/editar/contribuir y se cancelan al completar/eliminar. Centralizado en `src/services/notifications.ts` (ver "Notificaciones locales").
+17. **Insights financieros automáticos:** `GET /api/insights` (agregación SQL determinística, sin IA — ver
+    "Insights" en API REST). `useInsights` + `InsightCard` (ícono por `type`, color por `severity`: positive→income,
+    warning→expense, info→secondary; formatea `value` por tipo: moneda / `%` / días). En `HomeScreen` un **carrusel
+    horizontal** de hasta 3 `InsightCard` entre el `BalanceSummary` y las últimas transacciones (solo si hay
+    insights; enlace "Ver todos"). `InsightsScreen` (acceso desde el botón de la cabecera de Estadísticas y desde
+    "Más") con la lista completa **agrupada por severity** (Atención / Vas bien / Para tener en cuenta) y
+    pull-to-refresh. Pensado para que a futuro un LLM genere el `message`.
 
 ---
 
