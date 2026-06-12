@@ -58,6 +58,8 @@ export interface Transaction {
   toAmount: string | null;
   categoryId: number | null;
   notes: string | null;
+  /** Nombre del archivo de la foto del recibo (imagen local en el dispositivo). */
+  receiptFilename: string | null;
   createdAt: string;
   // Campos enriquecidos por el join del backend
   accountName?: string | null;
@@ -148,6 +150,8 @@ export interface TransactionInput {
   toAmount?: number | null;
   categoryId?: number | null;
   notes?: string | null;
+  /** Nombre del archivo de la foto del recibo (imagen local en el dispositivo). */
+  receiptFilename?: string | null;
   tagIds?: number[];
 }
 

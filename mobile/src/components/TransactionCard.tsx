@@ -57,7 +57,10 @@ export function TransactionCard({ transaction: t, onPress }: Props) {
         <Text style={[styles.amount, { color: amountColor }]} numberOfLines={1}>
           {formatSigned(t.amount, t.type, t.accountCurrency ?? 'COP')}
         </Text>
-        <Text style={styles.time}>{formatTime(t.time)}</Text>
+        <View style={styles.metaRow}>
+          {!!t.receiptFilename && <Icon name="paperclip" size={12} color={theme.colors.textMuted} />}
+          <Text style={styles.time}>{formatTime(t.time)}</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -84,5 +87,6 @@ const createStyles = (theme: Theme) =>
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
   right: { alignItems: 'flex-end' },
   amount: { fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
-  time: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  time: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs },
 });

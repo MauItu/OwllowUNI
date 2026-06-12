@@ -32,7 +32,14 @@
     },
     "plugins": [
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permite elegir una foto de tu galería para adjuntarla como recibo.",
+          "cameraPermission": "Permite tomar una foto del recibo con la cámara."
+        }
+      ]
     ]
   }
 }

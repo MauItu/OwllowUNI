@@ -91,12 +91,13 @@ mobile/
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
     │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker,
-    │                              PinDots, PinKeypad, PinModal, BottomSheet, Icon, common
+    │                              PinDots, PinKeypad, PinModal, ReceiptViewer, BottomSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks
     ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
     ├── theme/ThemeContext.tsx  ← ThemeProvider, useTheme(), useThemedStyles()
     ├── utils/                  ← formatCurrency (Intl + fallback manual), currencies (catálogo curado),
-    │                              formatDate, calculatorEngine, csv (parser propio + csvToImportRows)
+    │                              formatDate, calculatorEngine, csv (parser propio + csvToImportRows),
+    │                              receiptStorage (fotos de recibos locales: comprimir/guardar/borrar/rutas)
     └── types/index.ts          ← tipos compartidos
 ```
 
@@ -123,7 +124,9 @@ mobile/
 · `to_account_id` int FK→accounts (solo transfers) · `to_amount` decimal(15,2) (nullable; monto recibido
   en la cuenta destino cuando la transferencia cruza monedas — si es null se asume = `amount`)
 · `category_id` int FK→categories
-· `notes` text · `created_at` / `updated_at` timestamp def now()
+· `notes` text · `receipt_filename` varchar(255) (nullable; nombre del archivo de la foto del recibo —
+  la imagen vive LOCAL en el dispositivo, NO en la DB; migración `0007_hard_red_shift.sql`)
+· `created_at` / `updated_at` timestamp def now()
 > **Multi-moneda:** cada transacción se guarda SIEMPRE en la moneda de su cuenta. En transferencias entre
 > cuentas de distinta moneda, la cuenta origen se mueve por `amount` (su moneda) y la destino por `to_amount`
 > (su moneda); la conversión es solo para visualización/consolidación.
@@ -233,6 +236,9 @@ mobile/
 - `POST   /api/transactions` — crea y actualiza balance
 - `PUT    /api/transactions/:id` — recalcula balances
 - `DELETE /api/transactions/:id` — recalcula balance
+> POST/PUT aceptan `receiptFilename` y GET (lista + `/:id`) lo devuelven. Es solo el **nombre** del archivo;
+> la imagen del recibo se guarda LOCAL en el dispositivo (ver feature "Recibos"). El backend no recibe ni
+> almacena la imagen. Borrar la transacción NO borra el archivo (eso lo hace el cliente).
 - `GET    /api/transactions/export` — query: `format=csv|json, from, to, accountId?, categoryId?, type?`. Devuelve el archivo con `Content-Disposition: attachment`. **CSV**: UTF-8 con BOM (Excel + tildes), separador coma, filas CRLF, columnas `fecha, hora, tipo, monto, descripción, cuenta, cuenta destino, categoría, subcategoría, etiquetas` (separadas por `;`)`, notas`. `tipo` se exporta en español (Ingreso/Gasto/Transferencia); `categoría/subcategoría` se derivan del `parentId` (si la categoría es hija → categoría=padre, subcategoría=hija). **JSON**: arreglo de filas normalizadas (mismo shape que acepta el import). Ruta registrada **antes** de `/:id`.
 - `POST   /api/transactions/import` — body `{ transactions: NormalizedRow[] }` (o un arreglo directo). Valida cada fila: tipo (acepta español o inglés), monto numérico > 0, fecha `yyyy-MM-dd`, cuenta existente (match por nombre case-insensitive; transfer exige cuenta destino), categoría opcional (match por subcategoría→categoría; si no existe, `null`). Cada importada actualiza `current_balance` como una creación normal (`db.batch`). Respuesta `{ imported: n, errors: [{ row, reason }] }`. **El CSV exportado es round-trippable** (export → import sin errores). Las etiquetas no se importan (solo informativas en el CSV).
 
@@ -342,7 +348,10 @@ expo-file-system ~19.0.23 (escribir/leer archivos de export/import — se usa la
 expo-document-picker ~14.0.8 (seleccionar el CSV a importar),
 expo-secure-store ~15.0.8 (hash del PIN en Keychain/Keystore — **NUNCA** AsyncStorage; añade el config plugin
 `expo-secure-store` a `app.json`), expo-local-authentication ~17.0.8 (biometría) y expo-crypto ~15.0.9
-(SHA-256 + salt aleatorio) — todos para el bloqueo con PIN; vienen en Expo Go SDK 54.
+(SHA-256 + salt aleatorio + `randomUUID` para nombres de recibos) — bloqueo con PIN; vienen en Expo Go SDK 54.
+expo-image-picker ~17.0.11 (cámara + galería para recibos; config plugin `expo-image-picker` en `app.json` con
+mensajes de permiso de cámara/galería) y expo-image-manipulator ~14.0.8 (comprimir/redimensionar — API nueva
+`ImageManipulator.manipulate(uri).resize({width}).renderAsync()` + `.saveAsync({compress,format})`).
 TypeScript ~5.9, @types/react ~19.1.
 
 > **NO usar:** `victory-native` (removido — arrastra `@shopify/react-native-skia`; las gráficas son
@@ -541,6 +550,20 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     sistema cae a PIN sin crashear; si SecureStore falla, las lecturas devuelven "sin bloqueo" (la app no se brickea)
     y las escrituras avisan por toast. Componentes `PinDots`/`PinKeypad`/`PinModal`, servicio `services/security.ts`.
     Ver "Bloqueo con PIN" abajo. ⚠️ La **biometría** solo se prueba de verdad en APK/development build.
+20. **Recibos (foto en transacciones), almacenamiento LOCAL:** se puede adjuntar UNA foto de recibo/factura a
+    cada transacción. **Decisión de almacenamiento (opción A):** la imagen vive en el dispositivo en
+    `documentDirectory/receipts/{uuid}.jpg` y en la DB solo se guarda el **nombre** (`transactions.receipt_filename`).
+    **No** se sube al backend ni se mete base64 en Postgres (pro: simple, sin costos; contra: no sincroniza entre
+    dispositivos — aceptable, app single-device). `utils/receiptStorage.ts` centraliza rutas/guardar/leer/borrar:
+    `processAndSaveReceipt` comprime con **expo-image-manipulator** (resize máx 1280px de ancho solo si excede,
+    JPEG calidad 0.7) y mueve a `receipts/` con nombre `Crypto.randomUUID()`. En `AddTransactionScreen`: chip
+    **"Recibo"** (clip) → `BottomSheet` "Tomar foto"/"Elegir de galería" (**expo-image-picker**, permisos con manejo
+    de denegado sin crashear); con foto, el chip muestra thumbnail y abre `ReceiptViewer` (preview a pantalla
+    completa, fondo negro, cerrar + "Eliminar foto", placeholder "Imagen no disponible" si el archivo falta).
+    **Ciclo de vida del archivo:** se borran huérfanos al reemplazar/quitar (inmediato), al salir sin guardar
+    (cleanup en unmount vía `tempFilesRef`/`savedFileRef`) y al borrar la transacción (incluido swipe-to-delete en
+    `TransactionsScreen` y el trash de la edición); el archivo persistido solo se borra al confirmar el cambio al
+    guardar. `TransactionCard` muestra un ícono `paperclip` si la transacción tiene recibo.
 
 ---
 

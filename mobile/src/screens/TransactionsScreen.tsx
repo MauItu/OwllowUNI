@@ -17,6 +17,7 @@ import { useAppStore } from '../stores/appStore';
 import { transactionsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { groupLabel, formatShortDate } from '../utils/formatDate';
+import { deleteReceipt } from '../utils/receiptStorage';
 import type { TabParamList } from '../navigation/types';
 import type { Transaction, TxType } from '../types';
 
@@ -77,6 +78,8 @@ export function TransactionsScreen() {
   const remove = async (t: Transaction) => {
     try {
       await transactionsApi.remove(t.id);
+      // Borra también la foto del recibo local, si la tenía.
+      if (t.receiptFilename) void deleteReceipt(t.receiptFilename);
       showSuccess('Movimiento eliminado');
       triggerRefresh();
     } catch (err) {

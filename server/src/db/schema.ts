@@ -61,6 +61,9 @@ export const transactions = pgTable('transactions', {
   toAmount: decimal('to_amount', { precision: 15, scale: 2 }),
   categoryId: integer('category_id').references(() => categories.id),
   notes: text('notes'),
+  // Nombre del archivo de la foto del recibo (la imagen vive LOCAL en el
+  // dispositivo: documentDirectory/receipts/<filename>; en DB solo el nombre).
+  receiptFilename: varchar('receipt_filename', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

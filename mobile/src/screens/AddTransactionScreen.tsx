@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, KeyboardAvoidingView, Platform, TextInput, Image, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, PrimaryButton } from '../components/common';
@@ -13,6 +14,7 @@ import { TimePicker } from '../components/TimePicker';
 import { TagPicker } from '../components/TagPicker';
 import { TagChip } from '../components/TagChip';
 import { BottomSheet } from '../components/BottomSheet';
+import { ReceiptViewer } from '../components/ReceiptViewer';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
@@ -20,6 +22,7 @@ import { transactionsApi, ratesApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { todayISO, nowTime, formatShortDate, formatTime, parseISOSafe } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
+import { processAndSaveReceipt, deleteReceipt, receiptUri } from '../utils/receiptStorage';
 import type { RootStackParamList } from '../navigation/types';
 import type { Account, Category, Tag, TxType } from '../types';
 
@@ -66,6 +69,17 @@ export function AddTransactionScreen() {
   // toAmount cargado al editar una transferencia multi-moneda existente
   const [loadedToAmount, setLoadedToAmount] = useState<number | null>(null);
 
+  // Recibo (foto local). `loadedReceipt` = el persistido en DB (no se borra hasta
+  // confirmar el cambio al guardar). `tempFilesRef` rastrea archivos creados en
+  // esta sesión para borrar huérfanos (reemplazo/quitar/salir sin guardar).
+  const [receiptFilename, setReceiptFilename] = useState<string | null>(null);
+  const [loadedReceipt, setLoadedReceipt] = useState<string | null>(null);
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [showReceiptSheet, setShowReceiptSheet] = useState(false);
+  const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+  const tempFilesRef = useRef<Set<string>>(new Set());
+  const savedFileRef = useRef<string | null>(null);
+
   // Transferencia entre monedas distintas: hoja "Monto recibido"
   const [showReceived, setShowReceived] = useState(false);
   const [pendingAmount, setPendingAmount] = useState(0);
@@ -105,6 +119,8 @@ export function AddTransactionScreen() {
         setAccount(acc);
         if (tx.toAccountId) setToAccount(accounts.find((a) => a.id === tx.toAccountId) ?? null);
         if (tx.toAmount != null) setLoadedToAmount(parseFloat(tx.toAmount));
+        setReceiptFilename(tx.receiptFilename ?? null);
+        setLoadedReceipt(tx.receiptFilename ?? null);
         if (tx.tags) setSelectedTags(tx.tags);
       } catch (err) {
         showError(getErrorMessage(err));
@@ -112,6 +128,64 @@ export function AddTransactionScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId, accounts.length]);
+
+  // Borra al instante un archivo huérfano de esta sesión (no el persistido en DB).
+  const dropTempFile = (filename: string | null) => {
+    if (filename && filename !== loadedReceipt && tempFilesRef.current.has(filename)) {
+      tempFilesRef.current.delete(filename);
+      void deleteReceipt(filename);
+    }
+  };
+
+  // Limpieza al desmontar: si no se guardó, borra los archivos creados en sesión.
+  useEffect(() => {
+    return () => {
+      for (const f of tempFilesRef.current) {
+        if (f !== savedFileRef.current) void deleteReceipt(f);
+      }
+    };
+  }, []);
+
+  const pickReceipt = async (source: 'camera' | 'library') => {
+    setShowReceiptSheet(false);
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      if (source === 'camera') {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          showError('Permiso de cámara denegado. Actívalo en los ajustes del sistema.');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          showError('Permiso de galería denegado. Actívalo en los ajustes del sistema.');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+      }
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setReceiptBusy(true);
+      const filename = await processAndSaveReceipt(asset.uri, asset.width);
+      // Reemplazo: borra el huérfano anterior (si lo había) y registra el nuevo.
+      dropTempFile(receiptFilename);
+      tempFilesRef.current.add(filename);
+      setReceiptFilename(filename);
+    } catch {
+      showError('No se pudo procesar la imagen.');
+    } finally {
+      setReceiptBusy(false);
+    }
+  };
+
+  const removeReceipt = () => {
+    setShowReceiptPreview(false);
+    dropTempFile(receiptFilename);
+    setReceiptFilename(null);
+  };
 
   const doSave = async (amount: number, toAmount: number | null) => {
     if (!account) return;
@@ -126,6 +200,7 @@ export function AddTransactionScreen() {
       toAmount: type === 'transfer' ? toAmount : null,
       categoryId: type === 'transfer' ? null : category?.id ?? null,
       notes: null,
+      receiptFilename,
       tagIds: selectedTags.map((t) => t.id),
     };
 
@@ -138,6 +213,11 @@ export function AddTransactionScreen() {
         await transactionsApi.create(payload);
         showSuccess('Transacción guardada');
       }
+      // Guardado OK: el archivo final deja de ser temporal; si el persistido
+      // anterior cambió/se quitó, bórralo del disco.
+      savedFileRef.current = receiptFilename;
+      if (receiptFilename) tempFilesRef.current.delete(receiptFilename);
+      if (loadedReceipt && loadedReceipt !== receiptFilename) void deleteReceipt(loadedReceipt);
       triggerRefresh();
       navigation.goBack();
     } catch (err) {
@@ -207,6 +287,9 @@ export function AddTransactionScreen() {
               onPress={async () => {
                 try {
                   await transactionsApi.remove(editingId);
+                  // Borra el recibo persistido; los temporales los limpia el unmount
+                  // (savedFileRef queda null → se borran todos).
+                  if (loadedReceipt) void deleteReceipt(loadedReceipt);
                   triggerRefresh();
                   showSuccess('Movimiento eliminado');
                   navigation.goBack();
@@ -268,6 +351,26 @@ export function AddTransactionScreen() {
           )}
           <Chip icon="calendar" label={formatShortDate(date)} onPress={() => setShowDate(true)} />
           <Chip icon="clock" label={formatTime(time)} onPress={() => setShowTime(true)} />
+          {/* Recibo: si hay foto muestra thumbnail (toca → preview); si no, abre el selector */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.chip,
+              receiptFilename != null && styles.chipActive,
+              pressed && { opacity: 0.7 },
+            ]}
+            onPress={() => (receiptFilename ? setShowReceiptPreview(true) : setShowReceiptSheet(true))}
+          >
+            {receiptBusy ? (
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            ) : receiptFilename ? (
+              <Image source={{ uri: receiptUri(receiptFilename) }} style={styles.receiptThumb} />
+            ) : (
+              <Icon name="paperclip" size={16} color={theme.colors.textSecondary} />
+            )}
+            <Text style={[styles.chipText, receiptFilename != null && { color: theme.colors.primaryLight }]} numberOfLines={1}>
+              Recibo
+            </Text>
+          </Pressable>
         </ScrollView>
 
         {/* Descripción opcional */}
@@ -415,6 +518,43 @@ export function AddTransactionScreen() {
           </View>
         )}
       </BottomSheet>
+
+      {/* Selector de origen del recibo */}
+      <BottomSheet
+        visible={showReceiptSheet}
+        title="Adjuntar recibo"
+        onClose={() => setShowReceiptSheet(false)}
+        maxHeight="40%"
+      >
+        <View style={{ gap: theme.spacing.sm }}>
+          <Pressable
+            style={({ pressed }) => [styles.sourceRow, pressed && { opacity: 0.7 }]}
+            onPress={() => pickReceipt('camera')}
+          >
+            <View style={[styles.sourceIcon, { backgroundColor: `${theme.colors.primary}22` }]}>
+              <Icon name="camera" size={22} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.sourceText}>Tomar foto</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.sourceRow, pressed && { opacity: 0.7 }]}
+            onPress={() => pickReceipt('library')}
+          >
+            <View style={[styles.sourceIcon, { backgroundColor: `${theme.colors.secondary}22` }]}>
+              <Icon name="image" size={22} color={theme.colors.secondary} />
+            </View>
+            <Text style={styles.sourceText}>Elegir de galería</Text>
+          </Pressable>
+        </View>
+      </BottomSheet>
+
+      {/* Preview a pantalla completa del recibo */}
+      <ReceiptViewer
+        visible={showReceiptPreview}
+        filename={receiptFilename}
+        onClose={() => setShowReceiptPreview(false)}
+        onDelete={removeReceipt}
+      />
     </Screen>
   );
 }
@@ -444,6 +584,18 @@ const createStyles = (theme: Theme) =>
     borderColor: theme.colors.border,
   },
   chipText: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium, maxWidth: 140 },
+  chipActive: { borderColor: theme.colors.primary, backgroundColor: `${theme.colors.primary}14` },
+  receiptThumb: { width: 22, height: 22, borderRadius: theme.borderRadius.sm },
+  sourceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+  },
+  sourceIcon: { width: 44, height: 44, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  sourceText: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.medium },
   descWrap: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -71,6 +71,8 @@ const txSchema = z.object({
   toAmount: z.coerce.number().positive().optional().nullable(),
   categoryId: z.number().int().optional().nullable(),
   notes: z.string().optional().nullable(),
+  // Nombre del archivo de la foto del recibo (imagen local en el dispositivo).
+  receiptFilename: z.string().max(255).optional().nullable(),
   tagIds: z.array(z.number().int()).optional(),
 });
 
@@ -191,6 +193,7 @@ transactionsRouter.get(
         toAmount: transactions.toAmount,
         categoryId: transactions.categoryId,
         notes: transactions.notes,
+        receiptFilename: transactions.receiptFilename,
         createdAt: transactions.createdAt,
         accountName: accounts.name,
         accountColor: accounts.color,
@@ -462,6 +465,7 @@ transactionsRouter.post(
         toAmount: toAmount != null ? toAmount.toFixed(2) : null,
         categoryId: data.categoryId ?? null,
         notes: data.notes ?? null,
+        receiptFilename: data.receiptFilename ?? null,
       })
       .returning();
 
@@ -525,6 +529,7 @@ transactionsRouter.put(
         toAmount: newToAmount != null ? newToAmount.toFixed(2) : null,
         categoryId: data.categoryId ?? null,
         notes: data.notes ?? null,
+        receiptFilename: data.receiptFilename ?? null,
         updatedAt: new Date(),
       })
       .where(eq(transactions.id, id))
