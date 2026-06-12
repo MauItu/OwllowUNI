@@ -1,16 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, Switch } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, SectionTitle } from '../components/common';
 import { Icon } from '../components/Icon';
+import { CurrencyPicker } from '../components/CurrencyPicker';
+import { useSettingsStore } from '../stores/settingsStore';
+import { currencyInfo } from '../utils/currencies';
 import { API_BASE_URL } from '../api/client';
 
 export function MoreScreen() {
   const navigation = useNavigation<any>();
   const { theme, isDark, toggleTheme } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const mainCurrency = useSettingsStore((s) => s.mainCurrency);
+  const setMainCurrency = useSettingsStore((s) => s.setMainCurrency);
+  const [showCurrency, setShowCurrency] = useState(false);
 
   const items: { label: string; description: string; icon: string; route: string; color: string }[] = [
     { label: 'Insights', description: 'Análisis automático de tus gastos', icon: 'lightbulb', route: 'Insights', color: theme.colors.accentLight },
@@ -47,6 +53,24 @@ export function MoreScreen() {
         <View style={styles.sectionGap}>
           <SectionTitle title="Ajustes" />
         </View>
+        <Pressable
+          style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}
+          onPress={() => setShowCurrency(true)}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.income}22` }]}>
+            <Icon name="circle-dollar-sign" size={22} color={theme.colors.income} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Moneda principal</Text>
+            <Text style={styles.description}>
+              {currencyInfo(mainCurrency)
+                ? `${mainCurrency} · ${currencyInfo(mainCurrency)!.name}`
+                : mainCurrency}{' '}
+              · para el balance consolidado
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
+        </Pressable>
         <Pressable
           style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}
           onPress={() => navigation.navigate('ImportExport')}
@@ -104,6 +128,14 @@ export function MoreScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      <CurrencyPicker
+        visible={showCurrency}
+        title="Moneda principal"
+        selected={mainCurrency}
+        onSelect={setMainCurrency}
+        onClose={() => setShowCurrency(false)}
+      />
     </Screen>
   );
 }

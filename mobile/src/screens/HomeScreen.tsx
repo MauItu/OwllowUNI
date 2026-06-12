@@ -14,6 +14,8 @@ import { TransactionCard } from '../components/TransactionCard';
 import { BottomSheet } from '../components/BottomSheet';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
+import { useAccountsSummary } from '../hooks/useAccountsSummary';
+import { useSettingsStore } from '../stores/settingsStore';
 import { useStats } from '../hooks/useStats';
 import { useInsights } from '../hooks/useInsights';
 import { useTransactions } from '../hooks/useTransactions';
@@ -44,8 +46,10 @@ export function HomeScreen() {
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<any>();
   const { totalBalance, loading: loadingAccounts, refetch: refetchAccounts } = useAccounts();
+  const mainCurrency = useSettingsStore((s) => s.mainCurrency);
+  const { summary: acctSummary, refetch: refetchAcctSummary } = useAccountsSummary(mainCurrency);
   const { from, to } = currentMonthRange();
-  const { summary, refetch: refetchStats } = useStats(from, to);
+  const { summary, refetch: refetchStats } = useStats(from, to, 'day', mainCurrency);
   const { insights, refetch: refetchInsights } = useInsights();
   const { transactions, refresh: refreshTx } = useTransactions({}, 5);
   const { templates, refetch: refetchTemplates } = useTemplates();
@@ -60,9 +64,9 @@ export function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchAccounts(true), refetchStats(true), refetchInsights(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true), refetchSplits(true)]);
+    await Promise.all([refetchAccounts(true), refetchAcctSummary(), refetchStats(true), refetchInsights(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true), refetchSplits(true)]);
     setRefreshing(false);
-  }, [refetchAccounts, refetchStats, refetchInsights, refreshTx, refetchTemplates, refetchSavings, refetchDebts, refetchSplits]);
+  }, [refetchAccounts, refetchAcctSummary, refetchStats, refetchInsights, refreshTx, refetchTemplates, refetchSavings, refetchDebts, refetchSplits]);
 
   const useTemplate = async (template: Template) => {
     setSheetOpen(false);
@@ -103,7 +107,12 @@ export function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
-        <BalanceSummary totalBalance={totalBalance} income={summary.income} expense={summary.expense} />
+        <BalanceSummary
+          totalBalance={acctSummary?.total ?? totalBalance}
+          income={summary.income}
+          expense={summary.expense}
+          currency={mainCurrency}
+        />
 
         {homeInsights.length > 0 && (
           <View style={styles.insightsSection}>

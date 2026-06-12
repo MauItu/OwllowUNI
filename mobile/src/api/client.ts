@@ -39,6 +39,9 @@ import type {
   ImportTransactionRow,
   ImportResult,
   Insight,
+  RatesResponse,
+  RateResult,
+  AccountsSummary,
 } from '../types';
 
 /**
@@ -73,6 +76,24 @@ export const accountsApi = {
   update: (id: number, data: Partial<AccountInput>) =>
     api.put<Account>(`/accounts/${id}`, data).then((r) => r.data),
   remove: (id: number) => api.delete(`/accounts/${id}`).then((r) => r.data),
+  summary: (displayCurrency: string, refresh = false) =>
+    api
+      .get<AccountsSummary>('/accounts/summary', { params: { displayCurrency, refresh: refresh || undefined } })
+      .then((r) => r.data),
+};
+
+// ──────────────────────── Multi-moneda (tasas) ──────────────────────
+export const ratesApi = {
+  list: (base: string, targets: string[], refresh = false) =>
+    api
+      .get<RatesResponse>('/rates', {
+        params: { base, targets: targets.join(','), refresh: refresh || undefined },
+      })
+      .then((r) => r.data),
+  setManual: (data: { base: string; target: string; rate: number }) =>
+    api.put<RateResult>('/rates/manual', data).then((r) => r.data),
+  removeManual: (base: string, target: string) =>
+    api.delete('/rates/manual', { params: { base, target } }).then((r) => r.data),
 };
 
 // ──────────────────────── Categories ────────────────────────
@@ -193,18 +214,18 @@ export const insightsApi = {
 
 // ─────────────────────────── Stats ──────────────────────────
 export const statsApi = {
-  summary: (from: string, to: string) =>
-    api.get<StatsSummary>('/stats/summary', { params: { from, to } }).then((r) => r.data),
-  byCategory: (from: string, to: string, type: 'income' | 'expense' = 'expense') =>
+  summary: (from: string, to: string, displayCurrency = 'COP') =>
+    api.get<StatsSummary>('/stats/summary', { params: { from, to, displayCurrency } }).then((r) => r.data),
+  byCategory: (from: string, to: string, type: 'income' | 'expense' = 'expense', displayCurrency = 'COP') =>
     api
-      .get<CategoryStat[]>('/stats/by-category', { params: { from, to, type } })
+      .get<CategoryStat[]>('/stats/by-category', { params: { from, to, type, displayCurrency } })
       .then((r) => r.data),
-  timeline: (from: string, to: string, group: 'day' | 'week' | 'month' = 'day') =>
+  timeline: (from: string, to: string, group: 'day' | 'week' | 'month' = 'day', displayCurrency = 'COP') =>
     api
-      .get<TimelinePoint[]>('/stats/timeline', { params: { from, to, group } })
+      .get<TimelinePoint[]>('/stats/timeline', { params: { from, to, group, displayCurrency } })
       .then((r) => r.data),
-  balanceEvolution: (from: string, to: string) =>
+  balanceEvolution: (from: string, to: string, displayCurrency = 'COP') =>
     api
-      .get<BalancePoint[]>('/stats/balance-evolution', { params: { from, to } })
+      .get<BalancePoint[]>('/stats/balance-evolution', { params: { from, to, displayCurrency } })
       .then((r) => r.data),
 };

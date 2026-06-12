@@ -56,11 +56,32 @@ export const transactions = pgTable('transactions', {
     .references(() => accounts.id)
     .notNull(),
   toAccountId: integer('to_account_id').references(() => accounts.id),
+  // Monto recibido en la cuenta destino cuando la transferencia cruza monedas
+  // (nullable; si es null se asume igual a `amount`, misma moneda).
+  toAmount: decimal('to_amount', { precision: 15, scale: 2 }),
   categoryId: integer('category_id').references(() => categories.id),
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+// ──────────────────────────── exchange_rates ────────────────────────
+// Tasas de cambio cacheadas. Las `is_manual` las fija el usuario y NUNCA se
+// sobreescriben con el refresco automático (API gratuita).
+export const exchangeRates = pgTable(
+  'exchange_rates',
+  {
+    id: serial('id').primaryKey(),
+    baseCurrency: varchar('base_currency', { length: 3 }).notNull(),
+    targetCurrency: varchar('target_currency', { length: 3 }).notNull(),
+    rate: decimal('rate', { precision: 18, scale: 8 }).notNull(),
+    isManual: boolean('is_manual').default(false).notNull(),
+    fetchedAt: timestamp('fetched_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    uniquePair: unique().on(t.baseCurrency, t.targetCurrency),
+  }),
+);
 
 // ───────────────────────────── templates ────────────────────────────
 export const templates = pgTable('templates', {
@@ -449,3 +470,5 @@ export type SplitShare = typeof splitShares.$inferSelect;
 export type NewSplitShare = typeof splitShares.$inferInsert;
 export type SplitSettlement = typeof splitSettlements.$inferSelect;
 export type NewSplitSettlement = typeof splitSettlements.$inferInsert;
+export type ExchangeRate = typeof exchangeRates.$inferSelect;
+export type NewExchangeRate = typeof exchangeRates.$inferInsert;

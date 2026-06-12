@@ -11,6 +11,7 @@ import { DonutChart, BarChart, LineChart } from '../components/StatChart';
 import { DateRangePicker } from '../components/DateRangePicker';
 import { Icon } from '../components/Icon';
 import { useStats } from '../hooks/useStats';
+import { useSettingsStore } from '../stores/settingsStore';
 import { periodRange, formatShortDate } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
 import type { StatsPeriod } from '../types';
@@ -41,7 +42,13 @@ export function StatsScreen() {
     return periodRange(period);
   }, [period, custom]);
 
-  const { summary, byCategory, timeline, balanceEvolution, refreshing, refetch } = useStats(from, to, groupFor(period));
+  const mainCurrency = useSettingsStore((s) => s.mainCurrency);
+  const { summary, byCategory, timeline, balanceEvolution, refreshing, refetch } = useStats(
+    from,
+    to,
+    groupFor(period),
+    mainCurrency,
+  );
 
   // Donut: top 5 + Otros. Colores de la paleta del tema (rosa/azul/morado primero).
   const donutData = useMemo(() => {
@@ -119,8 +126,8 @@ export function StatsScreen() {
 
         {/* Resumen: Ingresos / Gastos / Balance */}
         <View style={styles.summaryRow}>
-          <SummaryCard label="Ingresos" value={summary.income} color={theme.colors.income} icon="arrow-down-left" />
-          <SummaryCard label="Gastos" value={summary.expense} color={theme.colors.expense} icon="arrow-up-right" />
+          <SummaryCard label="Ingresos" value={summary.income} currency={mainCurrency} color={theme.colors.income} icon="arrow-down-left" />
+          <SummaryCard label="Gastos" value={summary.expense} currency={mainCurrency} color={theme.colors.expense} icon="arrow-up-right" />
         </View>
         <View style={[styles.netCard, { borderLeftColor: summary.balance >= 0 ? theme.colors.income : theme.colors.expense }]}>
           <View style={[styles.netIcon, { backgroundColor: `${summary.balance >= 0 ? theme.colors.income : theme.colors.expense}26` }]}>
@@ -128,7 +135,7 @@ export function StatsScreen() {
           </View>
           <Text style={styles.netLabel}>Balance neto</Text>
           <Text style={[styles.netValue, { color: summary.balance >= 0 ? theme.colors.income : theme.colors.expense }]} numberOfLines={1} adjustsFontSizeToFit>
-            {formatCurrency(summary.balance)}
+            {formatCurrency(summary.balance, mainCurrency)}
           </Text>
         </View>
 
@@ -136,7 +143,7 @@ export function StatsScreen() {
         <View style={styles.card}>
           <SectionTitle title="Gastos por categoría" />
           <View style={styles.donutWrap}>
-            <DonutChart data={donutData} centerLabel={formatCurrency(summary.expense)} />
+            <DonutChart data={donutData} centerLabel={formatCurrency(summary.expense, mainCurrency)} />
             <View style={styles.legendList}>
               {donutData.map((d, i) => {
                 const pct = donutTotal > 0 ? Math.round((d.value / donutTotal) * 100) : 0;
@@ -178,7 +185,7 @@ export function StatsScreen() {
                 <View style={{ flex: 1 }}>
                   <View style={styles.rankTop}>
                     <Text style={styles.rankName} numberOfLines={1}>{c.name}</Text>
-                    <Text style={styles.rankValue}>{formatCurrency(c.total)}</Text>
+                    <Text style={styles.rankValue}>{formatCurrency(c.total, mainCurrency)}</Text>
                   </View>
                   <View style={styles.progressTrack}>
                     <LinearGradient
@@ -209,7 +216,7 @@ export function StatsScreen() {
   );
 }
 
-function SummaryCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
+function SummaryCard({ label, value, currency, color, icon }: { label: string; value: number; currency: string; color: string; icon: string }) {
   const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.summaryCard}>
@@ -218,7 +225,7 @@ function SummaryCard({ label, value, color, icon }: { label: string; value: numb
       </View>
       <Text style={styles.summaryLabel}>{label}</Text>
       <Text style={[styles.summaryValue, { color }]} numberOfLines={1} adjustsFontSizeToFit>
-        {formatCurrency(value)}
+        {formatCurrency(value, currency)}
       </Text>
     </View>
   );

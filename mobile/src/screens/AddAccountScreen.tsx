@@ -3,8 +3,10 @@ import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { PALETTE, type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader, TextField, PrimaryButton } from '../components/common';
+import { Screen, ScreenHeader, TextField, PrimaryButton, SelectRow } from '../components/common';
 import { Icon, ACCOUNT_ICONS } from '../components/Icon';
+import { CurrencyPicker } from '../components/CurrencyPicker';
+import { currencyInfo } from '../utils/currencies';
 import { accountsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { useAppStore } from '../stores/appStore';
@@ -32,6 +34,7 @@ export function AddAccountScreen() {
   const [currency, setCurrency] = useState('COP');
   const [color, setColor] = useState(PALETTE[0]);
   const [icon, setIcon] = useState('wallet');
+  const [showCurrency, setShowCurrency] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -136,14 +139,18 @@ export function AddAccountScreen() {
           ))}
         </View>
 
-        <View style={styles.row}>
-          <View style={{ flex: 2 }}>
-            <TextField label="Saldo inicial" value={balance} onChangeText={setBalance} keyboardType="numeric" placeholder="0" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <TextField label="Moneda" value={currency} onChangeText={setCurrency} autoCapitalize="characters" maxLength={3} />
-          </View>
-        </View>
+        <TextField label="Saldo inicial" value={balance} onChangeText={setBalance} keyboardType="numeric" placeholder="0" />
+
+        <SelectRow
+          label="Moneda"
+          icon="circle-dollar-sign"
+          value={
+            currencyInfo(currency)
+              ? `${currencyInfo(currency)!.symbol}  ${currency} · ${currencyInfo(currency)!.name}`
+              : currency
+          }
+          onPress={() => setShowCurrency(true)}
+        />
 
         <Text style={styles.label}>Color</Text>
         <View style={styles.palette}>
@@ -167,6 +174,13 @@ export function AddAccountScreen() {
           <PrimaryButton label={editingId ? 'Guardar cambios' : 'Crear cuenta'} onPress={save} loading={saving} icon="check" />
         </View>
       </ScrollView>
+
+      <CurrencyPicker
+        visible={showCurrency}
+        selected={currency}
+        onSelect={setCurrency}
+        onClose={() => setShowCurrency(false)}
+      />
     </Screen>
   );
 }

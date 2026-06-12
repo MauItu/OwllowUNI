@@ -54,6 +54,8 @@ export interface Transaction {
   time: string;
   accountId: number;
   toAccountId: number | null;
+  /** Monto recibido en la cuenta destino (transferencias entre monedas). */
+  toAmount: string | null;
   categoryId: number | null;
   notes: string | null;
   createdAt: string;
@@ -61,6 +63,7 @@ export interface Transaction {
   accountName?: string | null;
   accountColor?: string | null;
   accountIcon?: string | null;
+  accountCurrency?: string | null;
   toAccountName?: string | null;
   categoryName?: string | null;
   categoryColor?: string | null;
@@ -141,6 +144,8 @@ export interface TransactionInput {
   time: string;
   accountId: number;
   toAccountId?: number | null;
+  /** Monto recibido en la cuenta destino (transferencias entre monedas distintas). */
+  toAmount?: number | null;
   categoryId?: number | null;
   notes?: string | null;
   tagIds?: number[];
@@ -432,6 +437,30 @@ export interface Insight {
   /** Número crudo; el cliente lo formatea según `type` (moneda / % / días). */
   value?: number;
   categoryId?: number;
+}
+
+// ──────────────────────────── Multi-moneda ─────────────────────────
+export interface RateResult {
+  base: string;
+  target: string;
+  rate: number | null;
+  stale: boolean;
+  isManual: boolean;
+  fetchedAt: string | null;
+}
+
+export interface RatesResponse {
+  base: string;
+  rates: RateResult[];
+  stale: boolean;
+}
+
+export interface AccountsSummary {
+  displayCurrency: string;
+  total: number;
+  byCurrency: { currency: string; total: number; converted: number }[];
+  stale: boolean;
+  ratesUpdatedAt: string | null;
 }
 
 // ──────────────────────── Importar / Exportar ──────────────────────

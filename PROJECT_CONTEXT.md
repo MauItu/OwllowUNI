@@ -39,20 +39,24 @@ server/
 │   │   ├── connection.ts       ← Neon + drizzle-orm (carga ../.env)
 │   │   ├── schema.ts           ← Tablas: accounts, categories, transactions, templates,
 │   │   │                          tags, transaction_tags, savings_goals, savings_contributions,
-│   │   │                          debts, debt_payments, split_groups/members/expenses/shares/settlements
+│   │   │                          debts, debt_payments, split_groups/members/expenses/shares/settlements,
+│   │   │                          exchange_rates
 │   │   ├── migrate.ts          ← Aplica migraciones de ./drizzle
 │   │   └── seed.ts             ← Inserta categorías default + cuenta "Efectivo"
 │   ├── routes/
-│   │   ├── accounts.ts
+│   │   ├── accounts.ts          ← incluye GET /summary (balance consolidado convertido)
 │   │   ├── categories.ts
 │   │   ├── transactions.ts
 │   │   ├── templates.ts
-│   │   ├── stats.ts
+│   │   ├── stats.ts            ← acepta displayCurrency (convierte por moneda de cuenta)
 │   │   ├── tags.ts
 │   │   ├── savings.ts
 │   │   ├── debts.ts
 │   │   ├── splits.ts
-│   │   └── insights.ts        ← insights financieros (agregación SQL determinística)
+│   │   ├── insights.ts        ← insights financieros (agregación SQL determinística)
+│   │   └── rates.ts           ← tasas de cambio (GET /, PUT/DELETE /manual)
+│   ├── services/
+│   │   └── exchangeRates.ts    ← Frankfurter + open.er-api.com, cache 24h, stale, manuales
 │   └── middleware/
 │       └── errorHandler.ts
 └── drizzle/                    ← migraciones generadas por drizzle-kit
@@ -73,21 +77,23 @@ mobile/
     │                              reprogramar por entidad con identifiers determinísticos, sync global)
     ├── hooks/                  ← useAccounts, useTransactions, useCategories, useTemplates,
     │                              useStats, useTags, useSavings, useDebts, useSplits,
-    │                              useNotificationSettings, useInsights
+    │                              useNotificationSettings, useInsights, useAccountsSummary
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
+    ├── stores/settingsStore.ts ← Zustand + persist/AsyncStorage (mainCurrency)
     ├── screens/                ← Home, Transactions, AddTransaction, Accounts, AddAccount,
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense, More,
-    │                              SettingsNotifications, ImportExport, Insights
+    │                              SettingsNotifications, ImportExport, Insights, Rates
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
-    │                              DebtCard, HomeSummaryCard, InsightCard, BottomSheet, Icon, common
+    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, BottomSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks
     ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
     ├── theme/ThemeContext.tsx  ← ThemeProvider, useTheme(), useThemedStyles()
-    ├── utils/                  ← formatCurrency, formatDate, calculatorEngine, csv (parser propio + csvToImportRows)
+    ├── utils/                  ← formatCurrency (Intl + fallback manual), currencies (catálogo curado),
+    │                              formatDate, calculatorEngine, csv (parser propio + csvToImportRows)
     └── types/index.ts          ← tipos compartidos
 ```
 
@@ -111,8 +117,13 @@ mobile/
 `id` serial PK · `type` varchar(10) NN (`income|expense|transfer`) · `amount` decimal(15,2) NN
 · `description` varchar(255) · `date` date NN · `time` time NN (editable desde `AddTransaction` con `TimePicker`)
 · `account_id` int FK→accounts NN
-· `to_account_id` int FK→accounts (solo transfers) · `category_id` int FK→categories
+· `to_account_id` int FK→accounts (solo transfers) · `to_amount` decimal(15,2) (nullable; monto recibido
+  en la cuenta destino cuando la transferencia cruza monedas — si es null se asume = `amount`)
+· `category_id` int FK→categories
 · `notes` text · `created_at` / `updated_at` timestamp def now()
+> **Multi-moneda:** cada transacción se guarda SIEMPRE en la moneda de su cuenta. En transferencias entre
+> cuentas de distinta moneda, la cuenta origen se mueve por `amount` (su moneda) y la destino por `to_amount`
+> (su moneda); la conversión es solo para visualización/consolidación.
 
 ### templates
 `id` serial PK · `name` varchar(100) NN · `type` varchar(10) NN (`income|expense`)
@@ -179,6 +190,13 @@ mobile/
 > Cada liquidación (`/settle`) persiste aquí. Si involucra al miembro `is_me` y trae `account_id`, genera una
 > transacción `income` (me pagan) / `expense` (yo pago) en esa cuenta y enlaza `transaction_id`.
 
+### exchange_rates
+`id` serial PK · `base_currency` varchar(3) NN · `target_currency` varchar(3) NN
+· `rate` decimal(18,8) NN (1 base = `rate` target) · `is_manual` bool def false · `fetched_at` timestamp def now()
+· UNIQUE(base_currency, target_currency)
+> Cache de tasas. Las `is_manual` las fija el usuario y **nunca** se sobreescriben con el refresco automático.
+> Las automáticas se refrescan si tienen ≥24h. Migración `0006_unknown_exodus.sql` (aditiva: tabla nueva + `transactions.to_amount`).
+
 ### Reglas de balance (atómicas, dentro de una misma transacción SQL)
 - `income`  → `account.current_balance += amount`
 - `expense` → `account.current_balance -= amount`
@@ -191,6 +209,9 @@ mobile/
 
 ### Accounts
 - `GET    /api/accounts` — cuentas activas
+- `GET    /api/accounts/summary?displayCurrency=COP[&refresh=true]` — balance consolidado convertido a
+  `displayCurrency`: `{ displayCurrency, total, byCurrency[{currency,total,converted}], stale, ratesUpdatedAt }`
+  (registrada antes de `/:id`)
 - `GET    /api/accounts/:id`
 - `POST   /api/accounts`
 - `PUT    /api/accounts/:id`
@@ -220,10 +241,21 @@ mobile/
 - `DELETE /api/templates/:id`
 
 ### Stats
-- `GET /api/stats/summary?from=&to=` — `{ income, expense, balance }`
-- `GET /api/stats/by-category?from=&to=` — gastos por categoría
-- `GET /api/stats/timeline?from=&to=&group=day|week|month`
-- `GET /api/stats/balance-evolution?from=&to=`
+> Todos aceptan `displayCurrency` (default COP): agrupan por moneda de la cuenta y convierten a la moneda de
+> visualización con las tasas. Con una sola moneda el resultado es idéntico al anterior (tasa 1).
+- `GET /api/stats/summary?from=&to=&displayCurrency=` — `{ income, expense, balance, displayCurrency }`
+- `GET /api/stats/by-category?from=&to=&displayCurrency=` — gastos por categoría
+- `GET /api/stats/timeline?from=&to=&group=day|week|month&displayCurrency=`
+- `GET /api/stats/balance-evolution?from=&to=&displayCurrency=`
+
+### Rates (tasas de cambio, multi-moneda)
+- `GET    /api/rates?base=COP&targets=USD,EUR,VES[&refresh=true]` — `{ base, rates:[{base,target,rate,stale,isManual,fetchedAt}], stale }`.
+  Sin `targets` devuelve lo cacheado para esa base. `refresh=true` ignora el TTL de 24h.
+- `PUT    /api/rates/manual` — `{ base, target, rate }`: fija una tasa manual (no se sobreescribe automáticamente).
+- `DELETE /api/rates/manual?base=&target=` — quita la tasa manual (vuelve a refrescarse de la API).
+> **Fuentes (gratis, sin key):** Frankfurter (BCE; NO cubre COP ni VES) → fallback **open.er-api.com** (cubre COP
+> y, en la práctica, VES). Cache 24h en `exchange_rates`; si la API cae se devuelve la última tasa con `stale:true`.
+> ⚠️ **VES:** puede no estar en las APIs gratuitas; si falta, la tasa queda `null` y se fija a mano con `PUT /manual`.
 
 ### Tags
 - `GET    /api/tags` — con `transactionCount`
@@ -286,6 +318,9 @@ mobile/
 
 **Backend:** express ^4.21, @neondatabase/serverless ^0.10, drizzle-orm ^0.36, drizzle-zod ^0.5,
 zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1 · dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6.
+> **Multi-moneda no añade dependencias:** las tasas se consultan con el `fetch` nativo de Node 22 (Frankfurter /
+> open.er-api.com). En mobile la persistencia de la moneda principal usa el middleware `persist` de Zustand sobre
+> `@react-native-async-storage/async-storage` (ya instalado); no se agregó ningún paquete.
 
 **Mobile (Expo SDK 54 — compatible con Expo Go SDK 54 de Play Store):**
 expo ~54.0.0, react 19.1.0, react-native 0.81.5, @react-navigation/* ^7,
@@ -476,6 +511,18 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     insights; enlace "Ver todos"). `InsightsScreen` (acceso desde el botón de la cabecera de Estadísticas y desde
     "Más") con la lista completa **agrupada por severity** (Atención / Vas bien / Para tener en cuenta) y
     pull-to-refresh. Pensado para que a futuro un LLM genere el `message`.
+18. **Multi-moneda real:** cada cuenta tiene su moneda (catálogo curado: COP, USD, EUR, VES, MXN, ARS, PEN, CLP,
+    BRL en `utils/currencies.ts`); `CurrencyPicker` (BottomSheet con búsqueda, código+símbolo+nombre) en `AddAccount`.
+    Las transacciones se guardan en la moneda de su cuenta; `TransactionCard`/`AccountCard` muestran cada monto en su
+    moneda. **Moneda principal** (setting en "Más", persistida en AsyncStorage vía `settingsStore`) define la
+    `displayCurrency` del **balance consolidado** del Home (`BalanceSummary`), `AccountsScreen` (card total con nota
+    "Tasas actualizadas hace X" tocable para refrescar) y `Stats` (todos los montos convertidos). `formatCurrency`
+    formatea con símbolo y separadores (Intl si está, fallback manual es-CO). **Tasas:** `useAccountsSummary` +
+    `ratesApi`; `RatesScreen` (desde la card de Cuentas) lista las tasas vs la moneda principal y permite fijar tasas
+    **manuales** (no se sobreescriben) o volver a automáticas. **Transferencias entre monedas distintas:** en
+    `AddTransaction` (transfer), al confirmar se abre una hoja "Monto recibido" precargada con la conversión por la
+    tasa actual pero **editable** (la tasa real del usuario manda); se guarda `to_amount` y cada cuenta se mueve en su
+    propia moneda. ⚠️ VES puede no estar en las APIs gratuitas → se fija a mano.
 
 ---
 

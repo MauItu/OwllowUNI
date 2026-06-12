@@ -67,6 +67,8 @@ const txSchema = z.object({
   time: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   accountId: z.number().int(),
   toAccountId: z.number().int().optional().nullable(),
+  // Monto recibido en la cuenta destino (transferencias entre monedas distintas).
+  toAmount: z.coerce.number().positive().optional().nullable(),
   categoryId: z.number().int().optional().nullable(),
   notes: z.string().optional().nullable(),
   tagIds: z.array(z.number().int()).optional(),
@@ -104,6 +106,7 @@ function balanceStatements(
   accountId: number,
   toAccountId: number | null | undefined,
   sign: 1 | -1,
+  toAmount?: number | null,
 ) {
   const stmts = [];
   // Efecto sobre la cuenta origen
@@ -123,9 +126,10 @@ function balanceStatements(
       .where(eq(accounts.id, accountId)),
   );
 
-  // Cuenta destino (solo transferencias)
+  // Cuenta destino (solo transferencias). Se mueve en SU propia moneda: usa
+  // `toAmount` cuando la transferencia cruza monedas (si no, el mismo `amount`).
   if (type === 'transfer' && toAccountId) {
-    const toDelta = amount * sign;
+    const toDelta = (toAmount != null ? toAmount : amount) * sign;
     stmts.push(
       db
         .update(accounts)
@@ -184,12 +188,14 @@ transactionsRouter.get(
         time: transactions.time,
         accountId: transactions.accountId,
         toAccountId: transactions.toAccountId,
+        toAmount: transactions.toAmount,
         categoryId: transactions.categoryId,
         notes: transactions.notes,
         createdAt: transactions.createdAt,
         accountName: accounts.name,
         accountColor: accounts.color,
         accountIcon: accounts.icon,
+        accountCurrency: accounts.currency,
         toAccountName: toAccounts.name,
         categoryName: categories.name,
         categoryColor: categories.color,
@@ -442,6 +448,7 @@ transactionsRouter.post(
       throw new ApiError(400, 'Una transferencia requiere cuenta destino (toAccountId)');
     }
 
+    const toAmount = data.type === 'transfer' ? data.toAmount ?? null : null;
     const insertStmt = db
       .insert(transactions)
       .values({
@@ -452,12 +459,13 @@ transactionsRouter.post(
         time: data.time,
         accountId: data.accountId,
         toAccountId: data.type === 'transfer' ? data.toAccountId ?? null : null,
+        toAmount: toAmount != null ? toAmount.toFixed(2) : null,
         categoryId: data.categoryId ?? null,
         notes: data.notes ?? null,
       })
       .returning();
 
-    const balance = balanceStatements(data.type, data.amount, data.accountId, data.toAccountId, 1);
+    const balance = balanceStatements(data.type, data.amount, data.accountId, data.toAccountId, 1, toAmount);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const results = await db.batch([insertStmt, ...balance] as any);
@@ -492,8 +500,17 @@ transactionsRouter.put(
       old.accountId,
       old.toAccountId,
       -1,
+      old.toAmount != null ? Number(old.toAmount) : null,
     );
-    const apply = balanceStatements(data.type, data.amount, data.accountId, data.toAccountId, 1);
+    const newToAmount = data.type === 'transfer' ? data.toAmount ?? null : null;
+    const apply = balanceStatements(
+      data.type,
+      data.amount,
+      data.accountId,
+      data.toAccountId,
+      1,
+      newToAmount,
+    );
 
     const updateStmt = db
       .update(transactions)
@@ -505,6 +522,7 @@ transactionsRouter.put(
         time: data.time,
         accountId: data.accountId,
         toAccountId: data.type === 'transfer' ? data.toAccountId ?? null : null,
+        toAmount: newToAmount != null ? newToAmount.toFixed(2) : null,
         categoryId: data.categoryId ?? null,
         notes: data.notes ?? null,
         updatedAt: new Date(),
@@ -542,6 +560,7 @@ transactionsRouter.delete(
       old.accountId,
       old.toAccountId,
       -1,
+      old.toAmount != null ? Number(old.toAmount) : null,
     );
     const deleteStmt = db.delete(transactions).where(eq(transactions.id, id));
 

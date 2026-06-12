@@ -32,6 +32,7 @@ import { AddSplitExpenseScreen } from '../screens/AddSplitExpenseScreen';
 import { SettingsNotificationsScreen } from '../screens/SettingsNotificationsScreen';
 import { ImportExportScreen } from '../screens/ImportExportScreen';
 import { InsightsScreen } from '../screens/InsightsScreen';
+import { RatesScreen } from '../screens/RatesScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -160,6 +161,7 @@ export function AppNavigator() {
         <RootStack.Screen name="SettingsNotifications" component={SettingsNotificationsScreen} />
         <RootStack.Screen name="ImportExport" component={ImportExportScreen} />
         <RootStack.Screen name="Insights" component={InsightsScreen} />
+        <RootStack.Screen name="Rates" component={RatesScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader } from '../components/common';
+import { Screen, ScreenHeader, PrimaryButton } from '../components/common';
 import { Calculator } from '../components/Calculator';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { AccountPicker } from '../components/AccountPicker';
@@ -12,12 +12,14 @@ import { DateRangePicker } from '../components/DateRangePicker';
 import { TimePicker } from '../components/TimePicker';
 import { TagPicker } from '../components/TagPicker';
 import { TagChip } from '../components/TagChip';
+import { BottomSheet } from '../components/BottomSheet';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
-import { transactionsApi, getErrorMessage } from '../api/client';
+import { transactionsApi, ratesApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { todayISO, nowTime, formatShortDate, formatTime, parseISOSafe } from '../utils/formatDate';
+import { formatCurrency } from '../utils/formatCurrency';
 import type { RootStackParamList } from '../navigation/types';
 import type { Account, Category, Tag, TxType } from '../types';
 
@@ -61,6 +63,14 @@ export function AddTransactionScreen() {
   );
   const [selectedTags, setSelectedTags] = useState<Pick<Tag, 'id' | 'name' | 'color' | 'icon'>[]>([]);
   const [saving, setSaving] = useState(false);
+  // toAmount cargado al editar una transferencia multi-moneda existente
+  const [loadedToAmount, setLoadedToAmount] = useState<number | null>(null);
+
+  // Transferencia entre monedas distintas: hoja "Monto recibido"
+  const [showReceived, setShowReceived] = useState(false);
+  const [pendingAmount, setPendingAmount] = useState(0);
+  const [receivedInput, setReceivedInput] = useState('');
+  const [convRate, setConvRate] = useState<number | null>(null);
 
   const [showCategory, setShowCategory] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
@@ -94,6 +104,7 @@ export function AddTransactionScreen() {
         const acc = accounts.find((a) => a.id === tx.accountId) ?? null;
         setAccount(acc);
         if (tx.toAccountId) setToAccount(accounts.find((a) => a.id === tx.toAccountId) ?? null);
+        if (tx.toAmount != null) setLoadedToAmount(parseFloat(tx.toAmount));
         if (tx.tags) setSelectedTags(tx.tags);
       } catch (err) {
         showError(getErrorMessage(err));
@@ -102,26 +113,8 @@ export function AddTransactionScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId, accounts.length]);
 
-  const save = async (amount: number) => {
-    if (amount <= 0) {
-      showError('El monto debe ser mayor a 0');
-      return;
-    }
-    if (!account) {
-      showError('Selecciona una cuenta');
-      return;
-    }
-    if (type === 'transfer') {
-      if (!toAccount) {
-        showError('Selecciona la cuenta destino');
-        return;
-      }
-      if (toAccount.id === account.id) {
-        showError('La cuenta destino debe ser distinta');
-        return;
-      }
-    }
-
+  const doSave = async (amount: number, toAmount: number | null) => {
+    if (!account) return;
     const payload = {
       type,
       amount,
@@ -130,6 +123,7 @@ export function AddTransactionScreen() {
       time,
       accountId: account.id,
       toAccountId: type === 'transfer' ? toAccount?.id ?? null : null,
+      toAmount: type === 'transfer' ? toAmount : null,
       categoryId: type === 'transfer' ? null : category?.id ?? null,
       notes: null,
       tagIds: selectedTags.map((t) => t.id),
@@ -151,6 +145,54 @@ export function AddTransactionScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const submit = async (amount: number) => {
+    if (amount <= 0) {
+      showError('El monto debe ser mayor a 0');
+      return;
+    }
+    if (!account) {
+      showError('Selecciona una cuenta');
+      return;
+    }
+    if (type === 'transfer') {
+      if (!toAccount) {
+        showError('Selecciona la cuenta destino');
+        return;
+      }
+      if (toAccount.id === account.id) {
+        showError('La cuenta destino debe ser distinta');
+        return;
+      }
+      // Monedas distintas → confirmar/editar el monto recibido en la cuenta destino.
+      if (account.currency !== toAccount.currency) {
+        setPendingAmount(amount);
+        let rate: number | null = null;
+        try {
+          const res = await ratesApi.list(account.currency, [toAccount.currency]);
+          rate = res.rates[0]?.rate ?? null;
+        } catch {
+          rate = null;
+        }
+        setConvRate(rate);
+        const def = loadedToAmount != null ? loadedToAmount : rate != null ? amount * rate : amount;
+        setReceivedInput(String(Math.round(def * 100) / 100));
+        setShowReceived(true);
+        return;
+      }
+    }
+    await doSave(amount, null);
+  };
+
+  const confirmReceived = async () => {
+    const received = parseFloat(receivedInput.replace(',', '.'));
+    if (!Number.isFinite(received) || received <= 0) {
+      showError('Ingresa el monto recibido (mayor a 0)');
+      return;
+    }
+    setShowReceived(false);
+    await doSave(pendingAmount, received);
   };
 
   return (
@@ -270,7 +312,7 @@ export function AddTransactionScreen() {
             type={type}
             initialValue={initialAmount}
             currency={account?.currency ?? 'COP'}
-            onConfirm={save}
+            onConfirm={submit}
           />
         </View>
       </KeyboardAvoidingView>
@@ -328,6 +370,51 @@ export function AddTransactionScreen() {
         onToggle={toggleTag}
         onClose={() => setShowTags(false)}
       />
+
+      {/* Transferencia entre monedas: monto recibido editable */}
+      <BottomSheet
+        visible={showReceived}
+        title="Transferencia entre monedas"
+        onClose={() => setShowReceived(false)}
+        maxHeight="60%"
+      >
+        {account && toAccount && (
+          <View style={{ gap: theme.spacing.md }}>
+            <View style={styles.convRow}>
+              <View style={styles.convSide}>
+                <Text style={styles.convLabel}>Envías</Text>
+                <Text style={styles.convValue}>{formatCurrency(pendingAmount, account.currency)}</Text>
+                <Text style={styles.convAcc} numberOfLines={1}>{account.name}</Text>
+              </View>
+              <Icon name="arrow-right" size={20} color={theme.colors.textMuted} />
+              <View style={styles.convSide}>
+                <Text style={styles.convLabel}>Recibes</Text>
+                <Text style={[styles.convValue, { color: theme.colors.transfer }]}>{toAccount.currency}</Text>
+                <Text style={styles.convAcc} numberOfLines={1}>{toAccount.name}</Text>
+              </View>
+            </View>
+
+            <View style={styles.receivedRow}>
+              <Text style={styles.receivedPrefix}>{toAccount.currency}</Text>
+              <TextInput
+                value={receivedInput}
+                onChangeText={setReceivedInput}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={theme.colors.textMuted}
+                style={styles.receivedInput}
+                autoFocus
+              />
+            </View>
+            <Text style={styles.convHint}>
+              {convRate != null
+                ? `Tasa actual: 1 ${account.currency} = ${formatCurrency(convRate, toAccount.currency)}. Puedes ajustar el monto recibido.`
+                : 'No hay tasa automática disponible. Ingresa el monto recibido manualmente.'}
+            </Text>
+            <PrimaryButton label="Guardar transferencia" icon="check" onPress={confirmReceived} loading={saving} />
+          </View>
+        )}
+      </BottomSheet>
     </Screen>
   );
 }
@@ -388,4 +475,23 @@ const createStyles = (theme: Theme) =>
     borderStyle: 'dashed',
   },
   tagsBtnText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+  convRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm },
+  convSide: { flex: 1, backgroundColor: theme.colors.surfaceLight, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, gap: 2 },
+  convLabel: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs },
+  convValue: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
+  convAcc: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs },
+  receivedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  receivedPrefix: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
+  receivedInput: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold },
+  convHint: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs, lineHeight: 17 },
 });

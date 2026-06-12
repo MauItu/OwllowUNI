@@ -10,6 +10,7 @@ import { savingsRouter } from './routes/savings.js';
 import { debtsRouter } from './routes/debts.js';
 import { splitsRouter } from './routes/splits.js';
 import { insightsRouter } from './routes/insights.js';
+import { ratesRouter } from './routes/rates.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -33,6 +34,7 @@ app.use('/api/savings', savingsRouter);
 app.use('/api/debts', debtsRouter);
 app.use('/api/splits', splitsRouter);
 app.use('/api/insights', insightsRouter);
+app.use('/api/rates', ratesRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

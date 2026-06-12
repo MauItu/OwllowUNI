@@ -55,7 +55,7 @@ export function TransactionCard({ transaction: t, onPress }: Props) {
       </View>
       <View style={styles.right}>
         <Text style={[styles.amount, { color: amountColor }]} numberOfLines={1}>
-          {formatSigned(t.amount, t.type)}
+          {formatSigned(t.amount, t.type, t.accountCurrency ?? 'COP')}
         </Text>
         <Text style={styles.time}>{formatTime(t.time)}</Text>
       </View>

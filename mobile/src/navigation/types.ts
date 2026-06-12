@@ -27,6 +27,7 @@ export type RootStackParamList = {
   SettingsNotifications: undefined;
   ImportExport: undefined;
   Insights: undefined;
+  Rates: undefined;
 };
 
 export type TabParamList = {

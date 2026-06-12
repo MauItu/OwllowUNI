@@ -17,7 +17,12 @@ const EMPTY: StatsData = {
   balanceEvolution: [],
 };
 
-export function useStats(from: string, to: string, group: 'day' | 'week' | 'month' = 'day') {
+export function useStats(
+  from: string,
+  to: string,
+  group: 'day' | 'week' | 'month' = 'day',
+  displayCurrency = 'COP',
+) {
   const [data, setData] = useState<StatsData>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -31,10 +36,10 @@ export function useStats(from: string, to: string, group: 'day' | 'week' | 'mont
         else setLoading(true);
         setError(null);
         const [summary, byCategory, timeline, balanceEvolution] = await Promise.all([
-          statsApi.summary(from, to),
-          statsApi.byCategory(from, to, 'expense'),
-          statsApi.timeline(from, to, group),
-          statsApi.balanceEvolution(from, to),
+          statsApi.summary(from, to, displayCurrency),
+          statsApi.byCategory(from, to, 'expense', displayCurrency),
+          statsApi.timeline(from, to, group, displayCurrency),
+          statsApi.balanceEvolution(from, to, displayCurrency),
         ]);
         setData({ summary, byCategory, timeline, balanceEvolution });
       } catch (err) {
@@ -44,7 +49,7 @@ export function useStats(from: string, to: string, group: 'day' | 'week' | 'mont
         setRefreshing(false);
       }
     },
-    [from, to, group],
+    [from, to, group, displayCurrency],
   );
 
   useEffect(() => {
