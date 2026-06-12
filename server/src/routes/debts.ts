@@ -1,11 +1,37 @@
 import { Router } from 'express';
-import { eq, desc, asc, sql } from 'drizzle-orm';
+import { eq, desc, asc, sql, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
-import { debts, debtPayments, accounts, type Debt } from '../db/schema.js';
+import {
+  debts,
+  debtPayments,
+  accounts,
+  transactions,
+  type Debt,
+  type Transaction,
+} from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 
 export const debtsRouter = Router();
+
+/** Hora actual HH:mm:ss para las transacciones generadas automáticamente. */
+function nowTime(): string {
+  return new Date().toTimeString().slice(0, 8);
+}
+
+/**
+ * UPDATE de balance relativo para una cuenta.
+ * delta positivo suma, negativo resta (ya con el signo aplicado).
+ */
+function balanceUpdate(accountId: number, delta: number) {
+  return db
+    .update(accounts)
+    .set({
+      currentBalance: sql`${accounts.currentBalance} + ${delta.toFixed(2)}::numeric`,
+      updatedAt: new Date(),
+    })
+    .where(eq(accounts.id, accountId));
+}
 
 const debtSchema = z.object({
   name: z.string().min(1).max(100),
@@ -26,12 +52,17 @@ const debtSchema = z.object({
   icon: z.string().max(50).optional(),
   notes: z.string().optional().nullable(),
   accountId: z.number().int().optional().nullable(),
+  // Si es true y hay accountId, registra el desembolso inicial como transacción:
+  // type='debt' (pedí prestado → me depositaron) = income; type='loan' (yo presté) = expense.
+  registerInitialTransaction: z.boolean().optional(),
 });
 
 const paymentSchema = z.object({
   amount: z.coerce.number().positive(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   description: z.string().max(255).optional().nullable(),
+  // Cuenta a la que entra (loan) o de la que sale (debt) el dinero del abono.
+  accountId: z.number().int().optional().nullable(),
 });
 
 // GET /api/debts — activas primero, luego saldadas
@@ -100,8 +131,19 @@ debtsRouter.get(
     if (!debt) throw new ApiError(404, 'Deuda no encontrada');
 
     const payments = await db
-      .select()
+      .select({
+        id: debtPayments.id,
+        debtId: debtPayments.debtId,
+        amount: debtPayments.amount,
+        date: debtPayments.date,
+        description: debtPayments.description,
+        accountId: debtPayments.accountId,
+        transactionId: debtPayments.transactionId,
+        createdAt: debtPayments.createdAt,
+        accountName: accounts.name,
+      })
       .from(debtPayments)
+      .leftJoin(accounts, eq(debtPayments.accountId, accounts.id))
       .where(eq(debtPayments.debtId, id))
       .orderBy(desc(debtPayments.date), desc(debtPayments.id));
 
@@ -131,6 +173,26 @@ debtsRouter.post(
         accountId: data.accountId ?? null,
       })
       .returning();
+
+    // Desembolso inicial opcional: el dinero que entra (pedí prestado) o sale (yo presté).
+    if (data.registerInitialTransaction && data.accountId) {
+      const txType = data.type === 'debt' ? 'income' : 'expense';
+      const delta = txType === 'income' ? data.totalAmount : -data.totalAmount;
+      const insertTx = db
+        .insert(transactions)
+        .values({
+          type: txType,
+          amount: data.totalAmount.toFixed(2),
+          description:
+            data.type === 'debt' ? `Préstamo recibido: ${data.name}` : `Préstamo otorgado: ${data.name}`,
+          date: data.startDate,
+          time: nowTime(),
+          accountId: data.accountId,
+        });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.batch([insertTx, balanceUpdate(data.accountId, delta)] as any);
+    }
+
     res.status(201).json(row);
   }),
 );
@@ -184,13 +246,37 @@ debtsRouter.put(
   }),
 );
 
-// DELETE /api/debts/:id — cascade en pagos
+// DELETE /api/debts/:id — cascade en pagos + revierte las transacciones vinculadas
 debtsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const deleted = await db.delete(debts).where(eq(debts.id, id)).returning();
-    if (deleted.length === 0) throw new ApiError(404, 'Deuda no encontrada');
+    const [debt] = await db.select().from(debts).where(eq(debts.id, id));
+    if (!debt) throw new ApiError(404, 'Deuda no encontrada');
+
+    // Transacciones generadas por los abonos de esta deuda (las del FK transaction_id).
+    const payments = await db.select().from(debtPayments).where(eq(debtPayments.debtId, id));
+    const txIds = payments.map((p) => p.transactionId).filter((t): t is number => t != null);
+    const txs =
+      txIds.length > 0
+        ? await db.select().from(transactions).where(inArray(transactions.id, txIds))
+        : [];
+
+    const stmts: unknown[] = [];
+    // Revertir el balance de cada transacción vinculada (income suma → restar; expense resta → sumar).
+    for (const tx of txs) {
+      const revert = tx.type === 'income' ? -Number(tx.amount) : Number(tx.amount);
+      stmts.push(balanceUpdate(tx.accountId, revert));
+    }
+    // Borrar la deuda primero (CASCADE borra debt_payments, que referencian las transacciones)…
+    stmts.push(db.delete(debts).where(eq(debts.id, id)));
+    // …y recién entonces las transacciones, ya sin referencias.
+    if (txIds.length > 0) {
+      stmts.push(db.delete(transactions).where(inArray(transactions.id, txIds)));
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.batch(stmts as any);
     res.json({ success: true });
   }),
 );
@@ -214,6 +300,29 @@ debtsRouter.post(
     const newRemaining = remaining - data.amount;
     const paidOff = newRemaining <= 0;
 
+    // Si hay cuenta, el abono se registra como movimiento real:
+    //  - loan (me deben): me pagan → income en la cuenta.
+    //  - debt (yo debo):  yo pago  → expense desde la cuenta.
+    let transactionId: number | null = null;
+    if (data.accountId) {
+      const txType = debt.type === 'loan' ? 'income' : 'expense';
+      const delta = txType === 'income' ? data.amount : -data.amount;
+      const insertTx = db
+        .insert(transactions)
+        .values({
+          type: txType,
+          amount: data.amount.toFixed(2),
+          description: data.description ?? `Abono: ${debt.name}`,
+          date: data.date,
+          time: nowTime(),
+          accountId: data.accountId,
+        })
+        .returning();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const txRes = await db.batch([insertTx, balanceUpdate(data.accountId, delta)] as any);
+      transactionId = (txRes[0] as Transaction[])[0].id;
+    }
+
     const insertStmt = db
       .insert(debtPayments)
       .values({
@@ -221,6 +330,8 @@ debtsRouter.post(
         amount: data.amount.toFixed(2),
         date: data.date,
         description: data.description ?? null,
+        accountId: data.accountId ?? null,
+        transactionId,
       })
       .returning();
 
@@ -235,9 +346,23 @@ debtsRouter.post(
       .where(eq(debts.id, id))
       .returning();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const results = await db.batch([insertStmt, updateStmt] as any);
-    const updated = (results[1] as Debt[])[0];
-    res.status(201).json(updated);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const results = await db.batch([insertStmt, updateStmt] as any);
+      const updated = (results[1] as Debt[])[0];
+      res.status(201).json(updated);
+    } catch (err) {
+      // Compensación: si falla el registro del pago, deshacer la transacción ya creada.
+      if (transactionId != null && data.accountId) {
+        const undo = debt.type === 'loan' ? -data.amount : data.amount;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.batch([
+          db.delete(transactions).where(eq(transactions.id, transactionId)),
+          balanceUpdate(data.accountId, undo),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any);
+      }
+      throw err;
+    }
   }),
 );

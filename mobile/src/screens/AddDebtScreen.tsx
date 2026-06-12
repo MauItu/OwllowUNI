@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme, PALETTE } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -39,6 +39,7 @@ export function AddDebtScreen() {
   const [startDate, setStartDate] = useState(todayISO());
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [accountId, setAccountId] = useState<number | null>(null);
+  const [registerInitial, setRegisterInitial] = useState(false);
   const [color, setColor] = useState('#C1437A');
   const [icon, setIcon] = useState('landmark');
   const [notes, setNotes] = useState('');
@@ -109,7 +110,10 @@ export function AddDebtScreen() {
         await debtsApi.update(debtId, payload);
         showSuccess(isDebt ? 'Deuda actualizada' : 'Préstamo actualizado');
       } else {
-        await debtsApi.create(payload);
+        await debtsApi.create({
+          ...payload,
+          registerInitialTransaction: registerInitial && accountId != null,
+        });
         showSuccess(isDebt ? 'Deuda registrada' : 'Préstamo registrado');
       }
       triggerRefresh();
@@ -211,6 +215,26 @@ export function AddDebtScreen() {
           iconColor={selectedAccount?.color ?? theme.colors.primary}
           onPress={() => setShowAccount(true)}
         />
+
+        {/* Solo al crear y con cuenta: registrar el desembolso inicial como movimiento */}
+        {!debtId && accountId != null && (
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
+              <Text style={styles.switchTitle}>Registrar el movimiento en la cuenta</Text>
+              <Text style={styles.switchHint}>
+                {isDebt
+                  ? `Se sumará ${formatCurrency(totalAmount)} a "${selectedAccount?.name}" como ingreso (te lo prestaron).`
+                  : `Se descontará ${formatCurrency(totalAmount)} de "${selectedAccount?.name}" como gasto (lo prestaste).`}
+              </Text>
+            </View>
+            <Switch
+              value={registerInitial}
+              onValueChange={setRegisterInitial}
+              trackColor={{ true: semanticColor, false: theme.colors.border }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        )}
 
         <Text style={styles.fieldLabel}>Color</Text>
         <View style={styles.swatches}>
@@ -332,4 +356,16 @@ const createStyles = (theme: Theme) =>
       marginBottom: theme.spacing.md,
     },
     clearText: { color: theme.colors.expense, fontSize: theme.fontSize.sm },
+    switchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.borderRadius.lg,
+      padding: theme.spacing.md,
+      marginBottom: theme.spacing.md,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+    },
+    switchTitle: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
+    switchHint: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginTop: 2 },
   });

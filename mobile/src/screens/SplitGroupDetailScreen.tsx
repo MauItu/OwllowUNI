@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useIsFocused, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, EmptyState, ErrorState, Loading, SectionTitle, PrimaryButton } from '../components/common';
 import { BottomSheet } from '../components/BottomSheet';
+import { AccountChips } from '../components/AccountChips';
 import { Icon } from '../components/Icon';
+import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { splitsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
@@ -19,9 +22,11 @@ export function SplitGroupDetailScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'SplitGroupDetail'>>();
   const groupId = route.params.groupId;
   const isFocused = useIsFocused();
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
+  const { accounts } = useAccounts();
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
   const [balances, setBalances] = useState<SplitBalances | null>(null);
@@ -30,6 +35,7 @@ export function SplitGroupDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settling, setSettling] = useState<SplitTransfer | null>(null);
+  const [settleAccountId, setSettleAccountId] = useState<number | null>(null);
   const [settleBusy, setSettleBusy] = useState(false);
 
   const load = useCallback(
@@ -78,13 +84,16 @@ export function SplitGroupDetailScreen() {
     if (!settling) return;
     try {
       setSettleBusy(true);
+      const meInvolved = settling.fromMemberId === me?.id || settling.toMemberId === me?.id;
       await splitsApi.settle(groupId, {
         fromMemberId: settling.fromMemberId,
         toMemberId: settling.toMemberId,
         amount: settling.amount,
+        accountId: meInvolved ? settleAccountId : null,
       });
       showSuccess('Deuda liquidada');
       setSettling(null);
+      setSettleAccountId(null);
       triggerRefresh();
       load(true);
     } catch (err) {
@@ -174,7 +183,7 @@ export function SplitGroupDetailScreen() {
                             {formatCurrency(t.amount)}
                           </Text>
                         </View>
-                        <Pressable style={styles.settleBtn} onPress={() => setSettling(t)}>
+                        <Pressable style={styles.settleBtn} onPress={() => { setSettleAccountId(null); setSettling(t); }}>
                           <Icon name="hand-coins" size={15} color="#FFFFFF" />
                           <Text style={styles.settleBtnText}>Liquidar</Text>
                         </Pressable>
@@ -202,6 +211,7 @@ export function SplitGroupDetailScreen() {
                     <Text style={styles.expenseDesc} numberOfLines={1}>{item.description}</Text>
                     <Text style={styles.expenseMeta} numberOfLines={1}>
                       Pagó {item.paidByName ?? memberName(item.paidByMemberId)} · {formatShortDate(item.date)}
+                      {item.accountName ? ` · ${item.accountName}` : ''}
                     </Text>
                   </View>
                   <Text style={styles.expenseAmount}>{formatCurrency(item.totalAmount)}</Text>
@@ -211,12 +221,19 @@ export function SplitGroupDetailScreen() {
           />
 
           {/* FAB nuevo gasto */}
-          <Pressable style={styles.fab} onPress={() => navigation.navigate('AddSplitExpense', { groupId })}>
+          <Pressable style={[styles.fab, { bottom: insets.bottom + theme.spacing.lg }]} onPress={() => navigation.navigate('AddSplitExpense', { groupId })}>
             <Icon name="plus" size={26} color="#FFFFFF" strokeWidth={2.6} />
           </Pressable>
 
           {/* Confirmación de liquidación */}
-          <BottomSheet visible={settling != null} title="Liquidar deuda" onClose={() => setSettling(null)}>
+          <BottomSheet
+            visible={settling != null}
+            title="Liquidar deuda"
+            onClose={() => {
+              setSettling(null);
+              setSettleAccountId(null);
+            }}
+          >
             {settling && (
               <View style={{ gap: theme.spacing.md }}>
                 <Text style={styles.settleConfirmText}>
@@ -227,6 +244,22 @@ export function SplitGroupDetailScreen() {
                   a {settling.toMemberId === me?.id ? 'ti' : memberName(settling.toMemberId)}. ¿Confirmas que esta
                   deuda quedó saldada?
                 </Text>
+                {(settling.fromMemberId === me?.id || settling.toMemberId === me?.id) && (
+                  <View style={{ gap: theme.spacing.xs }}>
+                    <Text style={styles.settleAccountLabel}>
+                      {settling.toMemberId === me?.id
+                        ? '¿A qué cuenta te depositaron?'
+                        : '¿De qué cuenta pagaste?'}
+                    </Text>
+                    <AccountChips
+                      accounts={accounts}
+                      selectedId={settleAccountId}
+                      onSelect={setSettleAccountId}
+                      allowNone
+                      noneLabel="No registrar"
+                    />
+                  </View>
+                )}
                 <PrimaryButton label="Confirmar liquidación" onPress={settle} loading={settleBusy} icon="hand-coins" />
               </View>
             )}
@@ -289,6 +322,7 @@ const createStyles = (theme: Theme) =>
     },
     settleBtnText: { color: '#FFFFFF', fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.bold },
     settleConfirmText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, lineHeight: 22 },
+    settleAccountLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
     expenseRow: {
       flexDirection: 'row',
       alignItems: 'center',

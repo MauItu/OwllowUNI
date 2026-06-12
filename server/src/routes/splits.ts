@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, asc, and, inArray } from 'drizzle-orm';
+import { eq, desc, asc, and, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
 import {
@@ -7,12 +7,33 @@ import {
   splitMembers,
   splitExpenses,
   splitShares,
+  splitSettlements,
   categories,
+  accounts,
+  transactions,
   type SplitMember,
+  type SplitExpense,
+  type Transaction,
 } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 
 export const splitsRouter = Router();
+
+/** Hora actual HH:mm:ss para las transacciones generadas automáticamente. */
+function nowTime(): string {
+  return new Date().toTimeString().slice(0, 8);
+}
+
+/** UPDATE de balance relativo para una cuenta (delta ya con signo). */
+function balanceUpdate(accountId: number, delta: number) {
+  return db
+    .update(accounts)
+    .set({
+      currentBalance: sql`${accounts.currentBalance} + ${delta.toFixed(2)}::numeric`,
+      updatedAt: new Date(),
+    })
+    .where(eq(accounts.id, accountId));
+}
 
 const groupSchema = z.object({
   name: z.string().min(1).max(100),
@@ -44,6 +65,8 @@ const expenseSchema = z.object({
   paidByMemberId: z.number().int(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   categoryId: z.number().int().optional().nullable(),
+  // Solo válida si el pagador es el miembro "Yo": cuenta de la que salió el dinero.
+  accountId: z.number().int().optional().nullable(),
   shares: z
     .array(
       z.object({
@@ -62,6 +85,8 @@ const settleSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  // Cuenta del usuario cuando la liquidación lo involucra.
+  accountId: z.number().int().optional().nullable(),
 });
 
 /**
@@ -260,13 +285,46 @@ splitsRouter.put(
   }),
 );
 
-// DELETE /api/splits/:id — cascade en miembros, gastos y shares
+// DELETE /api/splits/:id — cascade en miembros, gastos, shares y liquidaciones;
+// además revierte las transacciones de cuenta que el grupo hubiera generado.
 splitsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const deleted = await db.delete(splitGroups).where(eq(splitGroups.id, id)).returning();
-    if (deleted.length === 0) throw new ApiError(404, 'Grupo no encontrado');
+    const [group] = await db.select().from(splitGroups).where(eq(splitGroups.id, id));
+    if (!group) throw new ApiError(404, 'Grupo no encontrado');
+
+    // Transacciones generadas por gastos pagados por mí y por liquidaciones.
+    const exps = await db
+      .select({ transactionId: splitExpenses.transactionId })
+      .from(splitExpenses)
+      .where(eq(splitExpenses.groupId, id));
+    const setts = await db
+      .select({ transactionId: splitSettlements.transactionId })
+      .from(splitSettlements)
+      .where(eq(splitSettlements.groupId, id));
+    const txIds = [...exps, ...setts]
+      .map((r) => r.transactionId)
+      .filter((t): t is number => t != null);
+    const txs =
+      txIds.length > 0
+        ? await db.select().from(transactions).where(inArray(transactions.id, txIds))
+        : [];
+
+    const stmts: unknown[] = [];
+    for (const tx of txs) {
+      const revert = tx.type === 'income' ? -Number(tx.amount) : Number(tx.amount);
+      stmts.push(balanceUpdate(tx.accountId, revert));
+    }
+    // Borrar el grupo primero (CASCADE borra expenses/settlements que referencian las transacciones)…
+    stmts.push(db.delete(splitGroups).where(eq(splitGroups.id, id)));
+    // …y luego las transacciones, ya sin referencias.
+    if (txIds.length > 0) {
+      stmts.push(db.delete(transactions).where(inArray(transactions.id, txIds)));
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.batch(stmts as any);
     res.json({ success: true });
   }),
 );
@@ -342,11 +400,13 @@ splitsRouter.get(
         totalAmount: splitExpenses.totalAmount,
         paidByMemberId: splitExpenses.paidByMemberId,
         date: splitExpenses.date,
+        accountId: splitExpenses.accountId,
         transactionId: splitExpenses.transactionId,
         categoryId: splitExpenses.categoryId,
         createdAt: splitExpenses.createdAt,
         updatedAt: splitExpenses.updatedAt,
         paidByName: splitMembers.name,
+        accountName: accounts.name,
         categoryName: categories.name,
         categoryIcon: categories.icon,
         categoryColor: categories.color,
@@ -354,6 +414,7 @@ splitsRouter.get(
       .from(splitExpenses)
       .innerJoin(splitMembers, eq(splitExpenses.paidByMemberId, splitMembers.id))
       .leftJoin(categories, eq(splitExpenses.categoryId, categories.id))
+      .leftJoin(accounts, eq(splitExpenses.accountId, accounts.id))
       .where(eq(splitExpenses.groupId, groupId))
       .orderBy(desc(splitExpenses.date), desc(splitExpenses.id));
 
@@ -398,6 +459,32 @@ splitsRouter.post(
       throw new ApiError(400, 'La división debe sumar el total del gasto');
     }
 
+    // La cuenta solo aplica cuando el gasto lo paga el usuario (miembro is_me).
+    const paidByMember = members.find((m) => m.id === data.paidByMemberId);
+    if (data.accountId != null && !paidByMember?.isMe) {
+      throw new ApiError(400, 'Solo puedes asignar cuenta a gastos pagados por ti');
+    }
+
+    // Si pago yo y hay cuenta: registrar el egreso real como transacción.
+    let transactionId: number | null = null;
+    if (data.accountId != null && paidByMember?.isMe) {
+      const insertTx = db
+        .insert(transactions)
+        .values({
+          type: 'expense',
+          amount: data.totalAmount.toFixed(2),
+          description: data.description,
+          date: data.date,
+          time: nowTime(),
+          accountId: data.accountId,
+          categoryId: data.categoryId ?? null,
+        })
+        .returning();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const txRes = await db.batch([insertTx, balanceUpdate(data.accountId, -data.totalAmount)] as any);
+      transactionId = (txRes[0] as Transaction[])[0].id;
+    }
+
     const [expense] = await db
       .insert(splitExpenses)
       .values({
@@ -407,6 +494,8 @@ splitsRouter.post(
         paidByMemberId: data.paidByMemberId,
         date: data.date,
         categoryId: data.categoryId ?? null,
+        accountId: data.accountId ?? null,
+        transactionId,
       })
       .returning();
 
@@ -428,8 +517,16 @@ splitsRouter.post(
         .returning();
       res.status(201).json({ ...expense, shares });
     } catch (err) {
-      // Compensación: si fallan los shares, no dejar el gasto huérfano
+      // Compensación: si fallan los shares, no dejar el gasto huérfano ni la transacción.
       await db.delete(splitExpenses).where(eq(splitExpenses.id, expense.id));
+      if (transactionId != null && data.accountId != null) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.batch([
+          db.delete(transactions).where(eq(transactions.id, transactionId)),
+          balanceUpdate(data.accountId, data.totalAmount),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any);
+      }
       throw err;
     }
   }),
@@ -525,6 +622,60 @@ splitsRouter.post(
       });
     }
 
+    const settleDate = data.date ?? new Date().toISOString().slice(0, 10);
+
+    // Si la liquidación involucra al usuario y hay cuenta, registrar el movimiento real:
+    //  - el usuario RECIBE (es "to") → income en su cuenta.
+    //  - el usuario PAGA   (es "from") → expense desde su cuenta.
+    let transactionId: number | null = null;
+    if (data.accountId != null && (from.isMe || to.isMe)) {
+      const meReceives = to.isMe;
+      const txType = meReceives ? 'income' : 'expense';
+      const delta = meReceives ? data.amount : -data.amount;
+      const description = meReceives
+        ? `Pago recibido de ${from.name}`
+        : `Pago a ${to.name}`;
+      const insertTx = db
+        .insert(transactions)
+        .values({
+          type: txType,
+          amount: data.amount.toFixed(2),
+          description,
+          date: settleDate,
+          time: nowTime(),
+          accountId: data.accountId,
+        })
+        .returning();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const txRes = await db.batch([insertTx, balanceUpdate(data.accountId, delta)] as any);
+      transactionId = (txRes[0] as Transaction[])[0].id;
+    }
+
+    // Persistir la liquidación (historial + enlace a la transacción si la hubo).
+    await db.insert(splitSettlements).values({
+      groupId,
+      fromMemberId: from.id,
+      toMemberId: to.id,
+      amount: data.amount.toFixed(2),
+      date: settleDate,
+      accountId: from.isMe || to.isMe ? data.accountId ?? null : null,
+      transactionId,
+    });
+
     res.json({ success: true, settledShares: toSettle.length });
+  }),
+);
+
+// GET /api/splits/:groupId/settlements — historial de liquidaciones del grupo
+splitsRouter.get(
+  '/:groupId/settlements',
+  asyncHandler(async (req, res) => {
+    const groupId = Number(req.params.groupId);
+    const rows = await db
+      .select()
+      .from(splitSettlements)
+      .where(eq(splitSettlements.groupId, groupId))
+      .orderBy(desc(splitSettlements.date), desc(splitSettlements.id));
+    res.json(rows);
   }),
 );

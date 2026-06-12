@@ -8,6 +8,9 @@ import { Screen, ScreenHeader, EmptyState, ErrorState, Loading } from '../compon
 import { DebtCard } from '../components/DebtCard';
 import { Icon } from '../components/Icon';
 import { useDebts } from '../hooks/useDebts';
+import { useAppStore } from '../stores/appStore';
+import { debtsApi, getErrorMessage } from '../api/client';
+import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
 import type { DebtType } from '../types';
 
@@ -16,9 +19,24 @@ export function DebtsScreen() {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { debts, summary, loading, refreshing, error, refetch } = useDebts();
+  const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const [tab, setTab] = useState<DebtType>('debt');
+  const [showHistory, setShowHistory] = useState(false);
 
-  const filtered = debts.filter((d) => d.type === tab);
+  // Activas en la lista principal; saldadas van a la sección "Historial".
+  const filtered = debts.filter((d) => d.type === tab && !d.isPaidOff);
+  const history = debts.filter((d) => d.type === tab && d.isPaidOff);
+
+  const removePaid = async (id: number) => {
+    try {
+      await debtsApi.remove(id);
+      showSuccess('Eliminado del historial');
+      triggerRefresh();
+      refetch(true);
+    } catch (err) {
+      showError(getErrorMessage(err));
+    }
+  };
 
   return (
     <Screen>
@@ -92,7 +110,7 @@ export function DebtsScreen() {
               icon="landmark"
               text={
                 tab === 'debt'
-                  ? 'No tienes deudas registradas. Agrega una con el botón +.'
+                  ? 'No tienes deudas activas. Agrega una con el botón +.'
                   : 'Nadie te debe por ahora. Registra un préstamo con el botón +.'
               }
             />
@@ -100,6 +118,39 @@ export function DebtsScreen() {
           renderItem={({ item }) => (
             <DebtCard debt={item} onPress={() => navigation.navigate('DebtDetail', { debtId: item.id })} />
           )}
+          ListFooterComponent={
+            history.length > 0 ? (
+              <View style={styles.historySection}>
+                <Pressable style={styles.historyHeader} onPress={() => setShowHistory((v) => !v)}>
+                  <Icon
+                    name={showHistory ? 'chevron-down' : 'chevron-right'}
+                    size={18}
+                    color={theme.colors.textSecondary}
+                  />
+                  <Text style={styles.historyTitle}>
+                    Historial ({history.length}) · {tab === 'debt' ? 'saldadas' : 'recuperados'}
+                  </Text>
+                </Pressable>
+                {showHistory &&
+                  history.map((item) => (
+                    <View key={item.id} style={styles.historyRow}>
+                      <Pressable
+                        style={{ flex: 1 }}
+                        onPress={() => navigation.navigate('DebtDetail', { debtId: item.id })}
+                      >
+                        <Text style={styles.historyName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={styles.historyMeta}>{formatCurrency(item.totalAmount)} · completada</Text>
+                      </Pressable>
+                      <Pressable hitSlop={8} onPress={() => removePaid(item.id)} style={styles.historyDelete}>
+                        <Icon name="trash-2" size={18} color={theme.colors.expense} />
+                      </Pressable>
+                    </View>
+                  ))}
+              </View>
+            ) : null
+          }
         />
       )}
     </Screen>
@@ -138,4 +189,24 @@ const createStyles = (theme: Theme) =>
     },
     toggleText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
     toggleTextActive: { color: '#FFFFFF', fontWeight: theme.fontWeight.bold },
+    historySection: { marginTop: theme.spacing.md },
+    historyHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.xs,
+      paddingVertical: theme.spacing.sm,
+    },
+    historyTitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
+    historyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.borderRadius.md,
+      padding: theme.spacing.md,
+      marginBottom: theme.spacing.sm,
+      opacity: 0.85,
+    },
+    historyName: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.medium },
+    historyMeta: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginTop: 2 },
+    historyDelete: { padding: theme.spacing.xs },
   });

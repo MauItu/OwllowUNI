@@ -39,7 +39,7 @@ server/
 │   │   ├── connection.ts       ← Neon + drizzle-orm (carga ../.env)
 │   │   ├── schema.ts           ← Tablas: accounts, categories, transactions, templates,
 │   │   │                          tags, transaction_tags, savings_goals, savings_contributions,
-│   │   │                          debts, debt_payments, split_groups/members/expenses/shares
+│   │   │                          debts, debt_payments, split_groups/members/expenses/shares/settlements
 │   │   ├── migrate.ts          ← Aplica migraciones de ./drizzle
 │   │   └── seed.ts             ← Inserta categorías default + cuenta "Efectivo"
 │   ├── routes/
@@ -104,7 +104,8 @@ mobile/
 
 ### transactions
 `id` serial PK · `type` varchar(10) NN (`income|expense|transfer`) · `amount` decimal(15,2) NN
-· `description` varchar(255) · `date` date NN · `time` time NN · `account_id` int FK→accounts NN
+· `description` varchar(255) · `date` date NN · `time` time NN (editable desde `AddTransaction` con `TimePicker`)
+· `account_id` int FK→accounts NN
 · `to_account_id` int FK→accounts (solo transfers) · `category_id` int FK→categories
 · `notes` text · `created_at` / `updated_at` timestamp def now()
 
@@ -141,7 +142,8 @@ mobile/
 
 ### debt_payments
 `id` serial PK · `debt_id` int FK→debts ON DELETE CASCADE NN · `amount` decimal(15,2) NN · `date` date NN
-· `description` varchar(255) · `transaction_id` int FK→transactions · `created_at` timestamp def now()
+· `description` varchar(255) · `account_id` int FK→accounts (nullable; cuenta del abono) · `transaction_id` int FK→transactions · `created_at` timestamp def now()
+> Un abono con `account_id` genera una transacción `income` (loan) / `expense` (debt) en esa cuenta y enlaza `transaction_id`.
 
 ### split_groups
 `id` serial PK · `name` varchar(100) NN · `description` varchar(255) · `icon` varchar(50) def `users`
@@ -155,13 +157,22 @@ mobile/
 ### split_expenses
 `id` serial PK · `group_id` int FK→split_groups ON DELETE CASCADE NN · `description` varchar(255) NN
 · `total_amount` decimal(15,2) NN · `paid_by_member_id` int FK→split_members NN · `date` date NN
+· `account_id` int FK→accounts (nullable; solo si lo pagó el miembro `is_me`)
 · `transaction_id` int FK→transactions · `category_id` int FK→categories · `created_at` / `updated_at` timestamp def now()
+> Si lo pagó `is_me` con `account_id`, se crea una transacción `expense` en esa cuenta y se enlaza `transaction_id`.
 
 ### split_shares
 `id` serial PK · `expense_id` int FK→split_expenses ON DELETE CASCADE NN · `member_id` int FK→split_members ON DELETE CASCADE NN
 · `amount` decimal(15,2) NN · `is_settled` bool def false · `settled_at` timestamp · UNIQUE(expense_id, member_id)
 > El share del pagador nace con `is_settled=true` (se pagó a sí mismo). Balance de un miembro =
 > lo que pagó por otros − lo que le corresponde de gastos pagados por otros (solo shares no liquidados).
+
+### split_settlements
+`id` serial PK · `group_id` int FK→split_groups ON DELETE CASCADE NN · `from_member_id` int FK→split_members NN
+· `to_member_id` int FK→split_members NN · `amount` decimal(15,2) NN · `date` date NN
+· `account_id` int FK→accounts (nullable) · `transaction_id` int FK→transactions (nullable) · `created_at` timestamp def now()
+> Cada liquidación (`/settle`) persiste aquí. Si involucra al miembro `is_me` y trae `account_id`, genera una
+> transacción `income` (me pagan) / `expense` (yo pago) en esa cuenta y enlaza `transaction_id`.
 
 ### Reglas de balance (atómicas, dentro de una misma transacción SQL)
 - `income`  → `account.current_balance += amount`
@@ -227,10 +238,10 @@ mobile/
 - `GET    /api/debts` — activas primero, con nombre de cuenta
 - `GET    /api/debts/summary` — `{ totalDebt, totalLoan, netBalance, activeDebts, activeLoans }`
 - `GET    /api/debts/:id` — incluye `payments[]`
-- `POST   /api/debts` — `remaining_amount` arranca igual a `total_amount`
+- `POST   /api/debts` — `remaining_amount` arranca igual a `total_amount`; con `registerInitialTransaction:true` + `accountId` registra el desembolso inicial como `income` (debt: me prestaron) / `expense` (loan: yo presté)
 - `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado
-- `DELETE /api/debts/:id` — CASCADE en pagos
-- `POST   /api/debts/:id/pay` — `{ amount, date, description? }`; resta del restante y marca `is_paid_off` si llega a 0 (db.batch)
+- `DELETE /api/debts/:id` — CASCADE en pagos + revierte balances y borra las transacciones de los abonos vinculados (db.batch)
+- `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch)
 
 ### Splits (gastos compartidos)
 - `GET    /api/splits` — grupos activos con `members[]` y `myBalance`
@@ -239,9 +250,10 @@ mobile/
 - `POST   /api/splits` — acepta `members[]` inline (exactamente un `isMe`, nombres únicos)
 - `PUT    /api/splits/:id` · `DELETE /api/splits/:id` (CASCADE)
 - `POST   /api/splits/:groupId/members` · `DELETE /api/splits/:groupId/members/:id` (solo sin gastos asociados)
-- `GET    /api/splits/:groupId/expenses` — con shares; `POST` valida que los shares sumen el total (±0.01)
+- `GET    /api/splits/:groupId/expenses` — con shares y `accountName`; `POST` acepta `accountId?` (solo si paga `is_me` → transacción `expense`), valida que los shares sumen el total (±0.01)
 - `GET    /api/splits/:groupId/balances` — balance por miembro + `transfers[]` simplificadas (greedy: mayor deudor paga al mayor acreedor)
-- `POST   /api/splits/:groupId/settle` — `{ fromMemberId, toMemberId, amount }`; marca shares pareados como settled (antiguos primero) y, si la simplificación redirigió deudas, registra el remanente como gasto "Liquidación"
+- `POST   /api/splits/:groupId/settle` — `{ fromMemberId, toMemberId, amount, date?, accountId? }`; marca shares pareados como settled (antiguos primero), persiste en `split_settlements` y, si involucra a `is_me` con `accountId`, crea transacción `income`(me pagan)/`expense`(yo pago); si la simplificación redirigió deudas, registra el remanente como gasto "Liquidación"
+- `GET    /api/splits/:groupId/settlements` — historial de liquidaciones del grupo
 
 ---
 
@@ -353,10 +365,15 @@ global en `App.tsx` captura crashes y muestra un fallback en lugar de congelar l
 **SafeArea (fix barra de navegación Android):** `app.json` tiene `edgeToEdgeEnabled:true`, así que
 la app dibuja bajo las barras del sistema. El fix:
 - `App.tsx`: `<ErrorBoundary>` + `<SafeAreaProvider>` + `<StatusBar style="light" backgroundColor={bg} translucent />`.
-- `components/common.tsx` → `Screen` usa `<SafeAreaView edges={['top']}>` (inset superior en cada pantalla).
+- `components/common.tsx` → `Screen` acepta prop `edges` (default `['top']`); las pantallas modales sin tab bar
+  pueden pasar `['top','bottom']`.
 - `navigation/AppNavigator.tsx` → `CustomTabBar` propio con `useSafeAreaInsets()`:
   `paddingBottom = Math.max(insets.bottom, 12) + 8` (deja libres los botones back/home/recientes).
-- `BottomSheet.tsx` también respeta `insets.bottom`.
+- `BottomSheet.tsx` y `AccountPicker`/modal de `Categories` respetan `insets.bottom`.
+- **Calculadora (fix):** `AddTransaction` no pasa por el tab bar, así que la `Calculator` va envuelta en un `View`
+  color `surface` con `paddingBottom: insets.bottom` (la `Calculator` no cambia, para no duplicar el inset en sus
+  usos dentro de `BottomSheet`/`CalculatorSheet`). Los FAB de pantallas apiladas (DebtDetail, SavingsDetail,
+  SplitGroupDetail) suman `insets.bottom` a su `bottom`.
 
 **Navegación (bottom tabs, `CustomTabBar`):** Inicio (house) · Movimientos (arrow-left-right) ·
 Agregar (botón central circular elevado -24, fondo primary, borde del color background) · Estadísticas
@@ -406,8 +423,10 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 8. Montos siempre formateados (separador de miles + símbolo). Pull-to-refresh en listas. Errores vía toasts (mobile) y middleware (backend).
 9. **Etiquetas (tags):** etiquetas libres con color/ícono, asignables a transacciones (`TagPicker` en AddTransaction, `TagChip`), CRUD en `TagsScreen` ("Más"), filtro por tag en Movimientos.
 10. **Metas de ahorro:** `SavingsScreen` con card total gradiente, `AddSavingsGoal` (Calculator, fecha límite, cuenta, color/ícono), `SavingsDetail` con contribuciones (depósito/retiro vía BottomSheet+Calculator), card resumen en Home (`HomeSummaryCard`).
-11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben" y card de balance neto; `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, tasa de interés, fechas, cuenta); `DebtDetail` con historial de pagos y FAB "Registrar pago" (BottomSheet+Calculator). Deudas en `expense`, préstamos en `income`. Card en Home si hay activas.
-12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia, lista cronológica de gastos y FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional. Card en Home si hay balances pendientes.
+11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben", card de balance neto y sección **"Historial"** colapsable para las saldadas (con borrado definitivo); `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, tasa de interés, fechas, cuenta + switch "registrar desembolso inicial en la cuenta"); `DebtDetail` con historial de pagos (muestra la cuenta) y FAB "Registrar pago" (BottomSheet con `AccountChips` + Calculator). Cada abono con cuenta mueve el balance real (income/expense). Card en Home si hay activas.
+12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia (con `AccountChips` cuando me involucra, como confirmación explícita del movimiento), lista cronológica de gastos y FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional y **cuenta cuando pago yo** (descuenta de la cuenta real). Card en Home si hay balances pendientes.
+13. **Hora editable** en gastos/ingresos (`TimePicker` propio, BottomSheet de 2 columnas 24h) junto al chip de fecha en `AddTransaction`.
+14. **Íconos y colores ampliados:** `ACCOUNT_ICONS` (25) y `CATEGORY_ICONS` (60) en `Icon.tsx`, `PALETTE` (24) en `theme/index.ts` (los 12 originales primero). Selectores en grilla (`flexWrap`). `components/AccountChips.tsx` = selector inline de cuenta para BottomSheets.
 
 ---
 

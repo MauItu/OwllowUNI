@@ -272,8 +272,10 @@ export interface DebtPayment {
   amount: string;
   date: string;
   description: string | null;
+  accountId: number | null;
   transactionId: number | null;
   createdAt: string;
+  accountName?: string | null;
 }
 
 export interface DebtInput {
@@ -288,12 +290,16 @@ export interface DebtInput {
   icon?: string;
   notes?: string | null;
   accountId?: number | null;
+  /** Si es true y hay accountId, registra el desembolso inicial como transacción. */
+  registerInitialTransaction?: boolean;
 }
 
 export interface DebtPaymentInput {
   amount: number;
   date: string;
   description?: string | null;
+  /** Cuenta a la que entra (loan) o de la que sale (debt) el dinero del abono. */
+  accountId?: number | null;
 }
 
 export interface DebtsSummary {
@@ -343,11 +349,13 @@ export interface SplitExpense {
   totalAmount: string;
   paidByMemberId: number;
   date: string;
+  accountId: number | null;
   transactionId: number | null;
   categoryId: number | null;
   createdAt: string;
   updatedAt: string;
   paidByName?: string;
+  accountName?: string | null;
   categoryName?: string | null;
   categoryIcon?: string | null;
   categoryColor?: string | null;
@@ -373,6 +381,8 @@ export interface SplitExpenseInput {
   paidByMemberId: number;
   date: string;
   categoryId?: number | null;
+  /** Solo válido si el pagador es el miembro "Yo": cuenta de la que salió el dinero. */
+  accountId?: number | null;
   shares: { memberId: number; amount: number }[];
 }
 
@@ -392,6 +402,8 @@ export interface SettleInput {
   toMemberId: number;
   amount: number;
   date?: string;
+  /** Cuenta del usuario cuando la liquidación lo involucra (depósito si me pagan, egreso si pago yo). */
+  accountId?: number | null;
 }
 
 export interface SplitsSummary {
@@ -399,4 +411,16 @@ export interface SplitsSummary {
   totalIOwe: number;
   netBalance: number;
   groups: { groupId: number; groupName: string; myBalance: number }[];
+}
+
+export interface SplitSettlement {
+  id: number;
+  groupId: number;
+  fromMemberId: number;
+  toMemberId: number;
+  amount: string;
+  date: string;
+  accountId: number | null;
+  transactionId: number | null;
+  createdAt: string;
 }

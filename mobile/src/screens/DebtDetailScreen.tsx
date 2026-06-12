@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -7,7 +8,9 @@ import { Screen, ScreenHeader, EmptyState, ErrorState, Loading, SectionTitle } f
 import { DebtCard } from '../components/DebtCard';
 import { BottomSheet } from '../components/BottomSheet';
 import { Calculator } from '../components/Calculator';
+import { AccountChips } from '../components/AccountChips';
 import { Icon } from '../components/Icon';
+import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { debtsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
@@ -20,15 +23,18 @@ export function DebtDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<RootStackParamList, 'DebtDetail'>>();
   const debtId = route.params.debtId;
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
+  const { accounts } = useAccounts();
 
   const [debt, setDebt] = useState<Debt | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [payAccountId, setPayAccountId] = useState<number | null>(null);
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -60,7 +66,7 @@ export function DebtDetailScreen() {
       return;
     }
     try {
-      const updated = await debtsApi.pay(debtId, { amount, date: todayISO() });
+      const updated = await debtsApi.pay(debtId, { amount, date: todayISO(), accountId: payAccountId });
       setSheetOpen(false);
       if (updated.isPaidOff) {
         showSuccess(isDebt ? '🎉 ¡Deuda saldada por completo!' : '🎉 ¡Préstamo recuperado por completo!');
@@ -158,7 +164,10 @@ export function DebtDetailScreen() {
                   <Text style={styles.payDesc} numberOfLines={1}>
                     {item.description?.trim() || (isDebt ? 'Pago' : 'Abono')}
                   </Text>
-                  <Text style={styles.payDate}>{formatShortDate(item.date)}</Text>
+                  <Text style={styles.payDate}>
+                    {formatShortDate(item.date)}
+                    {item.accountName ? ` · ${item.accountName}` : ''}
+                  </Text>
                 </View>
                 <Text style={[styles.payAmount, { color: theme.colors.income }]}>
                   -{formatCurrency(item.amount)}
@@ -169,7 +178,7 @@ export function DebtDetailScreen() {
 
           {/* FAB Registrar pago */}
           {!debt.isPaidOff && (
-            <Pressable style={[styles.fab, { backgroundColor: semanticColor, shadowColor: semanticColor }]} onPress={() => setSheetOpen(true)}>
+            <Pressable style={[styles.fab, { backgroundColor: semanticColor, shadowColor: semanticColor, bottom: insets.bottom + theme.spacing.lg }]} onPress={() => { setPayAccountId(debt.accountId ?? null); setSheetOpen(true); }}>
               <Icon name="hand-coins" size={20} color="#FFFFFF" strokeWidth={2.4} />
               <Text style={styles.fabText}>{isDebt ? 'Registrar pago' : 'Registrar abono'}</Text>
             </Pressable>
@@ -184,6 +193,10 @@ export function DebtDetailScreen() {
             <Text style={styles.sheetHint}>
               Restante: <Text style={{ color: semanticColor, fontWeight: theme.fontWeight.bold }}>{formatCurrency(debt.remainingAmount)}</Text>
             </Text>
+            <Text style={styles.accountLabel}>
+              {isDebt ? '¿De qué cuenta pagaste?' : '¿En qué cuenta te depositaron?'}
+            </Text>
+            <AccountChips accounts={accounts} selectedId={payAccountId} onSelect={setPayAccountId} allowNone noneLabel="No registrar" />
             <Calculator type={isDebt ? 'expense' : 'income'} onConfirm={registerPayment} />
           </BottomSheet>
         </>
@@ -244,5 +257,11 @@ const createStyles = (theme: Theme) =>
       fontSize: theme.fontSize.sm,
       textAlign: 'center',
       marginBottom: theme.spacing.sm,
+    },
+    accountLabel: {
+      color: theme.colors.textSecondary,
+      fontSize: theme.fontSize.sm,
+      fontWeight: theme.fontWeight.medium,
+      marginBottom: theme.spacing.xs,
     },
   });

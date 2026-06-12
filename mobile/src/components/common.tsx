@@ -9,19 +9,31 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 
-/** Contenedor base de pantalla: fondo + inset superior (status bar). */
-export function Screen({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
-  const { theme } = useTheme();
+/**
+ * Contenedor base de pantalla: fondo + insets de SafeArea.
+ * Por defecto solo aplica el inset superior (status bar). Las pantallas modales
+ * que no tienen el tab bar debajo deben pasar edges={['top','bottom']} para no
+ * quedar bajo la barra de gestos/navegación inferior.
+ */
+export function Screen({
+  children,
+  style,
+  edges = ['top'],
+}: {
+  children: React.ReactNode;
+  style?: ViewStyle;
+  edges?: readonly Edge[];
+}) {
   const styles = useThemedStyles(createStyles);
   return (
-    <SafeAreaView edges={['top']} style={[styles.screen, style]}>
+    <SafeAreaView edges={edges} style={[styles.screen, style]}>
       {children}
     </SafeAreaView>
   );

@@ -163,6 +163,8 @@ export const debtPayments = pgTable('debt_payments', {
   amount: decimal('amount', { precision: 15, scale: 2 }).notNull(),
   date: date('date').notNull(),
   description: varchar('description', { length: 255 }),
+  // Cuenta a la que entró/salió el dinero del abono (nullable: pagos históricos o sin registrar)
+  accountId: integer('account_id').references(() => accounts.id),
   transactionId: integer('transaction_id').references(() => transactions.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -209,6 +211,8 @@ export const splitExpenses = pgTable('split_expenses', {
     .references(() => splitMembers.id)
     .notNull(),
   date: date('date').notNull(),
+  // Cuenta de la que salió el dinero cuando el gasto lo pagó el usuario (nullable)
+  accountId: integer('account_id').references(() => accounts.id),
   transactionId: integer('transaction_id').references(() => transactions.id),
   categoryId: integer('category_id').references(() => categories.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -234,6 +238,27 @@ export const splitShares = pgTable(
     uniqueExpenseMember: unique().on(t.expenseId, t.memberId),
   }),
 );
+
+// ───────────────────────── split_settlements ────────────────────────
+// Liquidaciones entre dos miembros de un grupo. Persisten el pago y, cuando
+// involucran al usuario (is_me), enlazan la transacción de cuenta generada.
+export const splitSettlements = pgTable('split_settlements', {
+  id: serial('id').primaryKey(),
+  groupId: integer('group_id')
+    .references(() => splitGroups.id, { onDelete: 'cascade' })
+    .notNull(),
+  fromMemberId: integer('from_member_id')
+    .references(() => splitMembers.id)
+    .notNull(),
+  toMemberId: integer('to_member_id')
+    .references(() => splitMembers.id)
+    .notNull(),
+  amount: decimal('amount', { precision: 15, scale: 2 }).notNull(),
+  date: date('date').notNull(),
+  accountId: integer('account_id').references(() => accounts.id),
+  transactionId: integer('transaction_id').references(() => transactions.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
 
 // ───────────────────────────── relations ────────────────────────────
 export const accountsRelations = relations(accounts, ({ many }) => ({
@@ -374,6 +399,25 @@ export const splitSharesRelations = relations(splitShares, ({ one }) => ({
   }),
 }));
 
+export const splitSettlementsRelations = relations(splitSettlements, ({ one }) => ({
+  group: one(splitGroups, {
+    fields: [splitSettlements.groupId],
+    references: [splitGroups.id],
+  }),
+  fromMember: one(splitMembers, {
+    fields: [splitSettlements.fromMemberId],
+    references: [splitMembers.id],
+  }),
+  toMember: one(splitMembers, {
+    fields: [splitSettlements.toMemberId],
+    references: [splitMembers.id],
+  }),
+  transaction: one(transactions, {
+    fields: [splitSettlements.transactionId],
+    references: [transactions.id],
+  }),
+}));
+
 // ─────────────────────────────── types ──────────────────────────────
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
@@ -403,3 +447,5 @@ export type SplitExpense = typeof splitExpenses.$inferSelect;
 export type NewSplitExpense = typeof splitExpenses.$inferInsert;
 export type SplitShare = typeof splitShares.$inferSelect;
 export type NewSplitShare = typeof splitShares.$inferInsert;
+export type SplitSettlement = typeof splitSettlements.$inferSelect;
+export type NewSplitSettlement = typeof splitSettlements.$inferInsert;

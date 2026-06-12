@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable, Modal, RefreshControl, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { PALETTE, type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -21,6 +22,7 @@ interface FormState {
 
 export function CategoriesScreen() {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const [tab, setTab] = useState<CategoryType>('expense');
@@ -159,7 +161,7 @@ export function CategoriesScreen() {
       {/* Modal crear/editar */}
       <Modal visible={!!form} transparent animationType="slide" onRequestClose={() => setForm(null)}>
         <Pressable style={styles.backdrop} onPress={() => setForm(null)} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: theme.spacing.lg + insets.bottom }]}>
           {form && (
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.sheetTitle}>

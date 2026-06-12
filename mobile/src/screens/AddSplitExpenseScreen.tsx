@@ -8,7 +8,9 @@ import { CalculatorSheet } from '../components/CalculatorSheet';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
 import { BottomSheet } from '../components/BottomSheet';
+import { AccountChips } from '../components/AccountChips';
 import { Icon } from '../components/Icon';
+import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { splitsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
@@ -39,11 +41,13 @@ export function AddSplitExpenseScreen() {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
+  const { accounts } = useAccounts();
 
   const [members, setMembers] = useState<SplitMember[]>([]);
   const [description, setDescription] = useState('');
   const [totalAmount, setTotalAmount] = useState(0);
   const [paidBy, setPaidBy] = useState<number | null>(null);
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [date, setDate] = useState(todayISO());
   const [category, setCategory] = useState<Category | null>(null);
   const [customSplit, setCustomSplit] = useState(false);
@@ -127,6 +131,8 @@ export function AddSplitExpenseScreen() {
         paidByMemberId: paidBy,
         date,
         categoryId: category?.id ?? null,
+        // La cuenta solo aplica si el gasto lo pagué yo.
+        accountId: paidByMember?.isMe ? accountId : null,
         shares,
       });
       showSuccess('Gasto registrado');
@@ -185,6 +191,14 @@ export function AddSplitExpenseScreen() {
           iconColor={category?.color ?? theme.colors.accentLight}
           onPress={() => setShowCategory(true)}
         />
+
+        {/* Cuenta: solo cuando el gasto lo pago yo, para descontarlo de una cuenta real */}
+        {paidByMember?.isMe && (
+          <View style={styles.accountBlock}>
+            <Text style={styles.fieldLabel}>¿De qué cuenta pagaste? (opcional)</Text>
+            <AccountChips accounts={accounts} selectedId={accountId} onSelect={setAccountId} allowNone noneLabel="No descontar" />
+          </View>
+        )}
 
         {/* División */}
         <View style={styles.splitHeader}>
@@ -284,6 +298,7 @@ export function AddSplitExpenseScreen() {
             style={[styles.pickRow, paidBy === m.id && { borderColor: theme.colors.primary, backgroundColor: `${theme.colors.primary}15` }]}
             onPress={() => {
               setPaidBy(m.id);
+              if (!m.isMe) setAccountId(null);
               setShowPaidBy(false);
             }}
           >
@@ -304,6 +319,7 @@ const createStyles = (theme: Theme) =>
   StyleSheet.create({
     content: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
     fieldLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
+    accountBlock: { marginBottom: theme.spacing.md, gap: theme.spacing.xs },
     splitHeader: { marginBottom: theme.spacing.sm, gap: theme.spacing.sm },
     splitToggle: { flexDirection: 'row', gap: theme.spacing.sm },
     splitToggleBtn: {

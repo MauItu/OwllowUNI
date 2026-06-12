@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Modal, Pressable, FlatList, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function AccountPicker({ visible, accounts, title = 'Selecciona cuenta', excludeId, onSelect, onClose }: Props) {
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const data = accounts.filter((a) => a.id !== excludeId);
@@ -32,7 +34,7 @@ export function AccountPicker({ visible, accounts, title = 'Selecciona cuenta', 
         <FlatList
           data={data}
           keyExtractor={(a) => String(a.id)}
-          contentContainerStyle={{ paddingBottom: theme.spacing.xl }}
+          contentContainerStyle={{ paddingBottom: theme.spacing.xl + insets.bottom }}
           ListEmptyComponent={<Text style={styles.empty}>No hay cuentas disponibles</Text>}
           renderItem={({ item }) => (
             <Pressable style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]} onPress={() => onSelect(item)}>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -20,6 +21,7 @@ export function SavingsDetailScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<RootStackParamList, 'SavingsDetail'>>();
   const goalId = route.params.goalId;
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
@@ -162,7 +164,7 @@ export function SavingsDetailScreen() {
           />
 
           {/* FAB Contribuir */}
-          <Pressable style={styles.fab} onPress={() => { setContribType('deposit'); setSheetOpen(true); }}>
+          <Pressable style={[styles.fab, { bottom: insets.bottom + theme.spacing.lg }]} onPress={() => { setContribType('deposit'); setSheetOpen(true); }}>
             <Icon name="plus" size={20} color="#FFFFFF" strokeWidth={2.6} />
             <Text style={styles.fabText}>Contribuir</Text>
           </Pressable>

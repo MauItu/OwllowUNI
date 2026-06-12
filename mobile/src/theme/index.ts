@@ -206,9 +206,13 @@ export const darkTheme: Theme = {
 };
 
 // Paleta para escoger color de cuentas/categorías en formularios.
-// Mezcla tonos que funcionan en ambos modos.
+// Los primeros 12 se conservan (datos existentes los usan y PALETTE[0] es el default).
+// Mezcla tonos que funcionan en ambos modos (ni muy oscuros ni muy claros).
 export const PALETTE = [
   '#C1437A', '#F72585', '#3A60A1', '#4CC9F0',
   '#7B528C', '#7209B7', '#2E8B57', '#4ADE80',
   '#E8A838', '#4EADA1', '#D4845A', '#9B7DB8',
+  '#E63946', '#F4A261', '#E76F51', '#06D6A0',
+  '#118AB2', '#3D8BFD', '#8338EC', '#FF6B9D',
+  '#5E8C61', '#B5838D', '#C77DFF', '#FF9E40',
 ];

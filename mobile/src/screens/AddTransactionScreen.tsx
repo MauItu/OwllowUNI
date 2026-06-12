@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, KeyboardAvoidingView, Platform, TextInput } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -8,6 +9,7 @@ import { Calculator } from '../components/Calculator';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { AccountPicker } from '../components/AccountPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
+import { TimePicker } from '../components/TimePicker';
 import { TagPicker } from '../components/TagPicker';
 import { TagChip } from '../components/TagChip';
 import { Icon } from '../components/Icon';
@@ -15,7 +17,7 @@ import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { transactionsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
-import { todayISO, nowTime, formatShortDate, parseISOSafe } from '../utils/formatDate';
+import { todayISO, nowTime, formatShortDate, formatTime, parseISOSafe } from '../utils/formatDate';
 import type { RootStackParamList } from '../navigation/types';
 import type { Account, Category, Tag, TxType } from '../types';
 
@@ -43,6 +45,7 @@ export function AddTransactionScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'AddTransaction'>>();
   const params = route.params ?? {};
   const editingId = params.transactionId;
+  const insets = useSafeAreaInsets();
   const { accounts } = useAccounts();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
@@ -63,6 +66,7 @@ export function AddTransactionScreen() {
   const [showAccount, setShowAccount] = useState(false);
   const [showToAccount, setShowToAccount] = useState(false);
   const [showDate, setShowDate] = useState(false);
+  const [showTime, setShowTime] = useState(false);
   const [showTags, setShowTags] = useState(false);
 
   const toggleTag = (tag: Pick<Tag, 'id' | 'name' | 'color' | 'icon'>) => {
@@ -221,6 +225,7 @@ export function AddTransactionScreen() {
             />
           )}
           <Chip icon="calendar" label={formatShortDate(date)} onPress={() => setShowDate(true)} />
+          <Chip icon="clock" label={formatTime(time)} onPress={() => setShowTime(true)} />
         </ScrollView>
 
         {/* Descripción opcional */}
@@ -257,13 +262,17 @@ export function AddTransactionScreen() {
 
         <View style={{ flex: 1 }} />
 
-        {/* Calculadora (parte inferior) */}
-        <Calculator
-          type={type}
-          initialValue={initialAmount}
-          currency={account?.currency ?? 'COP'}
-          onConfirm={save}
-        />
+        {/* Calculadora (parte inferior). El inset se aplica como padding del
+            wrapper en color surface para que el teclado no quede bajo la barra
+            de gestos de Android sin romper los usos dentro de BottomSheet. */}
+        <View style={{ backgroundColor: theme.colors.surface, paddingBottom: insets.bottom }}>
+          <Calculator
+            type={type}
+            initialValue={initialAmount}
+            currency={account?.currency ?? 'COP'}
+            onConfirm={save}
+          />
+        </View>
       </KeyboardAvoidingView>
 
       <CategoryPicker
@@ -303,6 +312,15 @@ export function AddTransactionScreen() {
           setShowDate(false);
         }}
         onClose={() => setShowDate(false)}
+      />
+      <TimePicker
+        visible={showTime}
+        value={time}
+        onConfirm={(t) => {
+          setTime(t);
+          setShowTime(false);
+        }}
+        onClose={() => setShowTime(false)}
       />
       <TagPicker
         visible={showTags}

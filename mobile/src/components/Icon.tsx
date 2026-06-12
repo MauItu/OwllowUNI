@@ -33,9 +33,13 @@ export function Icon({ name, size = 22, color, strokeWidth = 2 }: IconProps) {
 }
 
 // Íconos disponibles para escoger en formularios de cuentas/categorías.
+// Todos verificados contra lucide-react-native ^0.460.
 export const ACCOUNT_ICONS = [
   'wallet', 'banknote', 'credit-card', 'piggy-bank', 'landmark',
   'smartphone', 'coins', 'building-2', 'dollar-sign', 'briefcase',
+  'vault', 'bitcoin', 'circle-dollar-sign', 'hand-coins', 'receipt',
+  'gem', 'trending-up', 'shield', 'lock', 'globe',
+  'store', 'package', 'badge-dollar-sign', 'nfc', 'wallet-cards',
 ];
 
 export const CATEGORY_ICONS = [
@@ -43,4 +47,10 @@ export const CATEGORY_ICONS = [
   'heart-pulse', 'pill', 'dumbbell', 'graduation-cap', 'book-open',
   'shirt', 'smartphone', 'tv', 'gamepad-2', 'gift', 'briefcase',
   'trending-up', 'plane', 'coffee', 'baby', 'paw-print', 'wrench',
+  'pizza', 'beer', 'wine', 'ice-cream-cone', 'apple', 'bike',
+  'train-front', 'parking-meter', 'zap', 'droplets', 'flame', 'music',
+  'clapperboard', 'ticket', 'palette', 'camera', 'scissors', 'sparkles',
+  'stethoscope', 'glasses', 'school', 'pen-tool', 'laptop', 'headphones',
+  'watch', 'sofa', 'bed', 'trees', 'mountain', 'umbrella',
+  'cake', 'party-popper', 'dog', 'cat', 'shopping-bag', 'hand-platter',
 ];
