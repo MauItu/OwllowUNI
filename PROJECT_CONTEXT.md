@@ -68,13 +68,17 @@ mobile/
 ├── App.tsx
 └── src/
     ├── api/client.ts           ← Axios + endpoints tipados + API_BASE_URL
+    ├── services/notifications.ts ← Notificaciones LOCALES (permisos, programar/cancelar/
+    │                              reprogramar por entidad con identifiers determinísticos, sync global)
     ├── hooks/                  ← useAccounts, useTransactions, useCategories, useTemplates,
-    │                              useStats, useTags, useSavings, useDebts, useSplits
+    │                              useStats, useTags, useSavings, useDebts, useSplits,
+    │                              useNotificationSettings
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
     ├── screens/                ← Home, Transactions, AddTransaction, Accounts, AddAccount,
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Splits,
-    │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense, More
+    │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense, More,
+    │                              SettingsNotifications
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
@@ -269,7 +273,10 @@ react-native-reanimated ~4.1 (requiere react-native-worklets 0.5.1 — instalado
 axios ^1.7, zustand ^5, date-fns ^4.1, lucide-react-native ^0.460, @expo/vector-icons ^15
 (requiere expo-font ~14.0 — instalado), expo-status-bar ~3.0, react-native-toast-message ^2.2,
 expo-linear-gradient ~15.0 (gradientes del sistema de temas dual; bundled en Expo Go SDK 54),
-expo-splash-screen ~31.0 (control explícito de splash).
+expo-splash-screen ~31.0 (control explícito de splash),
+expo-notifications ~0.32.17 (notificaciones LOCALES programadas; carga lazy — ver "Notificaciones locales"),
+@react-native-async-storage/async-storage 2.2.0 (persistencia de preferencias de notificaciones),
+expo-constants ~18.0.13 (detección de entorno Expo Go para deshabilitar notificaciones).
 TypeScript ~5.9, @types/react ~19.1.
 
 > **NO usar:** `victory-native` (removido — arrastra `@shopify/react-native-skia`; las gráficas son
@@ -427,6 +434,7 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia (con `AccountChips` cuando me involucra, como confirmación explícita del movimiento), lista cronológica de gastos y FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional y **cuenta cuando pago yo** (descuenta de la cuenta real). Card en Home si hay balances pendientes.
 13. **Hora editable** en gastos/ingresos (`TimePicker` propio, BottomSheet de 2 columnas 24h) junto al chip de fecha en `AddTransaction`.
 14. **Íconos y colores ampliados:** `ACCOUNT_ICONS` (25) y `CATEGORY_ICONS` (60) en `Icon.tsx`, `PALETTE` (24) en `theme/index.ts` (los 12 originales primero). Selectores en grilla (`flexWrap`). `components/AccountChips.tsx` = selector inline de cuenta para BottomSheets.
+15. **Notificaciones locales y recordatorios:** `SettingsNotificationsScreen` (sección "Ajustes" de "Más") con estado de permisos (amable: explica antes de pedir, y si están denegados muestra botón "Abrir ajustes" → `Linking.openSettings()`), toggle + selector de hora del recordatorio diario ("No olvides registrar tus gastos de hoy", default 8:00 PM vía `TimePicker`), y toggles para alertas de deudas y metas. Preferencias persistidas en AsyncStorage (`useNotificationSettings`). Todo con `scheduleNotificationAsync` (local, sin push ni servidores). **Alertas de deudas:** una 7 días antes del vencimiento y otra el día del vencimiento; se reprograman al crear/editar (`AddDebt`) y al saldar (`DebtDetail` → se cancelan si queda saldada o se elimina). **Alertas de metas:** 7 días antes de la fecha límite; se reprograman al crear/editar/contribuir y se cancelan al completar/eliminar. Centralizado en `src/services/notifications.ts` (ver "Notificaciones locales").
 
 ---
 
@@ -465,6 +473,39 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 - **Removidos:** `victory-native` (no se usaba; arrastraba skia) y `expo-haptics` (incompatible con Node 22).
 - **Limpiado:** `Calculator.tsx` (llamadas huérfanas a `impactAsync`), `babel.config.js`
   (quitado el plugin manual de reanimated), `pnpm-workspace.yaml` (clave `allowBuilds` inválida → `onlyBuiltDependencies`).
+
+### Notificaciones locales (jun 2026)
+- **Dependencias:** `expo-notifications@~0.32.17`, `@react-native-async-storage/async-storage@2.2.0`
+  y `expo-constants@~18.0.13` (instaladas con `npx expo install`, alineadas al SDK 54). expo-doctor 18/18 OK.
+- **Servicio:** `src/services/notifications.ts` centraliza todo. Identifiers **determinísticos**
+  para poder cancelar sin guardar referencias: `daily-reminder`, `debt-<id>-soon`, `debt-<id>-due`,
+  `goal-<id>-deadline`. Solo notificaciones LOCALES (`scheduleNotificationAsync`), **sin push remoto
+  ni servidores**. `setNotificationHandler` (banner+sonido en primer plano) se configura DENTRO de la
+  carga lazy, no en el top-level. Canal Android `reminders` (importancia HIGH). Las alertas de
+  deudas/metas se disparan a las **9:00** del día correspondiente y solo se programan si la fecha es
+  futura (evita spam al reprogramar). El recordatorio diario usa un trigger `DAILY` (hora/minuto del usuario).
+- **Carga PEREZOSA (anti Console Error en Expo Go):** el módulo `expo-notifications` se importa con
+  `await import('expo-notifications')` (dinámico, cacheado una sola vez) **solo cuando el entorno lo
+  soporta**; el archivo NO tiene import estático del módulo (solo `import type`, que se borra en
+  compilación). `isExpoGo()` usa `expo-constants`
+  (`Constants.executionEnvironment === ExecutionEnvironment.StoreClient`, con `appOwnership === 'expo'`
+  de fallback). En **Expo Go Android** `getNotificationsModule()` devuelve `null` sin importar nunca
+  el módulo → todas las funciones públicas son **no-ops seguros** (devuelven `null`/`void`, no lanzan)
+  y se loguea **una sola vez**: `[notifications] Deshabilitadas en Expo Go — usar APK/development build`.
+  `areNotificationsSupported()` expone el estado a la UI.
+- **Reprogramación:** `App.tsx` llama `initNotifications()` al arrancar (canal + `syncAllNotifications`,
+  que cancela todo y reprograma desde el backend: deudas activas con `dueDate` y metas no completadas
+  con `deadline`). Las pantallas de mutación llaman `reschedule*Notifications(...)` / `cancel*Notifications(...)`
+  (fire-and-forget). Cambiar preferencias en `SettingsNotificationsScreen` también dispara `syncAllNotifications`.
+- **Permisos:** flujo amable — se explica el porqué antes de pedir; si el usuario los deniega, la
+  pantalla muestra el estado y un enlace a los ajustes del sistema (`Linking.openSettings()`).
+  El scheduling chequea permiso antes de programar (si falta, no-op silencioso).
+- ⚠️ **Expo Go vs development build:** desde **SDK 53 el Expo Go de Android ya no incluye el módulo
+  `expo-notifications`** — y con el solo hecho de **importarlo** se dispara un Console Error. Por eso el
+  servicio es **no-op en Expo Go Android** (no importa el módulo, no programa nada) y
+  `SettingsNotificationsScreen` muestra un banner "No disponible en Expo Go. Genera el APK con eas
+  build para probarlas" con los toggles deshabilitados. **Las notificaciones solo se prueban de verdad
+  en un APK / development build** (`pnpm build:apk` → `eas build -p android --profile preview`).
 
 ### Fix splash freeze (jun 2026)
 - **Agregado** `expo-splash-screen@~31.0` — control explícito: `preventAutoHideAsync()` al cargar el módulo,

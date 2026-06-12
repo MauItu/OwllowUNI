@@ -11,6 +11,7 @@ import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { savingsApi, getErrorMessage } from '../api/client';
+import { rescheduleGoalNotifications } from '../services/notifications';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatShortDate, parseISOSafe } from '../utils/formatDate';
@@ -85,11 +86,13 @@ export function AddSavingsGoalScreen() {
     try {
       setSaving(true);
       if (goalId) {
-        await savingsApi.update(goalId, payload);
+        const updated = await savingsApi.update(goalId, payload);
         showSuccess('Meta actualizada');
+        rescheduleGoalNotifications(updated).catch(() => {});
       } else {
-        await savingsApi.create(payload);
+        const created = await savingsApi.create(payload);
         showSuccess('Meta creada');
+        rescheduleGoalNotifications(created).catch(() => {});
       }
       triggerRefresh();
       navigation.goBack();

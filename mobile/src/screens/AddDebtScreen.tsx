@@ -11,6 +11,7 @@ import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { debtsApi, getErrorMessage } from '../api/client';
+import { rescheduleDebtNotifications } from '../services/notifications';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatShortDate, parseISOSafe, todayISO } from '../utils/formatDate';
@@ -107,14 +108,16 @@ export function AddDebtScreen() {
     try {
       setSaving(true);
       if (debtId) {
-        await debtsApi.update(debtId, payload);
+        const updated = await debtsApi.update(debtId, payload);
         showSuccess(isDebt ? 'Deuda actualizada' : 'Préstamo actualizado');
+        rescheduleDebtNotifications(updated).catch(() => {});
       } else {
-        await debtsApi.create({
+        const created = await debtsApi.create({
           ...payload,
           registerInitialTransaction: registerInitial && accountId != null,
         });
         showSuccess(isDebt ? 'Deuda registrada' : 'Préstamo registrado');
+        rescheduleDebtNotifications(created).catch(() => {});
       }
       triggerRefresh();
       navigation.goBack();

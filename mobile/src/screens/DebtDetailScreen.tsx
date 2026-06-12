@@ -13,6 +13,7 @@ import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { debtsApi, getErrorMessage } from '../api/client';
+import { rescheduleDebtNotifications, cancelDebtNotifications } from '../services/notifications';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatShortDate, todayISO } from '../utils/formatDate';
@@ -68,6 +69,8 @@ export function DebtDetailScreen() {
     try {
       const updated = await debtsApi.pay(debtId, { amount, date: todayISO(), accountId: payAccountId });
       setSheetOpen(false);
+      // Si quedó saldada, las alertas se cancelan; si no, se mantienen.
+      rescheduleDebtNotifications(updated).catch(() => {});
       if (updated.isPaidOff) {
         showSuccess(isDebt ? '🎉 ¡Deuda saldada por completo!' : '🎉 ¡Préstamo recuperado por completo!');
       } else {
@@ -83,6 +86,7 @@ export function DebtDetailScreen() {
   const removeDebt = async () => {
     try {
       await debtsApi.remove(debtId);
+      cancelDebtNotifications(debtId).catch(() => {});
       showSuccess(isDebt ? 'Deuda eliminada' : 'Préstamo eliminado');
       triggerRefresh();
       navigation.goBack();

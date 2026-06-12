@@ -24,6 +24,7 @@ export type RootStackParamList = {
   AddSplitGroup: undefined;
   SplitGroupDetail: { groupId: number };
   AddSplitExpense: { groupId: number };
+  SettingsNotifications: undefined;
 };
 
 export type TabParamList = {

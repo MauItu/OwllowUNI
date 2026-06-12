@@ -11,6 +11,7 @@ import { Calculator } from '../components/Calculator';
 import { Icon } from '../components/Icon';
 import { useAppStore } from '../stores/appStore';
 import { savingsApi, getErrorMessage } from '../api/client';
+import { rescheduleGoalNotifications, cancelGoalNotifications } from '../services/notifications';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatShortDate, todayISO } from '../utils/formatDate';
@@ -67,6 +68,8 @@ export function SavingsDetailScreen() {
         date: todayISO(),
       });
       setSheetOpen(false);
+      // Si la meta quedó completada, su alerta se cancela; si no, se mantiene.
+      rescheduleGoalNotifications(updated).catch(() => {});
       if (updated.isCompleted && !goal?.isCompleted) {
         showSuccess('🎉 ¡Felicitaciones! Completaste tu meta');
       } else {
@@ -82,6 +85,7 @@ export function SavingsDetailScreen() {
   const removeGoal = async () => {
     try {
       await savingsApi.remove(goalId);
+      cancelGoalNotifications(goalId).catch(() => {});
       showSuccess('Meta eliminada');
       triggerRefresh();
       navigation.goBack();

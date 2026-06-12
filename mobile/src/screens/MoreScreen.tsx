@@ -44,6 +44,23 @@ export function MoreScreen() {
         ))}
 
         <View style={styles.sectionGap}>
+          <SectionTitle title="Ajustes" />
+        </View>
+        <Pressable
+          style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}
+          onPress={() => navigation.navigate('SettingsNotifications')}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.accent}22` }]}>
+            <Icon name="bell" size={22} color={theme.colors.accentLight} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Notificaciones</Text>
+            <Text style={styles.description}>Recordatorios y alertas de vencimientos</Text>
+          </View>
+          <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
+        </Pressable>
+
+        <View style={styles.sectionGap}>
           <SectionTitle title="Apariencia" />
         </View>
         <View style={styles.item}>

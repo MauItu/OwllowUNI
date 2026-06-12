@@ -9,6 +9,7 @@ import Toast from 'react-native-toast-message';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { createToastConfig } from './src/components/toastConfig';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
+import { initNotifications } from './src/services/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -70,6 +71,12 @@ export default function App() {
   useEffect(() => {
     onLayoutRootView();
   }, [onLayoutRootView]);
+
+  // Programa el recordatorio diario y reprograma las alertas de deudas/metas
+  // con el estado actual (notificaciones locales). No bloquea el arranque.
+  useEffect(() => {
+    initNotifications().catch(() => {});
+  }, []);
 
   return (
     <ErrorBoundary>
