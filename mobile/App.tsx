@@ -7,8 +7,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { LockScreen } from './src/screens/LockScreen';
 import { createToastConfig } from './src/components/toastConfig';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
+import { AppLockProvider, useAppLock } from './src/hooks/useAppLock';
 import { initNotifications } from './src/services/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -48,15 +50,19 @@ const eb = StyleSheet.create({
   message: { color: '#F4EFFA', fontSize: 14, textAlign: 'center' },
 });
 
-/** Capa interna: ya tiene acceso al tema activo. */
+/** Capa interna: ya tiene acceso al tema activo y al estado de bloqueo. */
 function ThemedApp() {
   const { theme, isDark } = useTheme();
+  const { ready, locked, unlock } = useAppLock();
   const toastConfig = useMemo(() => createToastConfig(theme), [theme]);
 
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={theme.colors.statusBar} translucent />
       <AppNavigator />
+      {/* Mientras se lee el estado del PIN, tapa el contenido para no filtrarlo. */}
+      {!ready && <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.background }]} />}
+      {ready && locked && <LockScreen onUnlock={unlock} />}
       <Toast config={toastConfig} />
     </>
   );
@@ -83,7 +89,9 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider>
-            <ThemedApp />
+            <AppLockProvider>
+              <ThemedApp />
+            </AppLockProvider>
           </ThemeProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

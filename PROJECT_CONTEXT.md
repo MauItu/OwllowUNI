@@ -75,20 +75,23 @@ mobile/
     ├── api/client.ts           ← Axios + endpoints tipados + API_BASE_URL
     ├── services/notifications.ts ← Notificaciones LOCALES (permisos, programar/cancelar/
     │                              reprogramar por entidad con identifiers determinísticos, sync global)
+    ├── services/security.ts    ← Bloqueo con PIN (hash SHA-256+salt en SecureStore) + biometría + lockout
     ├── hooks/                  ← useAccounts, useTransactions, useCategories, useTemplates,
     │                              useStats, useTags, useSavings, useDebts, useSplits,
-    │                              useNotificationSettings, useInsights, useAccountsSummary
+    │                              useNotificationSettings, useInsights, useAccountsSummary,
+    │                              useAppLock (provider de bloqueo + AppState)
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
     ├── stores/settingsStore.ts ← Zustand + persist/AsyncStorage (mainCurrency)
     ├── screens/                ← Home, Transactions, AddTransaction, Accounts, AddAccount,
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense, More,
-    │                              SettingsNotifications, ImportExport, Insights, Rates
+    │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
-    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, BottomSheet, Icon, common
+    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker,
+    │                              PinDots, PinKeypad, PinModal, BottomSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks
     ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
     ├── theme/ThemeContext.tsx  ← ThemeProvider, useTheme(), useThemedStyles()
@@ -336,7 +339,10 @@ expo-constants ~18.0.13 (detección de entorno Expo Go para deshabilitar notific
 expo-file-system ~19.0.23 (escribir/leer archivos de export/import — se usa la **API legacy** vía
 `import * as FileSystem from 'expo-file-system/legacy'`: `cacheDirectory`, `writeAsStringAsync`,
 `readAsStringAsync`, `EncodingType.UTF8`), expo-sharing ~14.0.8 (compartir el archivo exportado),
-expo-document-picker ~14.0.8 (seleccionar el CSV a importar).
+expo-document-picker ~14.0.8 (seleccionar el CSV a importar),
+expo-secure-store ~15.0.8 (hash del PIN en Keychain/Keystore — **NUNCA** AsyncStorage; añade el config plugin
+`expo-secure-store` a `app.json`), expo-local-authentication ~17.0.8 (biometría) y expo-crypto ~15.0.9
+(SHA-256 + salt aleatorio) — todos para el bloqueo con PIN; vienen en Expo Go SDK 54.
 TypeScript ~5.9, @types/react ~19.1.
 
 > **NO usar:** `victory-native` (removido — arrastra `@shopify/react-native-skia`; las gráficas son
@@ -431,7 +437,7 @@ global en `App.tsx` captura crashes y muestra un fallback en lugar de congelar l
 
 **SafeArea (fix barra de navegación Android):** `app.json` tiene `edgeToEdgeEnabled:true`, así que
 la app dibuja bajo las barras del sistema. El fix:
-- `App.tsx`: `<ErrorBoundary>` + `<SafeAreaProvider>` + `<StatusBar style="light" backgroundColor={bg} translucent />`.
+- `App.tsx`: `<ErrorBoundary>` + `<SafeAreaProvider>` + `<ThemeProvider>` + `<AppLockProvider>` + `<StatusBar style="light" backgroundColor={bg} translucent />`; `LockScreen` se monta como overlay cuando `locked`.
 - `components/common.tsx` → `Screen` acepta prop `edges` (default `['top']`); las pantallas modales sin tab bar
   pueden pasar `['top','bottom']`.
 - `navigation/AppNavigator.tsx` → `CustomTabBar` propio con `useSafeAreaInsets()`:
@@ -523,6 +529,18 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     `AddTransaction` (transfer), al confirmar se abre una hoja "Monto recibido" precargada con la conversión por la
     tasa actual pero **editable** (la tasa real del usuario manda); se guarda `to_amount` y cada cuenta se mueve en su
     propia moneda. ⚠️ VES puede no estar en las APIs gratuitas → se fija a mano.
+19. **Bloqueo con PIN + biometría (LOCAL, sin backend auth):** `SecurityScreen` ("Seguridad" en "Más"): toggle
+    "Bloquear app con PIN" → flujo crear+confirmar PIN (4 dígitos, teclado propio estilo Calculator); si hay PIN y el
+    dispositivo soporta biometría, toggle "Desbloquear con huella/rostro"; "Cambiar PIN" y desactivar (ambos exigen
+    PIN actual o biometría vía `PinModal`). El PIN se guarda **hasheado** (SHA-256 + salt aleatorio, `expo-crypto`)
+    en **`expo-secure-store`** (NUNCA en claro ni AsyncStorage). `LockScreen` es un overlay a nivel raíz en `App.tsx`
+    (sobre el navigator, dentro de `AppLockProvider`): aparece al abrir la app y al volver de background si pasaron
+    **>60s** (`useAppLock` con listener de `AppState`); dispara la biometría automáticamente al montar con fallback
+    "Usar PIN". **Lockout:** tras **5 intentos** fallidos se bloquea **30s** con contador visible; intentos y lockout
+    se **persisten en SecureStore** (cerrar la app no los resetea). **Edge cases:** si se quita la biometría del
+    sistema cae a PIN sin crashear; si SecureStore falla, las lecturas devuelven "sin bloqueo" (la app no se brickea)
+    y las escrituras avisan por toast. Componentes `PinDots`/`PinKeypad`/`PinModal`, servicio `services/security.ts`.
+    Ver "Bloqueo con PIN" abajo. ⚠️ La **biometría** solo se prueba de verdad en APK/development build.
 
 ---
 
@@ -594,6 +612,31 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
   `SettingsNotificationsScreen` muestra un banner "No disponible en Expo Go. Genera el APK con eas
   build para probarlas" con los toggles deshabilitados. **Las notificaciones solo se prueban de verdad
   en un APK / development build** (`pnpm build:apk` → `eas build -p android --profile preview`).
+
+### Bloqueo con PIN y biometría (jun 2026)
+- **Dependencias:** `expo-secure-store@~15.0.8` (+ config plugin en `app.json`), `expo-local-authentication@~17.0.8`,
+  `expo-crypto@~15.0.9` (instaladas con `npx expo install`). expo-doctor 18/18 OK. A diferencia de las
+  notificaciones, **estos módulos SÍ vienen en Expo Go SDK 54**, así que el PIN funciona en Expo Go.
+- **Servicio `src/services/security.ts`:** `hashPin(pin,salt)` = SHA-256 de `salt:pin` (`expo-crypto`);
+  `setPin` genera salt aleatorio (16 bytes, `getRandomBytesAsync`) y guarda **hash+salt** en SecureStore
+  (claves `wallet_pin_hash`/`wallet_pin_salt`); `verifyPin` recomputa y compara. `disableLock` borra todo.
+  Biometría: `isBiometricAvailable` (`hasHardwareAsync && isEnrolledAsync`), `isBiometricEnabled` (flag en
+  SecureStore), `authenticateBiometric` (`authenticateAsync` con `disableDeviceFallback:true` → fallback a NUESTRO
+  PIN, no el del sistema). Lockout: `recordFailedAttempt`/`getLockState`/`resetAttempts` persisten
+  `wallet_pin_attempts` y `wallet_pin_lock_until` en SecureStore (5 fallos → 30s). Constantes: `PIN_LENGTH=4`,
+  `MAX_ATTEMPTS=5`, `LOCKOUT_MS=30000`, `AUTO_LOCK_MS=60000`.
+- **Robustez (no brickear):** todos los accesos a SecureStore van en try/catch; **lecturas** devuelven valores
+  seguros (p. ej. `isPinEnabled()→false` ante error → app sin bloqueo) y **escrituras** propagan el error para
+  avisar por toast. Si el usuario quita la biometría del sistema, `isBiometricAvailable()` lo detecta y la UI cae a PIN.
+- **`useAppLock` (provider en `hooks/useAppLock.tsx`):** lee el estado del PIN al arrancar (cold start → bloquea si
+  hay PIN), expone `{ ready, enabled, locked, unlock, refresh }`. Listener de `AppState`: guarda el instante de
+  background y, al volver a `active`, re-bloquea SOLO si pasó > `AUTO_LOCK_MS`. `App.tsx` envuelve con
+  `<AppLockProvider>` y renderiza `<LockScreen>` como **overlay absoluto sobre el navigator** (no lo desmonta, así no
+  se pierde el estado de navegación); mientras `!ready` tapa el contenido con un `View` del color de fondo.
+  `SecurityScreen` llama `refresh()` tras activar/desactivar (al activar NO bloquea en sesión).
+- ⚠️ **Expo Go vs APK:** el **PIN** funciona en Expo Go. La **biometría** depende del hardware/enrolamiento; en
+  emuladores o Expo Go puede no estar disponible (la UI lo refleja y cae a PIN). **Se prueba de verdad en el APK /
+  development build** (`pnpm build:apk`).
 
 ### Fix splash freeze (jun 2026)
 - **Agregado** `expo-splash-screen@~31.0` — control explícito: `preventAutoHideAsync()` al cargar el módulo,

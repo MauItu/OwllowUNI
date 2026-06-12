@@ -28,6 +28,7 @@ export type RootStackParamList = {
   ImportExport: undefined;
   Insights: undefined;
   Rates: undefined;
+  Security: undefined;
 };
 
 export type TabParamList = {

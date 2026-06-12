@@ -86,6 +86,19 @@ export function MoreScreen() {
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}
+          onPress={() => navigation.navigate('Security')}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.primary}22` }]}>
+            <Icon name="lock-keyhole" size={22} color={theme.colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Seguridad</Text>
+            <Text style={styles.description}>Bloqueo con PIN y biometría</Text>
+          </View>
+          <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}
           onPress={() => navigation.navigate('SettingsNotifications')}
         >
           <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.accent}22` }]}>

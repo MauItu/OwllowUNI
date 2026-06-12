@@ -33,6 +33,7 @@ import { SettingsNotificationsScreen } from '../screens/SettingsNotificationsScr
 import { ImportExportScreen } from '../screens/ImportExportScreen';
 import { InsightsScreen } from '../screens/InsightsScreen';
 import { RatesScreen } from '../screens/RatesScreen';
+import { SecurityScreen } from '../screens/SecurityScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -162,6 +163,7 @@ export function AppNavigator() {
         <RootStack.Screen name="ImportExport" component={ImportExportScreen} />
         <RootStack.Screen name="Insights" component={InsightsScreen} />
         <RootStack.Screen name="Rates" component={RatesScreen} />
+        <RootStack.Screen name="Security" component={SecurityScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );
