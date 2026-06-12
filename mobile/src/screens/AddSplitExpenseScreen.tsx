@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, StyleSheet } from 'react-native';
+import { View, Text, Pressable, TextInput, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader, PrimaryButton, TextField, SelectRow } from '../components/common';
+import { Screen, ScreenHeader, PrimaryButton, TextField, SelectRow, FormScrollView } from '../components/common';
 import { CalculatorSheet } from '../components/CalculatorSheet';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
@@ -148,7 +148,7 @@ export function AddSplitExpenseScreen() {
   return (
     <Screen>
       <ScreenHeader title="Nuevo gasto compartido" onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScrollView contentContainerStyle={styles.content}>
         <TextField
           label="Descripción"
           value={description}
@@ -260,7 +260,7 @@ export function AddSplitExpenseScreen() {
         <View style={{ marginTop: theme.spacing.md }}>
           <PrimaryButton label="Registrar gasto" onPress={save} loading={saving} icon="receipt" />
         </View>
-      </ScrollView>
+      </FormScrollView>
 
       <CalculatorSheet
         visible={showAmount}

@@ -10,6 +10,10 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
+import {
+  KeyboardAwareScrollView,
+  type KeyboardAwareScrollViewProps,
+} from 'react-native-keyboard-controller';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { type Theme } from '../theme';
@@ -78,6 +82,26 @@ export function ScreenHeader({
       </View>
       <View style={styles.headerBtn}>{right}</View>
     </LinearGradient>
+  );
+}
+
+/**
+ * ScrollView para formularios que mantiene el input enfocado por encima del
+ * teclado (auto-scroll vía react-native-keyboard-controller). Reemplaza el
+ * `KeyboardAvoidingView + ScrollView` manual, que no funcionaba en Android con
+ * edge-to-edge. `bottomOffset` deja un margen extra sobre el teclado.
+ */
+export function FormScrollView({
+  bottomOffset = 24,
+  keyboardShouldPersistTaps = 'handled',
+  ...props
+}: KeyboardAwareScrollViewProps) {
+  return (
+    <KeyboardAwareScrollView
+      bottomOffset={bottomOffset}
+      keyboardShouldPersistTaps={keyboardShouldPersistTaps}
+      {...props}
+    />
   );
 }
 

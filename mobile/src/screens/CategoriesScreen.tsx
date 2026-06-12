@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, Pressable, Modal, RefreshControl, StyleSheet } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { PALETTE, type Theme } from '../theme';
@@ -161,7 +162,8 @@ export function CategoriesScreen() {
       {/* Modal crear/editar */}
       <Modal visible={!!form} transparent animationType="slide" onRequestClose={() => setForm(null)}>
         <Pressable style={styles.backdrop} onPress={() => setForm(null)} />
-        <View style={[styles.sheet, { paddingBottom: theme.spacing.lg + insets.bottom }]}>
+        <KeyboardAvoidingView behavior="padding">
+          <View style={[styles.sheet, { paddingBottom: theme.spacing.lg + insets.bottom }]}>
           {form && (
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.sheetTitle}>
@@ -198,7 +200,8 @@ export function CategoriesScreen() {
               )}
             </ScrollView>
           )}
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </Screen>
   );

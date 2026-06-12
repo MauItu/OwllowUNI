@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, FlatList, Pressable, Modal, ScrollView, RefreshControl, StyleSheet } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -122,7 +123,8 @@ export function TemplatesScreen() {
       {/* Modal crear */}
       <Modal visible={!!form} transparent animationType="slide" onRequestClose={() => setForm(null)}>
         <Pressable style={styles.backdrop} onPress={() => setForm(null)} />
-        <View style={styles.sheet}>
+        <KeyboardAvoidingView behavior="padding">
+          <View style={styles.sheet}>
           {form && (
             <ScrollView keyboardShouldPersistTaps="handled">
               <Text style={styles.sheetTitle}>Nueva plantilla</Text>
@@ -171,7 +173,8 @@ export function TemplatesScreen() {
               </View>
             </ScrollView>
           )}
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <AccountPicker

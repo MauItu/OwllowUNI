@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -25,18 +26,22 @@ export function BottomSheet({ visible, title, onClose, children, maxHeight = '80
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.sheet, { maxHeight, paddingBottom: Math.max(insets.bottom, theme.spacing.md) }]}>
-        <View style={styles.handle} />
-        {title && (
-          <View style={styles.header}>
-            <Text style={styles.title}>{title}</Text>
-            <Pressable onPress={onClose} hitSlop={10} style={styles.close}>
-              <Icon name="x" size={20} color={theme.colors.textSecondary} />
-            </Pressable>
-          </View>
-        )}
-        {children}
-      </View>
+      {/* La hoja sube por encima del teclado (keyboard-controller funciona
+          dentro de Modals y con edge-to-edge en Android). */}
+      <KeyboardAvoidingView behavior="padding" style={styles.kav} pointerEvents="box-none">
+        <View style={[styles.sheet, { maxHeight, paddingBottom: Math.max(insets.bottom, theme.spacing.md) }]}>
+          <View style={styles.handle} />
+          {title && (
+            <View style={styles.header}>
+              <Text style={styles.title}>{title}</Text>
+              <Pressable onPress={onClose} hitSlop={10} style={styles.close}>
+                <Icon name="x" size={20} color={theme.colors.textSecondary} />
+              </Pressable>
+            </View>
+          )}
+          {children}
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -44,11 +49,8 @@ export function BottomSheet({ visible, title, onClose, children, maxHeight = '80
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  kav: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end' },
   sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: theme.colors.surface,
     borderTopLeftRadius: theme.borderRadius.xl,
     borderTopRightRadius: theme.borderRadius.xl,

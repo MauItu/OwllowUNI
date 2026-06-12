@@ -6,6 +6,7 @@ import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, EmptyState, ErrorState } from '../components/common';
 import { TransactionCard } from '../components/TransactionCard';
+import { TransactionFiltersBar } from '../components/TransactionFiltersBar';
 import { AccountPicker } from '../components/AccountPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
 import { TagPicker } from '../components/TagPicker';
@@ -20,13 +21,6 @@ import { groupLabel, formatShortDate } from '../utils/formatDate';
 import { deleteReceipt } from '../utils/receiptStorage';
 import type { TabParamList } from '../navigation/types';
 import type { Transaction, TxType } from '../types';
-
-const TYPE_FILTERS: { key: TxType | 'all'; label: string }[] = [
-  { key: 'all', label: 'Todos' },
-  { key: 'expense', label: 'Gastos' },
-  { key: 'income', label: 'Ingresos' },
-  { key: 'transfer', label: 'Transferencias' },
-];
 
 export function TransactionsScreen() {
   const navigation = useNavigation<any>();
@@ -87,9 +81,6 @@ export function TransactionsScreen() {
     }
   };
 
-  // Chips activos alternan los tres colores de la bandera
-  const chipTrio = [theme.colors.primary, theme.colors.secondary, theme.colors.accent];
-
   const renderRightActions = (t: Transaction) => (
     <Pressable style={styles.deleteAction} onPress={() => remove(t)}>
       <Icon name="trash-2" size={22} color="#FFFFFF" />
@@ -117,54 +108,27 @@ export function TransactionsScreen() {
         )}
       </View>
 
-      {/* Chips de filtro (scroll horizontal) */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
-        {TYPE_FILTERS.map((f, i) => (
-          <Pressable
-            key={f.key}
-            style={[styles.chip, typeFilter === f.key && { backgroundColor: chipTrio[i % 3] }]}
-            onPress={() => setTypeFilter(f.key)}
-          >
-            <Text style={[styles.chipText, typeFilter === f.key && styles.chipTextActive]}>{f.label}</Text>
-          </Pressable>
-        ))}
-        <View style={styles.chipDivider} />
-        <Pressable style={[styles.chip, styles.chipIcon, accountId != null && { backgroundColor: theme.colors.secondary }]} onPress={() => setShowAccount(true)}>
-          <Icon name="wallet" size={14} color={accountId != null ? '#FFFFFF' : theme.colors.textSecondary} />
-          <Text style={[styles.chipText, accountId != null && styles.chipTextActive]} numberOfLines={1}>
-            {selectedAccount ? selectedAccount.name : 'Cuenta'}
-          </Text>
-        </Pressable>
-        <Pressable style={[styles.chip, styles.chipIcon, range.from != null && { backgroundColor: theme.colors.accent }]} onPress={() => setShowDate(true)}>
-          <Icon name="calendar" size={14} color={range.from != null ? '#FFFFFF' : theme.colors.textSecondary} />
-          <Text style={[styles.chipText, range.from != null && styles.chipTextActive]} numberOfLines={1}>
-            {range.from ? formatShortDate(range.from) : 'Fecha'}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.chip, styles.chipIcon, tagId != null && { backgroundColor: selectedTag?.color ?? theme.colors.primary }]}
-          onPress={() => setShowTags(true)}
-        >
-          <Icon name="tag" size={14} color={tagId != null ? '#FFFFFF' : theme.colors.textSecondary} />
-          <Text style={[styles.chipText, tagId != null && styles.chipTextActive]} numberOfLines={1}>
-            {selectedTag ? selectedTag.name : 'Etiqueta'}
-          </Text>
-        </Pressable>
-        {hasFilters && (
-          <Pressable
-            style={[styles.chip, styles.chipIcon]}
-            onPress={() => {
-              setTypeFilter('all');
-              setAccountId(undefined);
-              setTagId(undefined);
-              setRange({});
-            }}
-          >
-            <Icon name="x" size={14} color={theme.colors.expense} />
-            <Text style={[styles.chipText, { color: theme.colors.expense }]}>Limpiar</Text>
-          </Pressable>
-        )}
-      </ScrollView>
+      {/* Chips de filtro */}
+      <TransactionFiltersBar
+        typeFilter={typeFilter}
+        setTypeFilter={setTypeFilter}
+        accountId={accountId}
+        setShowAccount={setShowAccount}
+        selectedAccount={selectedAccount}
+        dateRange={range}
+        setShowDate={setShowDate}
+        tagId={tagId}
+        setShowTags={setShowTags}
+        selectedTag={selectedTag}
+        hasFilters={hasFilters}
+        onClearFilters={() => {
+          setTypeFilter('all');
+          setAccountId(undefined);
+          setTagId(undefined);
+          setRange({});
+        }}
+        theme={theme}
+      />
 
       {error && transactions.length === 0 ? (
         <ErrorState message={error} onRetry={refresh} />
@@ -237,48 +201,42 @@ export function TransactionsScreen() {
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-    backgroundColor: theme.colors.surfaceLight,
-    marginHorizontal: theme.spacing.lg,
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm + 2,
-  },
-  searchInput: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, paddingVertical: 2 },
-  chipsRow: { gap: theme.spacing.sm, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md, alignItems: 'center' },
-  chip: { paddingHorizontal: theme.spacing.md, paddingVertical: 7, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surface },
-  chipIcon: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  chipText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium, maxWidth: 130 },
-  chipTextActive: { color: '#FFFFFF', fontWeight: theme.fontWeight.bold },
-  chipDivider: { width: 1, height: 20, backgroundColor: theme.colors.border, marginHorizontal: theme.spacing.xs },
-  list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xs, paddingBottom: theme.spacing.xxl + theme.spacing.xl },
-  sectionHeader: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.bold, marginTop: theme.spacing.md, marginBottom: theme.spacing.xs },
-  deleteAction: {
-    backgroundColor: theme.colors.expense,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 72,
-    marginBottom: theme.spacing.sm,
-    borderRadius: theme.borderRadius.lg,
-    marginLeft: theme.spacing.sm,
-  },
-  fab: {
-    position: 'absolute',
-    right: theme.spacing.lg,
-    bottom: theme.spacing.lg,
-    width: 56,
-    height: 56,
-    borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
-  },
-});
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.surfaceLight,
+      marginHorizontal: theme.spacing.lg,
+      borderRadius: theme.borderRadius.full,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm + 2,
+    },
+    searchInput: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, paddingVertical: 2 },
+    list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xs, paddingBottom: theme.spacing.xxl + theme.spacing.xl },
+    sectionHeader: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.bold, marginTop: theme.spacing.md, marginBottom: theme.spacing.xs },
+    deleteAction: {
+      backgroundColor: theme.colors.expense,
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: 72,
+      marginBottom: theme.spacing.sm,
+      borderRadius: theme.borderRadius.lg,
+      marginLeft: theme.spacing.sm,
+    },
+    fab: {
+      position: 'absolute',
+      right: theme.spacing.lg,
+      bottom: theme.spacing.lg,
+      width: 56,
+      height: 56,
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: theme.colors.primary,
+      shadowOpacity: 0.5,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 10,
+    },
+  });

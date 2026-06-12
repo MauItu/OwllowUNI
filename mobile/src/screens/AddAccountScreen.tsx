@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { PALETTE, type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader, TextField, PrimaryButton, SelectRow } from '../components/common';
+import { Screen, ScreenHeader, TextField, PrimaryButton, SelectRow, FormScrollView } from '../components/common';
 import { Icon, ACCOUNT_ICONS } from '../components/Icon';
 import { CurrencyPicker } from '../components/CurrencyPicker';
 import { currencyInfo } from '../utils/currencies';
@@ -111,7 +111,7 @@ export function AddAccountScreen() {
         }
       />
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScrollView contentContainerStyle={styles.content}>
         {/* Preview */}
         <View style={styles.preview}>
           <View style={[styles.previewIcon, { backgroundColor: `${color}22` }]}>
@@ -173,7 +173,7 @@ export function AddAccountScreen() {
         <View style={{ marginTop: theme.spacing.lg }}>
           <PrimaryButton label={editingId ? 'Guardar cambios' : 'Crear cuenta'} onPress={save} loading={saving} icon="check" />
         </View>
-      </ScrollView>
+      </FormScrollView>
 
       <CurrencyPicker
         visible={showCurrency}

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Switch, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme, PALETTE } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader, PrimaryButton, TextField, SelectRow } from '../components/common';
+import { Screen, ScreenHeader, PrimaryButton, TextField, SelectRow, FormScrollView } from '../components/common';
 import { CalculatorSheet } from '../components/CalculatorSheet';
 import { AccountPicker } from '../components/AccountPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
@@ -134,7 +134,7 @@ export function AddDebtScreen() {
         title={debtId ? 'Editar deuda' : 'Nueva deuda o préstamo'}
         onBack={() => navigation.goBack()}
       />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScrollView contentContainerStyle={styles.content}>
         {/* Toggle Yo debo / Me deben */}
         <View style={styles.toggle}>
           {(
@@ -273,7 +273,7 @@ export function AddDebtScreen() {
           loading={saving}
           icon="landmark"
         />
-      </ScrollView>
+      </FormScrollView>
 
       <CalculatorSheet
         visible={showAmount}

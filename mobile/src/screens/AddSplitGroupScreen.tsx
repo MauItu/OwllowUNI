@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme, PALETTE } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader, PrimaryButton, TextField } from '../components/common';
+import { Screen, ScreenHeader, PrimaryButton, TextField, FormScrollView } from '../components/common';
 import { Icon } from '../components/Icon';
 import { useAppStore } from '../stores/appStore';
 import { splitsApi, getErrorMessage } from '../api/client';
@@ -87,7 +87,7 @@ export function AddSplitGroupScreen() {
   return (
     <Screen>
       <ScreenHeader title="Nuevo grupo" onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScrollView contentContainerStyle={styles.content}>
         <TextField label="Nombre" value={name} onChangeText={setName} placeholder="Ej: Viaje a Santa Marta" maxLength={100} />
         <TextField
           label="Descripción (opcional)"
@@ -164,7 +164,7 @@ export function AddSplitGroupScreen() {
         </View>
 
         <PrimaryButton label="Crear grupo" onPress={save} loading={saving} icon="users" />
-      </ScrollView>
+      </FormScrollView>
     </Screen>
   );
 }

@@ -48,7 +48,7 @@ import type {
  * URL base del backend: la IP de tu PC en la LAN (NO uses localhost:
  * el dispositivo no lo resuelve). Cámbiala aquí si cambia tu IP.
  */
-export const API_BASE_URL = 'http://192.168.5.106:3000/api';
+export const API_BASE_URL = 'http://192.168.0.12:3000/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

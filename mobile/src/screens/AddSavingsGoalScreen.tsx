@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme, PALETTE } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader, PrimaryButton, TextField, SelectRow } from '../components/common';
+import { Screen, ScreenHeader, PrimaryButton, TextField, SelectRow, FormScrollView } from '../components/common';
 import { CalculatorSheet } from '../components/CalculatorSheet';
 import { AccountPicker } from '../components/AccountPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
@@ -106,7 +106,7 @@ export function AddSavingsGoalScreen() {
   return (
     <Screen>
       <ScreenHeader title={goalId ? 'Editar meta' : 'Nueva meta de ahorro'} onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <FormScrollView contentContainerStyle={styles.content}>
         <TextField label="Nombre" value={name} onChangeText={setName} placeholder="Ej: Viaje a la playa" maxLength={100} />
 
         <SelectRow
@@ -171,7 +171,7 @@ export function AddSavingsGoalScreen() {
         <TextField label="Notas (opcional)" value={notes} onChangeText={setNotes} placeholder="Detalles de la meta" multiline />
 
         <PrimaryButton label={goalId ? 'Guardar cambios' : 'Crear meta'} onPress={save} loading={saving} icon="piggy-bank" />
-      </ScrollView>
+      </FormScrollView>
 
       <CalculatorSheet
         visible={showAmount}
