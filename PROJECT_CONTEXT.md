@@ -94,6 +94,14 @@ wallet/                         ← raíz del repo
   cualquiera (default de dev). Las apps nativas no envían `Origin`, así que el móvil no se afecta.
 - **N+1 splits resuelto:** `GET /api/splits` y `/summary` usan `computeBalancesForGroups` (3 queries
   totales) en vez de iterar `computeBalances` por grupo.
+- **Provisión de defaults por lote (`db/defaults.ts → provisionUserDefaults`):** el registro ya NO
+  hace ~25 round-trips seriales. Gastos, ingresos y la cuenta "Efectivo" corren en paralelo
+  (`Promise.all`); dentro de cada tipo se insertan TODOS los padres en un `insert([...]).returning()`
+  y luego TODAS las hijas en otro insert (~5 round-trips concurrentes). Las hijas se enlazan al padre
+  por **clave de negocio (name)**, nunca por el orden del `RETURNING` (Postgres no lo garantiza).
+- **Menos round-trips en transacciones:** `assertAccountsOwned` usa un único `inArray(accounts.id, …)`
+  comparando conteos (en vez de una query por id, igual que `assertTagsOwned`); en `GET /api/transactions`
+  las queries de `rows` y de `count` van en `Promise.all` (las tags dependen de `rows`, van después).
 - **Errores 500:** el `errorHandler` responde mensaje genérico (el detalle se loguea en el servidor).
 
 ---

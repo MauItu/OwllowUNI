@@ -150,12 +150,13 @@ function balanceStatements(
 /** Verifica que las cuentas referenciadas pertenezcan al usuario (404 si no). */
 async function assertAccountsOwned(uid: number, ids: (number | null | undefined)[]): Promise<void> {
   const unique = [...new Set(ids.filter((id): id is number => id != null))];
-  for (const id of unique) {
-    const [acc] = await db
-      .select({ id: accounts.id })
-      .from(accounts)
-      .where(and(eq(accounts.id, id), eq(accounts.userId, uid)));
-    if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
+  if (unique.length === 0) return;
+  const owned = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.userId, uid), inArray(accounts.id, unique)));
+  if (owned.length !== unique.length) {
+    throw new ApiError(404, 'Cuenta no encontrada');
   }
 }
 
@@ -207,43 +208,43 @@ transactionsRouter.get(
 
     const toAccounts = alias(accounts, 'to_accounts');
 
-    const rows = await db
-      .select({
-        id: transactions.id,
-        type: transactions.type,
-        amount: transactions.amount,
-        description: transactions.description,
-        date: transactions.date,
-        time: transactions.time,
-        accountId: transactions.accountId,
-        toAccountId: transactions.toAccountId,
-        toAmount: transactions.toAmount,
-        categoryId: transactions.categoryId,
-        notes: transactions.notes,
-        receiptFilename: transactions.receiptFilename,
-        createdAt: transactions.createdAt,
-        accountName: accounts.name,
-        accountColor: accounts.color,
-        accountIcon: accounts.icon,
-        accountCurrency: accounts.currency,
-        toAccountName: toAccounts.name,
-        categoryName: categories.name,
-        categoryColor: categories.color,
-        categoryIcon: categories.icon,
-      })
-      .from(transactions)
-      .leftJoin(accounts, eq(transactions.accountId, accounts.id))
-      .leftJoin(toAccounts, eq(transactions.toAccountId, toAccounts.id))
-      .leftJoin(categories, eq(transactions.categoryId, categories.id))
-      .where(where)
-      .orderBy(desc(transactions.date), desc(transactions.time), desc(transactions.id))
-      .limit(limitNum)
-      .offset(offset);
-
-    const [{ total }] = await db
-      .select({ total: count() })
-      .from(transactions)
-      .where(where);
+    // rows y count son independientes → en paralelo. Las tags dependen de los ids
+    // de `rows`, así que se piden después.
+    const [rows, [{ total }]] = await Promise.all([
+      db
+        .select({
+          id: transactions.id,
+          type: transactions.type,
+          amount: transactions.amount,
+          description: transactions.description,
+          date: transactions.date,
+          time: transactions.time,
+          accountId: transactions.accountId,
+          toAccountId: transactions.toAccountId,
+          toAmount: transactions.toAmount,
+          categoryId: transactions.categoryId,
+          notes: transactions.notes,
+          receiptFilename: transactions.receiptFilename,
+          createdAt: transactions.createdAt,
+          accountName: accounts.name,
+          accountColor: accounts.color,
+          accountIcon: accounts.icon,
+          accountCurrency: accounts.currency,
+          toAccountName: toAccounts.name,
+          categoryName: categories.name,
+          categoryColor: categories.color,
+          categoryIcon: categories.icon,
+        })
+        .from(transactions)
+        .leftJoin(accounts, eq(transactions.accountId, accounts.id))
+        .leftJoin(toAccounts, eq(transactions.toAccountId, toAccounts.id))
+        .leftJoin(categories, eq(transactions.categoryId, categories.id))
+        .where(where)
+        .orderBy(desc(transactions.date), desc(transactions.time), desc(transactions.id))
+        .limit(limitNum)
+        .offset(offset),
+      db.select({ total: count() }).from(transactions).where(where),
+    ]);
 
     const txTags = await tagsByTransaction(rows.map((r) => r.id));
 
