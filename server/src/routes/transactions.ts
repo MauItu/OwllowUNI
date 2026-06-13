@@ -382,6 +382,19 @@ transactionsRouter.post(
     let imported = 0;
     const errors: { row: number; reason: string }[] = [];
 
+    // Acumula los statements de las filas válidas y los ejecuta en batches (en vez
+    // de un round-trip HTTP por fila). La validación sigue siendo por fila.
+    const BATCH_ROWS = 50;
+    let pending: unknown[] = [];
+    let rowsInBatch = 0;
+    const flush = async () => {
+      if (pending.length === 0) return;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.batch(pending as any);
+      pending = [];
+      rowsInBatch = 0;
+    };
+
     for (let i = 0; i < rows.length; i++) {
       const row = (rows[i] ?? {}) as Record<string, unknown>;
       const rowNum = i + 1;
@@ -447,13 +460,13 @@ transactionsRouter.post(
           toAccountId,
           categoryId,
           notes,
-        })
-        .returning();
+        });
       const balance = balanceStatements(uid, type, amount, account.id, toAccountId, 1);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await db.batch([insertStmt, ...balance] as any);
+      pending.push(insertStmt, ...balance);
       imported++;
+      if (++rowsInBatch >= BATCH_ROWS) await flush();
     }
+    await flush();
 
     res.json({ imported, errors });
   }),
@@ -512,10 +525,14 @@ transactionsRouter.post(
     const results = await db.batch([insertStmt, ...balance] as any);
     const created = (results[0] as Transaction[])[0];
 
+    // El enlace de etiquetas va fuera del batch: depende del id serial recién
+    // generado (no referenciable dentro de db.batch). Los tagIds ya se validaron
+    // como propios del usuario y se deduplican para no violar el UNIQUE.
     if (data.tagIds && data.tagIds.length > 0) {
+      const uniqueTagIds = [...new Set(data.tagIds)];
       await db
         .insert(transactionTags)
-        .values(data.tagIds.map((tagId) => ({ transactionId: created.id, tagId })));
+        .values(uniqueTagIds.map((tagId) => ({ transactionId: created.id, tagId })));
     }
     res.status(201).json(created);
   }),
@@ -584,8 +601,9 @@ transactionsRouter.put(
     if (data.tagIds) {
       stmts.push(db.delete(transactionTags).where(eq(transactionTags.transactionId, id)));
       if (data.tagIds.length > 0) {
+        const uniqueTagIds = [...new Set(data.tagIds)];
         stmts.push(
-          db.insert(transactionTags).values(data.tagIds.map((tagId) => ({ transactionId: id, tagId }))),
+          db.insert(transactionTags).values(uniqueTagIds.map((tagId) => ({ transactionId: id, tagId }))),
         );
       }
     }

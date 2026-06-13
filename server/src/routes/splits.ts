@@ -732,15 +732,29 @@ splitsRouter.post(
     }
 
     // Persistir la liquidación (historial + enlace a la transacción si la hubo).
-    await db.insert(splitSettlements).values({
-      groupId,
-      fromMemberId: from.id,
-      toMemberId: to.id,
-      amount: data.amount.toFixed(2),
-      date: settleDate,
-      accountId: from.isMe || to.isMe ? data.accountId ?? null : null,
-      transactionId,
-    });
+    // Si esto falla y ya movimos dinero, compensamos la transacción para no dejar
+    // un movimiento de cuenta huérfano (mismo patrón que pay/addExpense).
+    try {
+      await db.insert(splitSettlements).values({
+        groupId,
+        fromMemberId: from.id,
+        toMemberId: to.id,
+        amount: data.amount.toFixed(2),
+        date: settleDate,
+        accountId: from.isMe || to.isMe ? data.accountId ?? null : null,
+        transactionId,
+      });
+    } catch (err) {
+      if (transactionId != null && data.accountId != null) {
+        const undo = to.isMe ? -data.amount : data.amount;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.batch([
+          db.delete(transactions).where(eq(transactions.id, transactionId)),
+          balanceUpdate(uid, data.accountId, undo),
+        ] as any);
+      }
+      throw err;
+    }
 
     res.json({ success: true, settledShares: toSettle.length });
   }),
