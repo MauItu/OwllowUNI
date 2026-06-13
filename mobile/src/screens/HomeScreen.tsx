@@ -26,8 +26,6 @@ import { useSplits } from '../hooks/useSplits';
 import { useAppStore } from '../stores/appStore';
 import { currentMonthRange } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
-import { templatesApi } from '../api/client';
-import { showError } from '../components/toastConfig';
 import type { Template } from '../types';
 
 // Ancho de cada InsightCard en el carrusel (deja ver un poco de la siguiente).
@@ -56,7 +54,6 @@ export function HomeScreen() {
   const { summary: savingsSummary, refetch: refetchSavings } = useSavings();
   const { summary: debtsSummary, refetch: refetchDebts } = useDebts();
   const { summary: splitsSummary, refetch: refetchSplits } = useSplits();
-  const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const setPendingTemplate = useAppStore((s) => s.setPendingTemplate);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -68,15 +65,11 @@ export function HomeScreen() {
     setRefreshing(false);
   }, [refetchAccounts, refetchAcctSummary, refetchStats, refetchInsights, refreshTx, refetchTemplates, refetchSavings, refetchDebts, refetchSplits]);
 
-  const useTemplate = async (template: Template) => {
+  const useTemplate = (template: Template) => {
+    // use_count se incrementa al CONFIRMAR la transacción en AddTransaction,
+    // no al seleccionar la plantilla (así cancelar no la cuenta como usada).
     setSheetOpen(false);
-    try {
-      await templatesApi.use(template.id);
-    } catch {
-      showError('No se pudo registrar el uso de la plantilla');
-    }
     setPendingTemplate(template);
-    triggerRefresh();
     navigation.navigate('AddTransaction', { template });
   };
 

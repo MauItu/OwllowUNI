@@ -18,20 +18,31 @@ import { BottomSheet } from '../components/BottomSheet';
 import { ReceiptViewer } from '../components/ReceiptViewer';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
+import { useCategories } from '../hooks/useCategories';
 import { useAppStore } from '../stores/appStore';
-import { transactionsApi, ratesApi, getErrorMessage } from '../api/client';
+import { transactionsApi, templatesApi, ratesApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { todayISO, nowTime, formatShortDate, formatTime, parseISOSafe } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
 import { processAndSaveReceipt, deleteReceipt, receiptUri } from '../utils/receiptStorage';
 import type { RootStackParamList } from '../navigation/types';
-import type { Account, Category, Tag, TxType } from '../types';
+import type { Account, Category, Tag, Transaction, TxType } from '../types';
 
 const TYPE_TABS: { key: TxType; label: string }[] = [
   { key: 'expense', label: 'Gasto' },
   { key: 'income', label: 'Ingreso' },
   { key: 'transfer', label: 'Transferencia' },
 ];
+
+/** Busca una categoría por id entre los padres y sus subcategorías (lista anidada). */
+function findCategoryById(categories: Category[], id: number): Category | null {
+  for (const c of categories) {
+    if (c.id === id) return c;
+    const child = c.children?.find((ch) => ch.id === id);
+    if (child) return child;
+  }
+  return null;
+}
 
 function Chip({ icon, label, iconColor, onPress }: { icon: string; label: string; iconColor?: string; onPress: () => void }) {
   const { theme } = useTheme();
@@ -53,6 +64,7 @@ export function AddTransactionScreen() {
   const editingId = params.transactionId;
   const insets = useSafeAreaInsets();
   const { accounts } = useAccounts();
+  const { categories } = useCategories();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 
   const [type, setType] = useState<TxType>(params.template?.type ?? params.initialType ?? 'expense');
@@ -65,6 +77,12 @@ export function AddTransactionScreen() {
   const [initialAmount, setInitialAmount] = useState<number>(
     params.template?.amount ? parseFloat(params.template.amount) : 0,
   );
+  // Transacción cargada al editar; sus FKs (cuenta/categoría) se resuelven a
+  // objetos cuando las listas correspondientes terminan de cargar.
+  const [loadedTx, setLoadedTx] = useState<Transaction | null>(null);
+  // Fuerza el remontaje de la Calculator cuando el monto se fija por código
+  // (precarga al editar): su estado interno solo lee `initialValue` al montar.
+  const [calcKey, setCalcKey] = useState(0);
   const [selectedTags, setSelectedTags] = useState<Pick<Tag, 'id' | 'name' | 'color' | 'icon'>[]>([]);
   const [saving, setSaving] = useState(false);
   // toAmount cargado al editar una transferencia multi-moneda existente
@@ -100,25 +118,26 @@ export function AddTransactionScreen() {
     );
   };
 
-  // Cuenta por defecto: la primera disponible
+  // Cuenta por defecto (solo al crear): la primera disponible. Al editar, la
+  // cuenta la fija la transacción cargada (ver efecto de resolución de FKs).
   useEffect(() => {
-    if (!account && accounts.length > 0) setAccount(accounts[0]);
-  }, [accounts, account]);
+    if (!editingId && !account && accounts.length > 0) setAccount(accounts[0]);
+  }, [accounts, account, editingId]);
 
-  // Carga la transacción al editar
+  // Carga la transacción al editar (una sola vez): precarga los campos escalares
+  // y deja la transacción en `loadedTx` para resolver cuenta/categoría después.
   useEffect(() => {
     if (!editingId) return;
     (async () => {
       try {
         const tx = await transactionsApi.get(editingId);
+        setLoadedTx(tx);
         setType(tx.type);
         setDate(tx.date);
         setTime(tx.time);
         setDescription(tx.description ?? '');
         setInitialAmount(parseFloat(tx.amount));
-        const acc = accounts.find((a) => a.id === tx.accountId) ?? null;
-        setAccount(acc);
-        if (tx.toAccountId) setToAccount(accounts.find((a) => a.id === tx.toAccountId) ?? null);
+        setCalcKey((k) => k + 1);
         if (tx.toAmount != null) setLoadedToAmount(parseFloat(tx.toAmount));
         setReceiptFilename(tx.receiptFilename ?? null);
         setLoadedReceipt(tx.receiptFilename ?? null);
@@ -127,8 +146,22 @@ export function AddTransactionScreen() {
         showError(getErrorMessage(err));
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, accounts.length]);
+  }, [editingId]);
+
+  // Resuelve cuenta origen/destino a objetos cuando las cuentas estén cargadas.
+  useEffect(() => {
+    if (!loadedTx || accounts.length === 0) return;
+    setAccount(accounts.find((a) => a.id === loadedTx.accountId) ?? null);
+    if (loadedTx.toAccountId != null) {
+      setToAccount(accounts.find((a) => a.id === loadedTx.toAccountId) ?? null);
+    }
+  }, [loadedTx, accounts]);
+
+  // Resuelve la categoría a objeto cuando las categorías estén cargadas.
+  useEffect(() => {
+    if (!loadedTx || loadedTx.categoryId == null || categories.length === 0) return;
+    setCategory(findCategoryById(categories, loadedTx.categoryId));
+  }, [loadedTx, categories]);
 
   // Borra al instante un archivo huérfano de esta sesión (no el persistido en DB).
   const dropTempFile = (filename: string | null) => {
@@ -212,6 +245,15 @@ export function AddTransactionScreen() {
         showSuccess('Transacción actualizada');
       } else {
         await transactionsApi.create(payload);
+        // use_count solo se incrementa al CONFIRMAR una transacción creada desde
+        // una plantilla (no al seleccionarla). Si el usuario canceló, no llega aquí.
+        if (params.template) {
+          try {
+            await templatesApi.use(params.template.id);
+          } catch {
+            // El uso de plantilla es informativo: no bloquea el guardado.
+          }
+        }
         showSuccess('Transacción guardada');
       }
       // Guardado OK: el archivo final deja de ser temporal; si el persistido
@@ -413,6 +455,7 @@ export function AddTransactionScreen() {
             de gestos de Android sin romper los usos dentro de BottomSheet. */}
         <View style={{ backgroundColor: theme.colors.surface, paddingBottom: insets.bottom }}>
           <Calculator
+            key={calcKey}
             type={type}
             initialValue={initialAmount}
             currency={account?.currency ?? 'COP'}
