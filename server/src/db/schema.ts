@@ -10,6 +10,7 @@ import {
   time,
   text,
   unique,
+  index,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
@@ -44,7 +45,9 @@ export const accounts = pgTable('accounts', {
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdx: index('accounts_user_id_idx').on(t.userId),
+}));
 
 // ──────────────────────────── categories ────────────────────────────
 export const categories = pgTable('categories', {
@@ -62,7 +65,10 @@ export const categories = pgTable('categories', {
   isActive: boolean('is_active').default(true).notNull(),
   sortOrder: integer('sort_order').default(0).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdx: index('categories_user_id_idx').on(t.userId),
+  parentIdx: index('categories_parent_id_idx').on(t.parentId),
+}));
 
 // ─────────────────────────── transactions ───────────────────────────
 export const transactions = pgTable('transactions', {
@@ -89,7 +95,16 @@ export const transactions = pgTable('transactions', {
   receiptFilename: varchar('receipt_filename', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  // Lista paginada + casi todas las queries de stats/insights: filtran user_id
+  // + rango de fechas y ordenan por fecha (scan hacia atrás cubre el ORDER BY DESC).
+  userDateIdx: index('transactions_user_date_idx').on(t.userId, t.date, t.id),
+  // stats by-category/summary/timeline e insights filtran además por `type`.
+  userTypeDateIdx: index('transactions_user_type_date_idx').on(t.userId, t.type, t.date),
+  accountIdx: index('transactions_account_id_idx').on(t.accountId),
+  toAccountIdx: index('transactions_to_account_id_idx').on(t.toAccountId),
+  categoryIdx: index('transactions_category_id_idx').on(t.categoryId),
+}));
 
 // ──────────────────────────── exchange_rates ────────────────────────
 // Tasas de cambio cacheadas. Las `is_manual` las fija el usuario y NUNCA se
@@ -127,7 +142,9 @@ export const templates = pgTable('templates', {
   isActive: boolean('is_active').default(true).notNull(),
   useCount: integer('use_count').default(0).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdx: index('templates_user_id_idx').on(t.userId),
+}));
 
 // ─────────────────────────────── tags ───────────────────────────────
 export const tags = pgTable(
@@ -162,6 +179,9 @@ export const transactionTags = pgTable(
   },
   (t) => ({
     uniqueTransactionTag: unique().on(t.transactionId, t.tagId),
+    // El unique ya cubre lookups por transaction_id (columna líder); falta tag_id
+    // para el filtro EXISTS por tag y el conteo en GET /tags.
+    tagIdx: index('transaction_tags_tag_id_idx').on(t.tagId),
   }),
 );
 
@@ -183,7 +203,9 @@ export const savingsGoals = pgTable('savings_goals', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdx: index('savings_goals_user_id_idx').on(t.userId),
+}));
 
 // ──────────────────────── savings_contributions ─────────────────────
 export const savingsContributions = pgTable('savings_contributions', {
@@ -197,7 +219,9 @@ export const savingsContributions = pgTable('savings_contributions', {
   date: date('date').notNull(),
   transactionId: integer('transaction_id').references(() => transactions.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  goalIdx: index('savings_contributions_goal_id_idx').on(t.goalId),
+}));
 
 // ─────────────────────────────── debts ──────────────────────────────
 export const debts = pgTable('debts', {
@@ -221,7 +245,9 @@ export const debts = pgTable('debts', {
   accountId: integer('account_id').references(() => accounts.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdx: index('debts_user_id_idx').on(t.userId),
+}));
 
 // ─────────────────────────── debt_payments ──────────────────────────
 export const debtPayments = pgTable('debt_payments', {
@@ -236,7 +262,9 @@ export const debtPayments = pgTable('debt_payments', {
   accountId: integer('account_id').references(() => accounts.id),
   transactionId: integer('transaction_id').references(() => transactions.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  debtIdx: index('debt_payments_debt_id_idx').on(t.debtId),
+}));
 
 // ─────────────────────────── split_groups ───────────────────────────
 export const splitGroups = pgTable('split_groups', {
@@ -251,7 +279,9 @@ export const splitGroups = pgTable('split_groups', {
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  userIdx: index('split_groups_user_id_idx').on(t.userId),
+}));
 
 // ─────────────────────────── split_members ──────────────────────────
 export const splitMembers = pgTable(
@@ -289,7 +319,9 @@ export const splitExpenses = pgTable('split_expenses', {
   categoryId: integer('category_id').references(() => categories.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  groupIdx: index('split_expenses_group_id_idx').on(t.groupId),
+}));
 
 // ─────────────────────────── split_shares ───────────────────────────
 export const splitShares = pgTable(
@@ -330,7 +362,9 @@ export const splitSettlements = pgTable('split_settlements', {
   accountId: integer('account_id').references(() => accounts.id),
   transactionId: integer('transaction_id').references(() => transactions.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  groupIdx: index('split_settlements_group_id_idx').on(t.groupId),
+}));
 
 // ───────────────────────────── relations ────────────────────────────
 export const usersRelations = relations(users, ({ many }) => ({
