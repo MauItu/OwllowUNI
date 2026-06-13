@@ -5,6 +5,7 @@ import { db } from '../db/connection.js';
 import { savingsGoals, savingsContributions, accounts, type SavingsGoal } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
+import { safeCompensate } from '../utils/safeCompensate.js';
 
 export const savingsRouter = Router();
 
@@ -231,15 +232,25 @@ savingsRouter.post(
       });
       res.status(201).json(updated);
     } catch (err) {
-      await db
-        .update(savingsGoals)
-        .set({
-          currentAmount: sql`${savingsGoals.currentAmount} - ${signedStr}::numeric`,
-          isCompleted: goal.isCompleted,
-          completedAt: goal.completedAt,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
+      await safeCompensate(
+        [
+          db
+            .update(savingsGoals)
+            .set({
+              currentAmount: sql`${savingsGoals.currentAmount} - ${signedStr}::numeric`,
+              isCompleted: goal.isCompleted,
+              completedAt: goal.completedAt,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid))),
+        ],
+        {
+          endpoint: 'POST /api/savings/:id/contribute',
+          operation: 'contribute',
+          userId: uid,
+          entityId: id,
+        },
+      );
       throw err;
     }
   }),

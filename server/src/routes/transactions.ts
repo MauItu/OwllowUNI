@@ -6,6 +6,7 @@ import { db } from '../db/connection.js';
 import { transactions, accounts, categories, tags, transactionTags, type Transaction } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
+import { safeCompensate } from '../utils/safeCompensate.js';
 
 export const transactionsRouter = Router();
 
@@ -401,7 +402,10 @@ transactionsRouter.post(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await db.batch(stmts as any);
         imported += rowsInBatch.length; // solo se cuenta lo que realmente se commiteó
-      } catch {
+      } catch (err) {
+        // Al cliente le reportamos solo el rango de filas; el error real de la DB se
+        // loguea aquí para diagnosticar fallos sistemáticos (no se pierde).
+        console.error('[import] falló el lote de filas', rowsInBatch[0], '–', rowsInBatch[rowsInBatch.length - 1], err);
         const first = rowsInBatch[0];
         const last = rowsInBatch[rowsInBatch.length - 1];
         errors.push({
@@ -549,9 +553,36 @@ transactionsRouter.post(
     // como propios del usuario y se deduplican para no violar el UNIQUE.
     if (data.tagIds && data.tagIds.length > 0) {
       const uniqueTagIds = [...new Set(data.tagIds)];
-      await db
-        .insert(transactionTags)
-        .values(uniqueTagIds.map((tagId) => ({ transactionId: created.id, tagId })));
+      try {
+        await db
+          .insert(transactionTags)
+          .values(uniqueTagIds.map((tagId) => ({ transactionId: created.id, tagId })));
+      } catch (err) {
+        // El batch tx+balance ya se commiteó; una etiqueta sin enlazar deja la
+        // transacción con datos incorrectos. Saga: compensar revirtiendo el balance
+        // y borrando la transacción (su CASCADE limpia cualquier transaction_tag que
+        // sí entrara) y propagar el error para que el cliente NO la dé por guardada.
+        const revert = balanceStatements(
+          uid,
+          data.type,
+          data.amount,
+          data.accountId,
+          data.toAccountId,
+          -1,
+          toAmount,
+        );
+        await safeCompensate(
+          [...revert, db.delete(transactions).where(eq(transactions.id, created.id))],
+          {
+            endpoint: 'POST /api/transactions',
+            operation: 'create+tags',
+            userId: uid,
+            entityId: created.id,
+            txId: created.id,
+          },
+        );
+        throw err;
+      }
     }
     res.status(201).json(created);
   }),

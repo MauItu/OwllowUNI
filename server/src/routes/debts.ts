@@ -12,6 +12,7 @@ import {
 } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
+import { safeCompensate } from '../utils/safeCompensate.js';
 
 export const debtsRouter = Router();
 
@@ -398,8 +399,13 @@ debtsRouter.post(
         undo.push(db.delete(transactions).where(eq(transactions.id, transactionId)));
         undo.push(balanceUpdate(uid, data.accountId, debt.type === 'loan' ? -data.amount : data.amount));
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await db.batch(undo as any);
+      await safeCompensate(undo, {
+        endpoint: 'POST /api/debts/:id/pay',
+        operation: 'pay',
+        userId: uid,
+        entityId: id,
+        txId: transactionId ?? undefined,
+      });
       throw err;
     }
   }),

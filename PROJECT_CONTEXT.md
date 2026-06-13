@@ -115,7 +115,8 @@ server/
 ├── tsconfig.json
 ├── drizzle.config.ts           ← apunta a src/db/schema.ts, lee DATABASE_URL del .env raíz
 ├── src/
-│   ├── index.ts                ← Entry point Express (CORS, JSON, rutas, errorHandler)
+│   ├── index.ts                ← Entry point Express (CORS, JSON, rutas, errorHandler,
+│   │                             handlers process-level unhandledRejection/uncaughtException)
 │   ├── db/
 │   │   ├── connection.ts       ← Neon + drizzle-orm (carga ../.env)
 │   │   ├── schema.ts           ← Tablas: accounts, categories, transactions, templates,
@@ -138,8 +139,10 @@ server/
 │   │   └── rates.ts           ← tasas de cambio (GET /, PUT/DELETE /manual)
 │   ├── services/
 │   │   └── exchangeRates.ts    ← Frankfurter + open.er-api.com, cache 24h, stale, manuales
-│   └── middleware/
-│       └── errorHandler.ts
+│   ├── middleware/
+│   │   └── errorHandler.ts
+│   └── utils/
+│       └── safeCompensate.ts  ← rollback de saga tolerante a fallos (log estructurado, no pisa el error original)
 └── drizzle/                    ← migraciones generadas por drizzle-kit
 ```
 
@@ -306,7 +309,19 @@ mobile/
 > de un mismo batch), se usa el **patrón saga/compensación**: se aplica el estado en uno o dos
 > `db.batch` y, si un paso posterior falla, se ejecuta un **batch de compensación** que revierte lo
 > ya aplicado. Endpoints con saga: `POST /api/splits/:groupId/expenses`,
-> `POST /api/splits/:groupId/settle`, `POST /api/debts/:id/pay`. No cambiar a `db.transaction` (no soportado).
+> `POST /api/splits/:groupId/settle`, `POST /api/debts/:id/pay`,
+> `POST /api/savings/:id/contribute` y el enlace de etiquetas de `POST /api/transactions` (tras el
+> batch tx+balance; si el insert de `transaction_tags` falla se revierte el balance y se borra la
+> transacción para no darla por guardada con datos incorrectos). No cambiar a `db.transaction` (no soportado).
+>
+> **Compensaciones tolerantes a fallos (`server/src/utils/safeCompensate.ts`).** TODO batch de
+> compensación se ejecuta vía `safeCompensate(undoBatch, context)`, que corre el `db.batch(undo)` y,
+> si la compensación MISMA falla (la red que tumbó la operación puede tumbar también el rollback),
+> NO relanza ese error sino que loguea un mensaje estructurado **"COMPENSACIÓN FALLIDA — reconciliación
+> manual necesaria"** con `{ endpoint, operation, userId, entityId, txId, error }` + stack. El caller
+> SIEMPRE hace `throw err` del **error original** (el que disparó la saga), no el de la compensación:
+> el cliente recibe la causa real y queda un rastro en logs para reconciliar a mano el estado
+> inconsistente (saldo movido sin registro, share liquidado sin settlement, etc.).
 
 > **Concurrencia: guards atómicos en SQL (no TOCTOU).** Donde un saldo se valida y luego se
 > modifica, NO se lee→valida→escribe en memoria (dos requests concurrentes pasarían ambos la
@@ -437,6 +452,11 @@ mobile/
 ---
 
 ## STACK
+
+> **Handlers de último recurso a nivel de proceso (`index.ts`).** `process.on('unhandledRejection')`
+> loguea la promesa rechazada sin catch; `process.on('uncaughtException')` loguea la excepción y sale
+> con `process.exit(1)` tras un timeout de 1s (`.unref()`) para que el log flushee y un orquestador
+> (PM2/Render) reinicie el proceso. Sin dependencias extra.
 
 **Backend:** express ^4.21, @neondatabase/serverless ^0.10, drizzle-orm ^0.36, drizzle-zod ^0.5,
 zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1, **bcryptjs ^3** (hash de contraseñas),

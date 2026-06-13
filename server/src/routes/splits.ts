@@ -17,6 +17,7 @@ import {
 } from '../db/schema.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
+import { safeCompensate } from '../utils/safeCompensate.js';
 
 export const splitsRouter = Router();
 
@@ -617,16 +618,21 @@ splitsRouter.post(
       res.status(201).json({ ...created, shares });
     } catch (err) {
       // Compensación: borrar el gasto si llegó a crearse (su CASCADE borra los
-      // shares) y revertir la transacción de cuenta para no dejar movimientos huérfanos.
-      if (expense) await db.delete(splitExpenses).where(eq(splitExpenses.id, expense.id));
+      // shares) y revertir la transacción de cuenta para no dejar movimientos
+      // huérfanos. Todo en un único batch atómico, tolerante a fallos.
+      const undo: unknown[] = [];
+      if (expense) undo.push(db.delete(splitExpenses).where(eq(splitExpenses.id, expense.id)));
       if (transactionId != null && data.accountId != null) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await db.batch([
-          db.delete(transactions).where(eq(transactions.id, transactionId)),
-          balanceUpdate(uid, data.accountId, data.totalAmount),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ] as any);
+        undo.push(db.delete(transactions).where(eq(transactions.id, transactionId)));
+        undo.push(balanceUpdate(uid, data.accountId, data.totalAmount));
       }
+      await safeCompensate(undo, {
+        endpoint: 'POST /api/splits/:groupId/expenses',
+        operation: 'addExpense',
+        userId: uid,
+        entityId: groupId,
+        txId: transactionId ?? undefined,
+      });
       throw err;
     }
   }),
@@ -805,8 +811,13 @@ splitsRouter.post(
         undo.push(db.delete(transactions).where(eq(transactions.id, transactionId)));
         undo.push(balanceUpdate(uid, accountId, -delta));
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (undo.length > 0) await db.batch(undo as any);
+      await safeCompensate(undo, {
+        endpoint: 'POST /api/splits/:groupId/settle',
+        operation: 'settle',
+        userId: uid,
+        entityId: groupId,
+        txId: transactionId ?? undefined,
+      });
       throw err;
     }
 

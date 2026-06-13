@@ -44,7 +44,10 @@ async function tryFetch(url: string): Promise<any | null> {
     const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) return null;
     return await res.json();
-  } catch {
+  } catch (err) {
+    // Fallo de red/timeout/parseo de la API externa: caemos al fallback (null),
+    // pero logueamos para no perder el diagnóstico si una fuente cambia su contrato.
+    console.warn('[exchangeRates] tryFetch falló:', url, err);
     return null;
   }
 }

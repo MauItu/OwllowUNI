@@ -65,3 +65,16 @@ app.use(errorHandler);
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 API escuchando en http://localhost:${PORT}`);
 });
+
+// ── Handlers de último recurso a nivel de proceso ──
+// Una promesa rechazada sin catch o una excepción no atrapada matarían el proceso
+// sin rastro. Los logueamos con todo el detalle. En `uncaughtException` el estado
+// del proceso es indeterminado: se sale con código 1 tras 1s para que el log
+// alcance a flushear (y un orquestador/PM2/Render reinicie el server).
+process.on('unhandledRejection', (reason) => {
+  console.error('unhandledRejection — promesa rechazada sin catch:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException — excepción no atrapada:', err);
+  setTimeout(() => process.exit(1), 1000).unref();
+});
