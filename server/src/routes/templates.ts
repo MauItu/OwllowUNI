@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { eq, desc, sql } from 'drizzle-orm';
+import { and, eq, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { templates, accounts, categories } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 
 export const templatesRouter = Router();
 
@@ -19,7 +20,7 @@ const templateSchema = z.object({
 // GET /api/templates — orden por use_count DESC
 templatesRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const rows = await db
       .select({
         id: templates.id,
@@ -40,7 +41,7 @@ templatesRouter.get(
       .from(templates)
       .leftJoin(accounts, eq(templates.accountId, accounts.id))
       .leftJoin(categories, eq(templates.categoryId, categories.id))
-      .where(eq(templates.isActive, true))
+      .where(and(eq(templates.userId, userId(req)), eq(templates.isActive, true)))
       .orderBy(desc(templates.useCount), desc(templates.id));
     res.json(rows);
   }),
@@ -54,6 +55,7 @@ templatesRouter.post(
     const [row] = await db
       .insert(templates)
       .values({
+        userId: userId(req),
         name: data.name,
         type: data.type,
         amount: data.amount != null ? data.amount.toFixed(2) : null,
@@ -82,7 +84,7 @@ templatesRouter.put(
         ...(data.accountId !== undefined && { accountId: data.accountId }),
         ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
       })
-      .where(eq(templates.id, id))
+      .where(and(eq(templates.id, id), eq(templates.userId, userId(req))))
       .returning();
     if (!row) throw new ApiError(404, 'Plantilla no encontrada');
     res.json(row);
@@ -97,7 +99,7 @@ templatesRouter.post(
     const [row] = await db
       .update(templates)
       .set({ useCount: sql`${templates.useCount} + 1` })
-      .where(eq(templates.id, id))
+      .where(and(eq(templates.id, id), eq(templates.userId, userId(req))))
       .returning();
     if (!row) throw new ApiError(404, 'Plantilla no encontrada');
     res.json(row);
@@ -109,7 +111,10 @@ templatesRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const deleted = await db.delete(templates).where(eq(templates.id, id)).returning();
+    const deleted = await db
+      .delete(templates)
+      .where(and(eq(templates.id, id), eq(templates.userId, userId(req))))
+      .returning();
     if (deleted.length === 0) throw new ApiError(404, 'Plantilla no encontrada');
     res.json({ success: true });
   }),

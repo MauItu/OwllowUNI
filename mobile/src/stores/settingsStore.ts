@@ -19,6 +19,20 @@ interface SettingsState {
   hydrated: boolean;
 }
 
+// El usuario activo define la clave de persistencia (`wallet-settings-<userId>`),
+// así las preferencias de un usuario no afectan a otro y persisten al re-login.
+let currentUserKey = 'guest';
+
+/**
+ * Storage de AsyncStorage que namespacea por usuario. La clave lógica es fija
+ * (`wallet-settings`) pero la física incluye el usuario activo.
+ */
+const userScopedStorage = createJSONStorage(() => ({
+  getItem: (name: string) => AsyncStorage.getItem(`${name}-${currentUserKey}`),
+  setItem: (name: string, value: string) => AsyncStorage.setItem(`${name}-${currentUserKey}`, value),
+  removeItem: (name: string) => AsyncStorage.removeItem(`${name}-${currentUserKey}`),
+}));
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -32,7 +46,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'wallet-settings',
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: userScopedStorage,
       partialize: (s) => ({ mainCurrency: s.mainCurrency, paletteId: s.paletteId, themeMode: s.themeMode }),
       onRehydrateStorage: () => (state) => {
         if (state) state.hydrated = true;
@@ -40,3 +54,15 @@ export const useSettingsStore = create<SettingsState>()(
     },
   ),
 );
+
+/**
+ * Cambia el usuario activo de las preferencias y rehidrata desde su clave.
+ * Lo llama `useAuth` al iniciar/cerrar sesión. NO borra el store al desloguear
+ * (las preferencias persisten para el próximo login del mismo usuario).
+ */
+export async function loadSettingsForUser(userId: number | string | null): Promise<void> {
+  const nextKey = userId == null ? 'guest' : String(userId);
+  if (nextKey === currentUserKey && useSettingsStore.getState().hydrated) return;
+  currentUserKey = nextKey;
+  await useSettingsStore.persist.rehydrate();
+}

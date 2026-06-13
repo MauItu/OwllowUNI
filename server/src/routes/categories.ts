@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { eq, asc } from 'drizzle-orm';
+import { and, eq, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { categories, type Category } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 
 export const categoriesRouter = Router();
 
@@ -36,11 +37,11 @@ function nest(rows: Category[]): CategoryWithChildren[] {
 // GET /api/categories — todas, con subcategorías anidadas
 categoriesRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const rows = await db
       .select()
       .from(categories)
-      .where(eq(categories.isActive, true))
+      .where(and(eq(categories.userId, userId(req)), eq(categories.isActive, true)))
       .orderBy(asc(categories.sortOrder), asc(categories.id));
     res.json(nest(rows));
   }),
@@ -57,7 +58,7 @@ categoriesRouter.get(
     const rows = await db
       .select()
       .from(categories)
-      .where(eq(categories.type, type))
+      .where(and(eq(categories.userId, userId(req)), eq(categories.type, type)))
       .orderBy(asc(categories.sortOrder), asc(categories.id));
     res.json(nest(rows.filter((r) => r.isActive)));
   }),
@@ -71,6 +72,7 @@ categoriesRouter.post(
     const [row] = await db
       .insert(categories)
       .values({
+        userId: userId(req),
         name: data.name,
         type: data.type,
         icon: data.icon,
@@ -99,7 +101,7 @@ categoriesRouter.put(
         ...(data.parentId !== undefined && { parentId: data.parentId }),
         ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
       })
-      .where(eq(categories.id, id))
+      .where(and(eq(categories.id, id), eq(categories.userId, userId(req))))
       .returning();
     if (!row) throw new ApiError(404, 'Categoría no encontrada');
     res.json(row);
@@ -111,7 +113,10 @@ categoriesRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const deleted = await db.delete(categories).where(eq(categories.id, id)).returning();
+    const deleted = await db
+      .delete(categories)
+      .where(and(eq(categories.id, id), eq(categories.userId, userId(req))))
+      .returning();
     if (deleted.length === 0) throw new ApiError(404, 'Categoría no encontrada');
     res.json({ success: true });
   }),

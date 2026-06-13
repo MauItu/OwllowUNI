@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { transactions, accounts, categories, tags, transactionTags, type Transaction } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 
 export const transactionsRouter = Router();
 
@@ -103,6 +104,7 @@ async function tagsByTransaction(txIds: number[]) {
  * sign = 1 aplica el efecto, sign = -1 lo revierte.
  */
 function balanceStatements(
+  uid: number,
   type: string,
   amount: number,
   accountId: number,
@@ -125,7 +127,7 @@ function balanceStatements(
         currentBalance: sql`${accounts.currentBalance} + ${fromDelta.toFixed(2)}::numeric`,
         updatedAt: new Date(),
       })
-      .where(eq(accounts.id, accountId)),
+      .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid))),
   );
 
   // Cuenta destino (solo transferencias). Se mueve en SU propia moneda: usa
@@ -139,10 +141,22 @@ function balanceStatements(
           currentBalance: sql`${accounts.currentBalance} + ${toDelta.toFixed(2)}::numeric`,
           updatedAt: new Date(),
         })
-        .where(eq(accounts.id, toAccountId)),
+        .where(and(eq(accounts.id, toAccountId), eq(accounts.userId, uid))),
     );
   }
   return stmts;
+}
+
+/** Verifica que las cuentas referenciadas pertenezcan al usuario (404 si no). */
+async function assertAccountsOwned(uid: number, ids: (number | null | undefined)[]): Promise<void> {
+  const unique = [...new Set(ids.filter((id): id is number => id != null))];
+  for (const id of unique) {
+    const [acc] = await db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.userId, uid)));
+    if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
+  }
 }
 
 // GET /api/transactions — lista con filtros + paginación
@@ -161,7 +175,7 @@ transactionsRouter.get(
       limit = '30',
     } = req.query as Record<string, string>;
 
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(transactions.userId, userId(req))];
     if (account_id) conditions.push(eq(transactions.accountId, Number(account_id)));
     if (category_id) conditions.push(eq(transactions.categoryId, Number(category_id)));
     if (tag_id)
@@ -241,7 +255,7 @@ transactionsRouter.get(
       string
     >;
 
-    const conditions: SQL[] = [];
+    const conditions: SQL[] = [eq(transactions.userId, userId(req))];
     if (from) conditions.push(gte(transactions.date, from));
     if (to) conditions.push(lte(transactions.date, to));
     if (accountId) conditions.push(eq(transactions.accountId, Number(accountId)));
@@ -341,10 +355,11 @@ transactionsRouter.post(
       throw new ApiError(400, 'Se esperaba un arreglo de transacciones (o { transactions: [...] })');
     }
 
-    // Índices por nombre (case-insensitive) para resolver cuentas y categorías.
-    const allAccounts = await db.select().from(accounts);
+    const uid = userId(req);
+    // Índices por nombre (case-insensitive) para resolver cuentas y categorías del usuario.
+    const allAccounts = await db.select().from(accounts).where(eq(accounts.userId, uid));
     const accByName = new Map(allAccounts.map((a) => [a.name.trim().toLowerCase(), a]));
-    const allCategories = await db.select().from(categories);
+    const allCategories = await db.select().from(categories).where(eq(categories.userId, uid));
     const catByName = new Map<string, (typeof allCategories)[number]>();
     for (const c of allCategories) {
       const key = c.name.trim().toLowerCase();
@@ -409,6 +424,7 @@ transactionsRouter.post(
       const insertStmt = db
         .insert(transactions)
         .values({
+          userId: uid,
           type,
           amount: amount.toFixed(2),
           description,
@@ -420,7 +436,7 @@ transactionsRouter.post(
           notes,
         })
         .returning();
-      const balance = balanceStatements(type, amount, account.id, toAccountId, 1);
+      const balance = balanceStatements(uid, type, amount, account.id, toAccountId, 1);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await db.batch([insertStmt, ...balance] as any);
       imported++;
@@ -435,7 +451,10 @@ transactionsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const [row] = await db.select().from(transactions).where(eq(transactions.id, id));
+    const [row] = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.id, id), eq(transactions.userId, userId(req))));
     if (!row) throw new ApiError(404, 'Transacción no encontrada');
     const txTags = await tagsByTransaction([id]);
     res.json({ ...row, tags: txTags.get(id) ?? [] });
@@ -446,15 +465,19 @@ transactionsRouter.get(
 transactionsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const data = txSchema.parse(req.body);
     if (data.type === 'transfer' && !data.toAccountId) {
       throw new ApiError(400, 'Una transferencia requiere cuenta destino (toAccountId)');
     }
+    // Las cuentas referenciadas deben pertenecer al usuario.
+    await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
 
     const toAmount = data.type === 'transfer' ? data.toAmount ?? null : null;
     const insertStmt = db
       .insert(transactions)
       .values({
+        userId: uid,
         type: data.type,
         amount: data.amount.toFixed(2),
         description: data.description ?? null,
@@ -469,7 +492,7 @@ transactionsRouter.post(
       })
       .returning();
 
-    const balance = balanceStatements(data.type, data.amount, data.accountId, data.toAccountId, 1, toAmount);
+    const balance = balanceStatements(uid, data.type, data.amount, data.accountId, data.toAccountId, 1, toAmount);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const results = await db.batch([insertStmt, ...balance] as any);
@@ -488,17 +511,23 @@ transactionsRouter.post(
 transactionsRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = Number(req.params.id);
     const data = txSchema.parse(req.body);
 
-    const [old] = await db.select().from(transactions).where(eq(transactions.id, id));
+    const [old] = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.id, id), eq(transactions.userId, uid)));
     if (!old) throw new ApiError(404, 'Transacción no encontrada');
     if (data.type === 'transfer' && !data.toAccountId) {
       throw new ApiError(400, 'Una transferencia requiere cuenta destino (toAccountId)');
     }
+    await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
 
     // Revierte el efecto anterior y aplica el nuevo.
     const revert = balanceStatements(
+      uid,
       old.type,
       Number(old.amount),
       old.accountId,
@@ -508,6 +537,7 @@ transactionsRouter.put(
     );
     const newToAmount = data.type === 'transfer' ? data.toAmount ?? null : null;
     const apply = balanceStatements(
+      uid,
       data.type,
       data.amount,
       data.accountId,
@@ -532,7 +562,7 @@ transactionsRouter.put(
         receiptFilename: data.receiptFilename ?? null,
         updatedAt: new Date(),
       })
-      .where(eq(transactions.id, id))
+      .where(and(eq(transactions.id, id), eq(transactions.userId, uid)))
       .returning();
 
     const stmts: unknown[] = [...revert, ...apply, updateStmt];
@@ -555,11 +585,16 @@ transactionsRouter.put(
 transactionsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = Number(req.params.id);
-    const [old] = await db.select().from(transactions).where(eq(transactions.id, id));
+    const [old] = await db
+      .select()
+      .from(transactions)
+      .where(and(eq(transactions.id, id), eq(transactions.userId, uid)));
     if (!old) throw new ApiError(404, 'Transacción no encontrada');
 
     const revert = balanceStatements(
+      uid,
       old.type,
       Number(old.amount),
       old.accountId,
@@ -567,7 +602,7 @@ transactionsRouter.delete(
       -1,
       old.toAmount != null ? Number(old.toAmount) : null,
     );
-    const deleteStmt = db.delete(transactions).where(eq(transactions.id, id));
+    const deleteStmt = db.delete(transactions).where(and(eq(transactions.id, id), eq(transactions.userId, uid)));
 
     const stmts = [...revert, deleteStmt];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

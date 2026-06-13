@@ -12,6 +12,7 @@ import { LockScreen } from './src/screens/LockScreen';
 import { createToastConfig } from './src/components/toastConfig';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { AppLockProvider, useAppLock } from './src/hooks/useAppLock';
+import { AuthProvider, useAuth } from './src/hooks/useAuth';
 import { initNotifications } from './src/services/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -51,19 +52,28 @@ const eb = StyleSheet.create({
   message: { color: '#F4EFFA', fontSize: 14, textAlign: 'center' },
 });
 
-/** Capa interna: ya tiene acceso al tema activo y al estado de bloqueo. */
+/** Capa interna: ya tiene acceso al tema activo, la sesión y el estado de bloqueo. */
 function ThemedApp() {
   const { theme, isDark } = useTheme();
   const { ready, locked, unlock } = useAppLock();
+  const { isAuthenticated } = useAuth();
   const toastConfig = useMemo(() => createToastConfig(theme), [theme]);
+
+  // Programa el recordatorio diario y reprograma alertas de deudas/metas SOLO
+  // cuando hay sesión (las queries del backend requieren autenticación).
+  useEffect(() => {
+    if (isAuthenticated) initNotifications().catch(() => {});
+  }, [isAuthenticated]);
 
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={theme.colors.statusBar} translucent />
       <AppNavigator />
-      {/* Mientras se lee el estado del PIN, tapa el contenido para no filtrarlo. */}
-      {!ready && <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.background }]} />}
-      {ready && locked && <LockScreen onUnlock={unlock} />}
+      {/* El bloqueo con PIN solo aplica DESPUÉS de estar autenticado. */}
+      {isAuthenticated && !ready && (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.background }]} />
+      )}
+      {isAuthenticated && ready && locked && <LockScreen onUnlock={unlock} />}
       <Toast config={toastConfig} />
     </>
   );
@@ -79,22 +89,18 @@ export default function App() {
     onLayoutRootView();
   }, [onLayoutRootView]);
 
-  // Programa el recordatorio diario y reprograma las alertas de deudas/metas
-  // con el estado actual (notificaciones locales). No bloquea el arranque.
-  useEffect(() => {
-    initNotifications().catch(() => {});
-  }, []);
-
   return (
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <KeyboardProvider>
           <SafeAreaProvider>
-            <ThemeProvider>
-              <AppLockProvider>
-                <ThemedApp />
-              </AppLockProvider>
-            </ThemeProvider>
+            <AuthProvider>
+              <ThemeProvider>
+                <AppLockProvider>
+                  <ThemedApp />
+                </AppLockProvider>
+              </ThemeProvider>
+            </AuthProvider>
           </SafeAreaProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>

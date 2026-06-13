@@ -15,6 +15,7 @@ import {
 import { db } from '../db/connection.js';
 import { transactions, categories } from '../db/schema.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 
 export const insightsRouter = Router();
 
@@ -70,7 +71,8 @@ const WEEKDAYS_PLURAL = [
 // GET /api/insights — insights del mes actual
 insightsRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const now = new Date();
     const mStart = iso(startOfMonth(now));
     const mEnd = iso(endOfMonth(now));
@@ -94,7 +96,12 @@ insightsRouter.get(
         .from(transactions)
         .leftJoin(categories, eq(transactions.categoryId, categories.id))
         .where(
-          and(eq(transactions.type, 'expense'), gte(transactions.date, from), lte(transactions.date, to)),
+          and(
+            eq(transactions.userId, uid),
+            eq(transactions.type, 'expense'),
+            gte(transactions.date, from),
+            lte(transactions.date, to),
+          ),
         )
         .groupBy(transactions.categoryId, categories.name);
 
@@ -116,7 +123,9 @@ insightsRouter.get(
           total: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
         })
         .from(transactions)
-        .where(and(gte(transactions.date, mStart), lte(transactions.date, mEnd)))
+        .where(
+          and(eq(transactions.userId, uid), gte(transactions.date, mStart), lte(transactions.date, mEnd)),
+        )
         .groupBy(transactions.type),
       expenseByCat(mStart, mEnd),
       expenseByCat(prevStart, prevEnd),
@@ -125,7 +134,7 @@ insightsRouter.get(
       db
         .select({ date: transactions.date })
         .from(transactions)
-        .where(gte(transactions.date, sixtyDaysAgo))
+        .where(and(eq(transactions.userId, uid), gte(transactions.date, sixtyDaysAgo)))
         .groupBy(transactions.date)
         .orderBy(desc(transactions.date)),
       // Gasto por día de la semana (últimas 8 semanas)
@@ -136,10 +145,19 @@ insightsRouter.get(
           days: sql<number>`COUNT(DISTINCT ${transactions.date})::int`,
         })
         .from(transactions)
-        .where(and(eq(transactions.type, 'expense'), gte(transactions.date, eightWeeksAgo)))
+        .where(
+          and(
+            eq(transactions.userId, uid),
+            eq(transactions.type, 'expense'),
+            gte(transactions.date, eightWeeksAgo),
+          ),
+        )
         .groupBy(dowExpr),
       // Fecha de la primera transacción (tamaño del historial)
-      db.select({ minDate: sql<string | null>`MIN(${transactions.date})` }).from(transactions),
+      db
+        .select({ minDate: sql<string | null>`MIN(${transactions.date})` })
+        .from(transactions)
+        .where(eq(transactions.userId, uid)),
     ]);
 
     const insights: Insight[] = [];

@@ -32,6 +32,11 @@ export type RootStackParamList = {
   Appearance: undefined;
 };
 
+export type AuthStackParamList = {
+  Login: undefined;
+  Register: undefined;
+};
+
 export type TabParamList = {
   Home: undefined;
   Transactions: { accountId?: number } | undefined;

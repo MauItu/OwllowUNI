@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { tags, transactionTags } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 
 export const tagsRouter = Router();
 
@@ -19,7 +20,7 @@ const tagSchema = z.object({
 // GET /api/tags — todas, con count de transacciones asociadas
 tagsRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const rows = await db
       .select({
         id: tags.id,
@@ -31,6 +32,7 @@ tagsRouter.get(
       })
       .from(tags)
       .leftJoin(transactionTags, eq(transactionTags.tagId, tags.id))
+      .where(eq(tags.userId, userId(req)))
       .groupBy(tags.id)
       .orderBy(asc(tags.name));
     res.json(rows.map((r) => ({ ...r, transactionCount: Number(r.transactionCount) })));
@@ -42,12 +44,16 @@ tagsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
     const data = tagSchema.parse(req.body);
-    const [existing] = await db.select().from(tags).where(ilike(tags.name, data.name));
+    const [existing] = await db
+      .select()
+      .from(tags)
+      .where(and(eq(tags.userId, userId(req)), ilike(tags.name, data.name)));
     if (existing) throw new ApiError(409, `Ya existe una etiqueta llamada "${existing.name}"`);
 
     const [row] = await db
       .insert(tags)
       .values({
+        userId: userId(req),
         name: data.name.trim(),
         ...(data.color && { color: data.color }),
         ...(data.icon && { icon: data.icon }),
@@ -68,7 +74,7 @@ tagsRouter.put(
       const [conflict] = await db
         .select()
         .from(tags)
-        .where(and(ilike(tags.name, data.name), ne(tags.id, id)));
+        .where(and(eq(tags.userId, userId(req)), ilike(tags.name, data.name), ne(tags.id, id)));
       if (conflict) throw new ApiError(409, `Ya existe una etiqueta llamada "${conflict.name}"`);
     }
 
@@ -79,7 +85,7 @@ tagsRouter.put(
         ...(data.color !== undefined && { color: data.color }),
         ...(data.icon !== undefined && { icon: data.icon }),
       })
-      .where(eq(tags.id, id))
+      .where(and(eq(tags.id, id), eq(tags.userId, userId(req))))
       .returning();
     if (!row) throw new ApiError(404, 'Etiqueta no encontrada');
     res.json(row);
@@ -91,7 +97,10 @@ tagsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const deleted = await db.delete(tags).where(eq(tags.id, id)).returning();
+    const deleted = await db
+      .delete(tags)
+      .where(and(eq(tags.id, id), eq(tags.userId, userId(req))))
+      .returning();
     if (deleted.length === 0) throw new ApiError(404, 'Etiqueta no encontrada');
     res.json({ success: true });
   }),

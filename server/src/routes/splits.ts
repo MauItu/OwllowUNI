@@ -16,6 +16,7 @@ import {
   type Transaction,
 } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 
 export const splitsRouter = Router();
 
@@ -24,15 +25,34 @@ function nowTime(): string {
   return new Date().toTimeString().slice(0, 8);
 }
 
-/** UPDATE de balance relativo para una cuenta (delta ya con signo). */
-function balanceUpdate(accountId: number, delta: number) {
+/** UPDATE de balance relativo para una cuenta (delta ya con signo, scoped por usuario). */
+function balanceUpdate(uid: number, accountId: number, delta: number) {
   return db
     .update(accounts)
     .set({
       currentBalance: sql`${accounts.currentBalance} + ${delta.toFixed(2)}::numeric`,
       updatedAt: new Date(),
     })
-    .where(eq(accounts.id, accountId));
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
+}
+
+/** Verifica que el grupo pertenezca al usuario (404 si no). Devuelve el grupo. */
+async function getOwnedGroup(uid: number, groupId: number) {
+  const [group] = await db
+    .select()
+    .from(splitGroups)
+    .where(and(eq(splitGroups.id, groupId), eq(splitGroups.userId, uid)));
+  if (!group) throw new ApiError(404, 'Grupo no encontrado');
+  return group;
+}
+
+/** Verifica que una cuenta pertenezca al usuario (404 si no). */
+async function assertAccountOwned(uid: number, accountId: number): Promise<void> {
+  const [acc] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
+  if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
 }
 
 const groupSchema = z.object({
@@ -157,11 +177,11 @@ function simplifyTransfers(balances: Map<number, number>) {
 // GET /api/splits — grupos activos con miembros y mi balance
 splitsRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const groups = await db
       .select()
       .from(splitGroups)
-      .where(eq(splitGroups.isActive, true))
+      .where(and(eq(splitGroups.userId, userId(req)), eq(splitGroups.isActive, true)))
       .orderBy(desc(splitGroups.createdAt));
 
     const result = [];
@@ -181,8 +201,11 @@ splitsRouter.get(
 // GET /api/splits/summary — mis balances en todos los grupos activos
 splitsRouter.get(
   '/summary',
-  asyncHandler(async (_req, res) => {
-    const groups = await db.select().from(splitGroups).where(eq(splitGroups.isActive, true));
+  asyncHandler(async (req, res) => {
+    const groups = await db
+      .select()
+      .from(splitGroups)
+      .where(and(eq(splitGroups.userId, userId(req)), eq(splitGroups.isActive, true)));
 
     let totalOwedToMe = 0;
     let totalIOwe = 0;
@@ -209,8 +232,7 @@ splitsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const [group] = await db.select().from(splitGroups).where(eq(splitGroups.id, id));
-    if (!group) throw new ApiError(404, 'Grupo no encontrado');
+    const group = await getOwnedGroup(userId(req), id);
 
     const members = await db
       .select()
@@ -239,6 +261,7 @@ splitsRouter.post(
     const [group] = await db
       .insert(splitGroups)
       .values({
+        userId: userId(req),
         name: data.name,
         description: data.description ?? null,
         ...(data.icon && { icon: data.icon }),
@@ -278,7 +301,7 @@ splitsRouter.put(
         ...(data.color !== undefined && { color: data.color }),
         updatedAt: new Date(),
       })
-      .where(eq(splitGroups.id, id))
+      .where(and(eq(splitGroups.id, id), eq(splitGroups.userId, userId(req))))
       .returning();
     if (!row) throw new ApiError(404, 'Grupo no encontrado');
     res.json(row);
@@ -290,9 +313,9 @@ splitsRouter.put(
 splitsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = Number(req.params.id);
-    const [group] = await db.select().from(splitGroups).where(eq(splitGroups.id, id));
-    if (!group) throw new ApiError(404, 'Grupo no encontrado');
+    await getOwnedGroup(uid, id);
 
     // Transacciones generadas por gastos pagados por mí y por liquidaciones.
     const exps = await db
@@ -314,10 +337,10 @@ splitsRouter.delete(
     const stmts: unknown[] = [];
     for (const tx of txs) {
       const revert = tx.type === 'income' ? -Number(tx.amount) : Number(tx.amount);
-      stmts.push(balanceUpdate(tx.accountId, revert));
+      stmts.push(balanceUpdate(uid, tx.accountId, revert));
     }
     // Borrar el grupo primero (CASCADE borra expenses/settlements que referencian las transacciones)…
-    stmts.push(db.delete(splitGroups).where(eq(splitGroups.id, id)));
+    stmts.push(db.delete(splitGroups).where(and(eq(splitGroups.id, id), eq(splitGroups.userId, uid))));
     // …y luego las transacciones, ya sin referencias.
     if (txIds.length > 0) {
       stmts.push(db.delete(transactions).where(inArray(transactions.id, txIds)));
@@ -336,8 +359,7 @@ splitsRouter.post(
     const groupId = Number(req.params.groupId);
     const data = memberSchema.parse(req.body);
 
-    const [group] = await db.select().from(splitGroups).where(eq(splitGroups.id, groupId));
-    if (!group) throw new ApiError(404, 'Grupo no encontrado');
+    await getOwnedGroup(userId(req), groupId);
 
     if (data.isMe) {
       const existing = await db
@@ -361,6 +383,8 @@ splitsRouter.delete(
   asyncHandler(async (req, res) => {
     const groupId = Number(req.params.groupId);
     const id = Number(req.params.id);
+
+    await getOwnedGroup(userId(req), groupId);
 
     const [member] = await db
       .select()
@@ -392,6 +416,7 @@ splitsRouter.get(
   '/:groupId/expenses',
   asyncHandler(async (req, res) => {
     const groupId = Number(req.params.groupId);
+    await getOwnedGroup(userId(req), groupId);
     const expenses = await db
       .select({
         id: splitExpenses.id,
@@ -437,9 +462,11 @@ splitsRouter.get(
 splitsRouter.post(
   '/:groupId/expenses',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const groupId = Number(req.params.groupId);
     const data = expenseSchema.parse(req.body);
 
+    await getOwnedGroup(uid, groupId);
     const members = await db.select().from(splitMembers).where(eq(splitMembers.groupId, groupId));
     if (members.length === 0) throw new ApiError(404, 'Grupo no encontrado o sin miembros');
 
@@ -468,9 +495,11 @@ splitsRouter.post(
     // Si pago yo y hay cuenta: registrar el egreso real como transacción.
     let transactionId: number | null = null;
     if (data.accountId != null && paidByMember?.isMe) {
+      await assertAccountOwned(uid, data.accountId);
       const insertTx = db
         .insert(transactions)
         .values({
+          userId: uid,
           type: 'expense',
           amount: data.totalAmount.toFixed(2),
           description: data.description,
@@ -481,7 +510,7 @@ splitsRouter.post(
         })
         .returning();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const txRes = await db.batch([insertTx, balanceUpdate(data.accountId, -data.totalAmount)] as any);
+      const txRes = await db.batch([insertTx, balanceUpdate(uid, data.accountId, -data.totalAmount)] as any);
       transactionId = (txRes[0] as Transaction[])[0].id;
     }
 
@@ -523,7 +552,7 @@ splitsRouter.post(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await db.batch([
           db.delete(transactions).where(eq(transactions.id, transactionId)),
-          balanceUpdate(data.accountId, data.totalAmount),
+          balanceUpdate(uid, data.accountId, data.totalAmount),
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ] as any);
       }
@@ -537,8 +566,7 @@ splitsRouter.get(
   '/:groupId/balances',
   asyncHandler(async (req, res) => {
     const groupId = Number(req.params.groupId);
-    const [group] = await db.select().from(splitGroups).where(eq(splitGroups.id, groupId));
-    if (!group) throw new ApiError(404, 'Grupo no encontrado');
+    await getOwnedGroup(userId(req), groupId);
 
     const { members, balances } = await computeBalances(groupId);
     res.json({
@@ -559,9 +587,11 @@ splitsRouter.get(
 splitsRouter.post(
   '/:groupId/settle',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const groupId = Number(req.params.groupId);
     const data = settleSchema.parse(req.body);
 
+    await getOwnedGroup(uid, groupId);
     const members = await db.select().from(splitMembers).where(eq(splitMembers.groupId, groupId));
     const from = members.find((m) => m.id === data.fromMemberId);
     const to = members.find((m) => m.id === data.toMemberId);
@@ -629,6 +659,7 @@ splitsRouter.post(
     //  - el usuario PAGA   (es "from") → expense desde su cuenta.
     let transactionId: number | null = null;
     if (data.accountId != null && (from.isMe || to.isMe)) {
+      await assertAccountOwned(uid, data.accountId);
       const meReceives = to.isMe;
       const txType = meReceives ? 'income' : 'expense';
       const delta = meReceives ? data.amount : -data.amount;
@@ -638,6 +669,7 @@ splitsRouter.post(
       const insertTx = db
         .insert(transactions)
         .values({
+          userId: uid,
           type: txType,
           amount: data.amount.toFixed(2),
           description,
@@ -647,7 +679,7 @@ splitsRouter.post(
         })
         .returning();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const txRes = await db.batch([insertTx, balanceUpdate(data.accountId, delta)] as any);
+      const txRes = await db.batch([insertTx, balanceUpdate(uid, data.accountId, delta)] as any);
       transactionId = (txRes[0] as Transaction[])[0].id;
     }
 
@@ -671,6 +703,7 @@ splitsRouter.get(
   '/:groupId/settlements',
   asyncHandler(async (req, res) => {
     const groupId = Number(req.params.groupId);
+    await getOwnedGroup(userId(req), groupId);
     const rows = await db
       .select()
       .from(splitSettlements)

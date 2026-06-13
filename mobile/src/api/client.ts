@@ -1,5 +1,11 @@
 import axios from 'axios';
+import { removeToken } from '../services/auth';
 import type {
+  AuthResponse,
+  User,
+  RegisterInput,
+  LoginInput,
+  UpdateProfileInput,
   Account,
   AccountInput,
   Category,
@@ -56,6 +62,47 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// ───────────────────────── Token de sesión ──────────────────────────
+// El token vive en SecureStore (services/auth) pero se cachea aquí en memoria
+// para inyectarlo en cada request sin un acceso async. `useAuth` lo sincroniza.
+let authToken: string | null = null;
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
+
+// Callback que dispara el cierre de sesión en la UI cuando el backend
+// responde 401 (token vencido/ inválido). Lo registra `useAuth`.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(cb: (() => void) | null) {
+  onUnauthorized = cb;
+}
+
+// Inyecta el Authorization header en cada request si hay token.
+api.interceptors.request.use((config) => {
+  if (authToken) {
+    config.headers = config.headers ?? {};
+    config.headers.Authorization = `Bearer ${authToken}`;
+  }
+  return config;
+});
+
+// Ante un 401 (salvo en las propias rutas de auth), limpia el token y avisa a
+// la UI para redirigir al login.
+api.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    const status = error?.response?.status;
+    const url: string = error?.config?.url ?? '';
+    const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register');
+    if (status === 401 && !isAuthRoute) {
+      authToken = null;
+      await removeToken();
+      onUnauthorized?.();
+    }
+    return Promise.reject(error);
+  },
+);
+
 /** Extrae un mensaje de error legible de una respuesta de Axios. */
 export function getErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -67,6 +114,16 @@ export function getErrorMessage(err: unknown): string {
   }
   return 'Ocurrió un error inesperado.';
 }
+
+// ───────────────────────────── Auth ─────────────────────────
+export const authApi = {
+  register: (data: RegisterInput) =>
+    api.post<AuthResponse>('/auth/register', data).then((r) => r.data),
+  login: (data: LoginInput) => api.post<AuthResponse>('/auth/login', data).then((r) => r.data),
+  me: () => api.get<User>('/auth/me').then((r) => r.data),
+  updateProfile: (data: UpdateProfileInput) =>
+    api.put<User>('/auth/profile', data).then((r) => r.data),
+};
 
 // ───────────────────────── Accounts ─────────────────────────
 export const accountsApi = {

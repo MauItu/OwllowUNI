@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { exchangeRates } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 import { getRates, setManualRate } from '../services/exchangeRates.js';
 
 export const ratesRouter = Router();
@@ -26,7 +27,7 @@ ratesRouter.get(
       const cached = await db
         .select()
         .from(exchangeRates)
-        .where(eq(exchangeRates.baseCurrency, base));
+        .where(and(eq(exchangeRates.userId, userId(req)), eq(exchangeRates.baseCurrency, base)));
       res.json({
         base,
         rates: cached.map((c) => ({
@@ -42,7 +43,7 @@ ratesRouter.get(
       return;
     }
 
-    const rates = await getRates(base, targets, force);
+    const rates = await getRates(userId(req), base, targets, force);
     res.json({ base, rates, stale: rates.some((r) => r.stale) });
   }),
 );
@@ -61,7 +62,7 @@ ratesRouter.put(
     if (data.base.toUpperCase() === data.target.toUpperCase()) {
       throw new ApiError(400, 'La moneda base y la destino deben ser distintas');
     }
-    const row = await setManualRate(data.base, data.target, data.rate);
+    const row = await setManualRate(userId(req), data.base, data.target, data.rate);
     res.json(row);
   }),
 );
@@ -77,6 +78,7 @@ ratesRouter.delete(
       .delete(exchangeRates)
       .where(
         and(
+          eq(exchangeRates.userId, userId(req)),
           eq(exchangeRates.baseCurrency, base),
           eq(exchangeRates.targetCurrency, target),
           eq(exchangeRates.isManual, true),

@@ -1,101 +1,54 @@
+import bcrypt from 'bcryptjs';
 import { db } from './connection.js';
-import { accounts, categories } from './schema.js';
+import { accounts, categories, users } from './schema.js';
 import { eq, and, isNull } from 'drizzle-orm';
+import {
+  EXPENSE_CATEGORIES,
+  INCOME_CATEGORIES,
+  type SeedCategory,
+} from './defaults.js';
 
-type SeedCategory = {
-  name: string;
-  icon: string;
-  color: string;
-  children?: { name: string; icon: string }[];
-};
+// ─────────────── Usuario admin por defecto ───────────────
+const ADMIN_EMAIL = 'mauiturriza@gmail.com';
+const ADMIN_NAME = 'Mauricio';
+const ADMIN_PASSWORD = 'admin123'; // temporal — se cambia desde la app
 
-// ─────────────── Categorías por defecto ───────────────
-const EXPENSE_CATEGORIES: SeedCategory[] = [
-  {
-    name: 'Alimentación',
-    icon: 'utensils',
-    color: '#EF4444',
-    children: [
-      { name: 'Restaurantes', icon: 'chef-hat' },
-      { name: 'Mercado', icon: 'shopping-cart' },
-      { name: 'Snacks', icon: 'cookie' },
-    ],
-  },
-  {
-    name: 'Transporte',
-    icon: 'bus',
-    color: '#F59E0B',
-    children: [
-      { name: 'Bus', icon: 'bus-front' },
-      { name: 'Taxi', icon: 'car-taxi-front' },
-      { name: 'Gasolina', icon: 'fuel' },
-    ],
-  },
-  {
-    name: 'Vivienda',
-    icon: 'home',
-    color: '#6C5CE7',
-    children: [
-      { name: 'Arriendo', icon: 'key-round' },
-      { name: 'Servicios', icon: 'plug-zap' },
-      { name: 'Internet', icon: 'wifi' },
-    ],
-  },
-  {
-    name: 'Entretenimiento',
-    icon: 'party-popper',
-    color: '#EC4899',
-    children: [
-      { name: 'Streaming', icon: 'tv' },
-      { name: 'Juegos', icon: 'gamepad-2' },
-      { name: 'Salidas', icon: 'beer' },
-    ],
-  },
-  {
-    name: 'Salud',
-    icon: 'heart-pulse',
-    color: '#10B981',
-    children: [
-      { name: 'Medicamentos', icon: 'pill' },
-      { name: 'Consultas', icon: 'stethoscope' },
-      { name: 'Gym', icon: 'dumbbell' },
-    ],
-  },
-  {
-    name: 'Educación',
-    icon: 'graduation-cap',
-    color: '#3B82F6',
-    children: [
-      { name: 'Matrícula', icon: 'school' },
-      { name: 'Libros', icon: 'book-open' },
-      { name: 'Cursos', icon: 'monitor-play' },
-    ],
-  },
-  { name: 'Ropa', icon: 'shirt', color: '#14B8A6' },
-  { name: 'Tecnología', icon: 'smartphone', color: '#8B5CF6' },
-];
-
-const INCOME_CATEGORIES: SeedCategory[] = [
-  { name: 'Salario', icon: 'briefcase', color: '#10B981' },
-  { name: 'Freelance', icon: 'laptop', color: '#6C5CE7' },
-  { name: 'Inversiones', icon: 'trending-up', color: '#F59E0B' },
-  { name: 'Regalos', icon: 'gift', color: '#EC4899' },
-  { name: 'Reembolsos', icon: 'rotate-ccw', color: '#3B82F6' },
-];
+/** Crea (o actualiza el hash de) el usuario admin y devuelve su id. */
+async function seedAdminUser(): Promise<number> {
+  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+  const [existing] = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL));
+  if (existing) {
+    // Asegura el hash real (la migración pudo dejar un placeholder) y el rol admin.
+    await db
+      .update(users)
+      .set({ passwordHash, isAdmin: true, name: ADMIN_NAME, updatedAt: new Date() })
+      .where(eq(users.id, existing.id));
+    console.log(`  ✓ Usuario admin: ${ADMIN_EMAIL} (id ${existing.id})`);
+    return existing.id;
+  }
+  const [created] = await db
+    .insert(users)
+    .values({ email: ADMIN_EMAIL, passwordHash, name: ADMIN_NAME, isAdmin: true })
+    .returning();
+  console.log(`  ✓ Usuario admin creado: ${ADMIN_EMAIL} (id ${created.id})`);
+  return created.id;
+}
 
 async function seedCategoriesOfType(
   list: SeedCategory[],
   type: 'income' | 'expense',
+  userId: number,
 ) {
   for (let i = 0; i < list.length; i++) {
     const cat = list[i];
 
-    // Evita duplicar si ya existe la categoría padre
+    // Evita duplicar si ya existe la categoría padre (de este usuario)
     const existing = await db
       .select()
       .from(categories)
       .where(
         and(
+          eq(categories.userId, userId),
           eq(categories.name, cat.name),
           eq(categories.type, type),
           isNull(categories.parentId),
@@ -109,6 +62,7 @@ async function seedCategoriesOfType(
       const [inserted] = await db
         .insert(categories)
         .values({
+          userId,
           name: cat.name,
           type,
           icon: cat.icon,
@@ -126,9 +80,16 @@ async function seedCategoriesOfType(
         const existingChild = await db
           .select()
           .from(categories)
-          .where(and(eq(categories.name, child.name), eq(categories.parentId, parentId)));
+          .where(
+            and(
+              eq(categories.userId, userId),
+              eq(categories.name, child.name),
+              eq(categories.parentId, parentId),
+            ),
+          );
         if (existingChild.length === 0) {
           await db.insert(categories).values({
+            userId,
             name: child.name,
             type,
             icon: child.icon,
@@ -143,10 +104,14 @@ async function seedCategoriesOfType(
   }
 }
 
-async function seedDefaultAccount() {
-  const existing = await db.select().from(accounts).where(eq(accounts.name, 'Efectivo'));
+async function seedDefaultAccount(userId: number) {
+  const existing = await db
+    .select()
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), eq(accounts.name, 'Efectivo')));
   if (existing.length === 0) {
     await db.insert(accounts).values({
+      userId,
       name: 'Efectivo',
       type: 'cash',
       currency: 'COP',
@@ -161,9 +126,10 @@ async function seedDefaultAccount() {
 
 async function main() {
   console.log('🌱 Insertando datos iniciales...');
-  await seedCategoriesOfType(EXPENSE_CATEGORIES, 'expense');
-  await seedCategoriesOfType(INCOME_CATEGORIES, 'income');
-  await seedDefaultAccount();
+  const adminId = await seedAdminUser();
+  await seedCategoriesOfType(EXPENSE_CATEGORIES, 'expense', adminId);
+  await seedCategoriesOfType(INCOME_CATEGORIES, 'income', adminId);
+  await seedDefaultAccount(adminId);
   console.log('✅ Seed completado.');
   process.exit(0);
 }

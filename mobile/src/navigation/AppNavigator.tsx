@@ -7,7 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from '../components/Icon';
-import type { RootStackParamList, TabParamList } from './types';
+import { useAuth } from '../hooks/useAuth';
+import type { RootStackParamList, TabParamList, AuthStackParamList } from './types';
 
 import { HomeScreen } from '../screens/HomeScreen';
 import { TransactionsScreen } from '../screens/TransactionsScreen';
@@ -35,8 +36,11 @@ import { InsightsScreen } from '../screens/InsightsScreen';
 import { RatesScreen } from '../screens/RatesScreen';
 import { SecurityScreen } from '../screens/SecurityScreen';
 import { AppearanceScreen } from '../screens/AppearanceScreen';
+import { LoginScreen } from '../screens/LoginScreen';
+import { RegisterScreen } from '../screens/RegisterScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
+const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
 const TAB_META: Record<keyof TabParamList, { icon: string; label: string }> = {
@@ -122,8 +126,19 @@ function Tabs() {
   );
 }
 
+/** Stack de autenticación (sin tabs): login + registro. */
+function AuthNavigator() {
+  return (
+    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen name="Register" component={RegisterScreen} />
+    </AuthStack.Navigator>
+  );
+}
+
 export function AppNavigator() {
   const { theme, isDark } = useTheme();
+  const { isAuthenticated, isLoading } = useAuth();
   const base = isDark ? DarkTheme : DefaultTheme;
   const navTheme = {
     ...base,
@@ -136,8 +151,17 @@ export function AppNavigator() {
       primary: theme.colors.primary,
     },
   };
+
+  // Mientras se restaura la sesión, tapa con el color de fondo (evita parpadeo).
+  if (isLoading) {
+    return <View style={{ flex: 1, backgroundColor: theme.colors.background }} />;
+  }
+
   return (
     <NavigationContainer theme={navTheme}>
+      {!isAuthenticated ? (
+        <AuthNavigator />
+      ) : (
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         <RootStack.Screen name="Tabs" component={Tabs} />
         <RootStack.Screen
@@ -167,6 +191,7 @@ export function AppNavigator() {
         <RootStack.Screen name="Security" component={SecurityScreen} />
         <RootStack.Screen name="Appearance" component={AppearanceScreen} />
       </RootStack.Navigator>
+      )}
     </NavigationContainer>
   );
 }

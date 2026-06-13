@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, asc, sql, inArray } from 'drizzle-orm';
+import { and, eq, desc, asc, sql, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
 import {
@@ -11,6 +11,7 @@ import {
   type Transaction,
 } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 
 export const debtsRouter = Router();
 
@@ -23,14 +24,23 @@ function nowTime(): string {
  * UPDATE de balance relativo para una cuenta.
  * delta positivo suma, negativo resta (ya con el signo aplicado).
  */
-function balanceUpdate(accountId: number, delta: number) {
+function balanceUpdate(uid: number, accountId: number, delta: number) {
   return db
     .update(accounts)
     .set({
       currentBalance: sql`${accounts.currentBalance} + ${delta.toFixed(2)}::numeric`,
       updatedAt: new Date(),
     })
-    .where(eq(accounts.id, accountId));
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
+}
+
+/** Verifica que una cuenta pertenezca al usuario (404 si no). */
+async function assertAccountOwned(uid: number, accountId: number): Promise<void> {
+  const [acc] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
+  if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
 }
 
 const debtSchema = z.object({
@@ -68,7 +78,7 @@ const paymentSchema = z.object({
 // GET /api/debts — activas primero, luego saldadas
 debtsRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const rows = await db
       .select({
         id: debts.id,
@@ -92,6 +102,7 @@ debtsRouter.get(
       })
       .from(debts)
       .leftJoin(accounts, eq(debts.accountId, accounts.id))
+      .where(eq(debts.userId, userId(req)))
       .orderBy(asc(debts.isPaidOff), desc(debts.createdAt));
     res.json(rows);
   }),
@@ -100,7 +111,7 @@ debtsRouter.get(
 // GET /api/debts/summary — total deudas, total préstamos, balance neto
 debtsRouter.get(
   '/summary',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const [row] = await db
       .select({
         totalDebt: sql<string>`COALESCE(SUM(CASE WHEN ${debts.type} = 'debt' AND ${debts.isPaidOff} = false THEN ${debts.remainingAmount} ELSE 0 END), 0)`,
@@ -108,7 +119,8 @@ debtsRouter.get(
         activeDebts: sql<string>`COUNT(CASE WHEN ${debts.type} = 'debt' AND ${debts.isPaidOff} = false THEN 1 END)`,
         activeLoans: sql<string>`COUNT(CASE WHEN ${debts.type} = 'loan' AND ${debts.isPaidOff} = false THEN 1 END)`,
       })
-      .from(debts);
+      .from(debts)
+      .where(eq(debts.userId, userId(req)));
 
     const totalDebt = Number(row.totalDebt);
     const totalLoan = Number(row.totalLoan);
@@ -127,7 +139,10 @@ debtsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const [debt] = await db.select().from(debts).where(eq(debts.id, id));
+    const [debt] = await db
+      .select()
+      .from(debts)
+      .where(and(eq(debts.id, id), eq(debts.userId, userId(req))));
     if (!debt) throw new ApiError(404, 'Deuda no encontrada');
 
     const payments = await db
@@ -155,10 +170,13 @@ debtsRouter.get(
 debtsRouter.post(
   '/',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const data = debtSchema.parse(req.body);
+    if (data.accountId != null) await assertAccountOwned(uid, data.accountId);
     const [row] = await db
       .insert(debts)
       .values({
+        userId: uid,
         name: data.name,
         type: data.type,
         totalAmount: data.totalAmount.toFixed(2),
@@ -181,6 +199,7 @@ debtsRouter.post(
       const insertTx = db
         .insert(transactions)
         .values({
+          userId: uid,
           type: txType,
           amount: data.totalAmount.toFixed(2),
           description:
@@ -190,7 +209,7 @@ debtsRouter.post(
           accountId: data.accountId,
         });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await db.batch([insertTx, balanceUpdate(data.accountId, delta)] as any);
+      await db.batch([insertTx, balanceUpdate(uid, data.accountId, delta)] as any);
     }
 
     res.status(201).json(row);
@@ -204,7 +223,10 @@ debtsRouter.put(
     const id = Number(req.params.id);
     const data = debtSchema.partial().parse(req.body);
 
-    const [old] = await db.select().from(debts).where(eq(debts.id, id));
+    const [old] = await db
+      .select()
+      .from(debts)
+      .where(and(eq(debts.id, id), eq(debts.userId, userId(req))));
     if (!old) throw new ApiError(404, 'Deuda no encontrada');
 
     // Si cambia el total, ajustar el restante manteniendo lo ya pagado
@@ -240,7 +262,7 @@ debtsRouter.put(
         }),
         updatedAt: new Date(),
       })
-      .where(eq(debts.id, id))
+      .where(and(eq(debts.id, id), eq(debts.userId, userId(req))))
       .returning();
     res.json(row);
   }),
@@ -250,8 +272,12 @@ debtsRouter.put(
 debtsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = Number(req.params.id);
-    const [debt] = await db.select().from(debts).where(eq(debts.id, id));
+    const [debt] = await db
+      .select()
+      .from(debts)
+      .where(and(eq(debts.id, id), eq(debts.userId, uid)));
     if (!debt) throw new ApiError(404, 'Deuda no encontrada');
 
     // Transacciones generadas por los abonos de esta deuda (las del FK transaction_id).
@@ -266,10 +292,10 @@ debtsRouter.delete(
     // Revertir el balance de cada transacción vinculada (income suma → restar; expense resta → sumar).
     for (const tx of txs) {
       const revert = tx.type === 'income' ? -Number(tx.amount) : Number(tx.amount);
-      stmts.push(balanceUpdate(tx.accountId, revert));
+      stmts.push(balanceUpdate(uid, tx.accountId, revert));
     }
     // Borrar la deuda primero (CASCADE borra debt_payments, que referencian las transacciones)…
-    stmts.push(db.delete(debts).where(eq(debts.id, id)));
+    stmts.push(db.delete(debts).where(and(eq(debts.id, id), eq(debts.userId, uid))));
     // …y recién entonces las transacciones, ya sin referencias.
     if (txIds.length > 0) {
       stmts.push(db.delete(transactions).where(inArray(transactions.id, txIds)));
@@ -285,12 +311,17 @@ debtsRouter.delete(
 debtsRouter.post(
   '/:id/pay',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = Number(req.params.id);
     const data = paymentSchema.parse(req.body);
 
-    const [debt] = await db.select().from(debts).where(eq(debts.id, id));
+    const [debt] = await db
+      .select()
+      .from(debts)
+      .where(and(eq(debts.id, id), eq(debts.userId, uid)));
     if (!debt) throw new ApiError(404, 'Deuda no encontrada');
     if (debt.isPaidOff) throw new ApiError(400, 'Esta deuda ya está saldada');
+    if (data.accountId != null) await assertAccountOwned(uid, data.accountId);
 
     const remaining = Number(debt.remainingAmount);
     if (data.amount > remaining) {
@@ -310,6 +341,7 @@ debtsRouter.post(
       const insertTx = db
         .insert(transactions)
         .values({
+          userId: uid,
           type: txType,
           amount: data.amount.toFixed(2),
           description: data.description ?? `Abono: ${debt.name}`,
@@ -319,7 +351,7 @@ debtsRouter.post(
         })
         .returning();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const txRes = await db.batch([insertTx, balanceUpdate(data.accountId, delta)] as any);
+      const txRes = await db.batch([insertTx, balanceUpdate(uid, data.accountId, delta)] as any);
       transactionId = (txRes[0] as Transaction[])[0].id;
     }
 
@@ -343,7 +375,7 @@ debtsRouter.post(
         paidOffAt: paidOff ? new Date() : null,
         updatedAt: new Date(),
       })
-      .where(eq(debts.id, id))
+      .where(and(eq(debts.id, id), eq(debts.userId, uid)))
       .returning();
 
     try {
@@ -358,7 +390,7 @@ debtsRouter.post(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await db.batch([
           db.delete(transactions).where(eq(transactions.id, transactionId)),
-          balanceUpdate(data.accountId, undo),
+          balanceUpdate(uid, data.accountId, undo),
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ] as any);
       }

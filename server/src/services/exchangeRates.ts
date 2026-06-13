@@ -78,13 +78,18 @@ async function fetchExternal(base: string, targets: string[]): Promise<Record<st
 }
 
 /** Inserta o actualiza tasas automáticas (respeta las manuales: no las toca). */
-async function upsertRates(base: string, rates: { target: string; rate: number }[]): Promise<void> {
+async function upsertRates(
+  uid: number,
+  base: string,
+  rates: { target: string; rate: number }[],
+): Promise<void> {
   if (rates.length === 0) return;
   const now = new Date();
   await db
     .insert(exchangeRates)
     .values(
       rates.map((r) => ({
+        userId: uid,
         baseCurrency: base,
         targetCurrency: r.target,
         rate: r.rate.toFixed(8),
@@ -93,7 +98,7 @@ async function upsertRates(base: string, rates: { target: string; rate: number }
       })),
     )
     .onConflictDoUpdate({
-      target: [exchangeRates.baseCurrency, exchangeRates.targetCurrency],
+      target: [exchangeRates.userId, exchangeRates.baseCurrency, exchangeRates.targetCurrency],
       set: { rate: sql`excluded.rate`, fetchedAt: now, isManual: false },
       // Nunca pisar una tasa manual.
       setWhere: eq(exchangeRates.isManual, false),
@@ -105,6 +110,7 @@ async function upsertRates(base: string, rates: { target: string; rate: number }
  * y respetando manuales. `force` ignora el TTL (refresco manual del usuario).
  */
 export async function getRates(
+  uid: number,
   baseRaw: string,
   targetsRaw: string[],
   force = false,
@@ -117,7 +123,11 @@ export async function getRates(
         .select()
         .from(exchangeRates)
         .where(
-          and(eq(exchangeRates.baseCurrency, base), inArray(exchangeRates.targetCurrency, targets)),
+          and(
+            eq(exchangeRates.userId, uid),
+            eq(exchangeRates.baseCurrency, base),
+            inArray(exchangeRates.targetCurrency, targets),
+          ),
         )
     : [];
   const cachedMap = new Map(cached.map((r) => [r.targetCurrency, r]));
@@ -160,13 +170,13 @@ export async function getRates(
     }
   }
 
-  if (toUpsert.length) await upsertRates(base, toUpsert);
+  if (toUpsert.length) await upsertRates(uid, base, toUpsert);
   return results;
 }
 
 /** Tasa puntual base→target (1 si son iguales). */
-export async function getRate(base: string, target: string): Promise<RateResult> {
-  const [r] = await getRates(base, [target]);
+export async function getRate(uid: number, base: string, target: string): Promise<RateResult> {
+  const [r] = await getRates(uid, base, [target]);
   return r;
 }
 
@@ -188,6 +198,7 @@ export interface ConversionMap {
  * API caída sin cache y sin tasa manual).
  */
 export async function getConversionMap(
+  uid: number,
   displayRaw: string,
   currenciesRaw: string[],
   force = false,
@@ -200,7 +211,7 @@ export async function getConversionMap(
     return { map, stale: false, oldestFetchedAt: new Date().toISOString() };
   }
 
-  const results = await getRates(display, currencies, force);
+  const results = await getRates(uid, display, currencies, force);
   let stale = false;
   let oldest: number | null = null;
 
@@ -222,15 +233,22 @@ export async function getConversionMap(
 }
 
 /** Fija una tasa manual (no se sobreescribe con el refresco automático). */
-export async function setManualRate(baseRaw: string, targetRaw: string, rate: number) {
+export async function setManualRate(uid: number, baseRaw: string, targetRaw: string, rate: number) {
   const base = norm(baseRaw);
   const target = norm(targetRaw);
   const now = new Date();
   const [row] = await db
     .insert(exchangeRates)
-    .values({ baseCurrency: base, targetCurrency: target, rate: rate.toFixed(8), isManual: true, fetchedAt: now })
+    .values({
+      userId: uid,
+      baseCurrency: base,
+      targetCurrency: target,
+      rate: rate.toFixed(8),
+      isManual: true,
+      fetchedAt: now,
+    })
     .onConflictDoUpdate({
-      target: [exchangeRates.baseCurrency, exchangeRates.targetCurrency],
+      target: [exchangeRates.userId, exchangeRates.baseCurrency, exchangeRates.targetCurrency],
       set: { rate: rate.toFixed(8), isManual: true, fetchedAt: now },
     })
     .returning();

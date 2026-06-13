@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { accounts } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 import { getConversionMap } from '../services/exchangeRates.js';
 
 export const accountsRouter = Router();
@@ -20,8 +21,11 @@ const accountSchema = z.object({
 // GET /api/accounts — cuentas activas
 accountsRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    const rows = await db.select().from(accounts).where(eq(accounts.isActive, true));
+  asyncHandler(async (req, res) => {
+    const rows = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId(req)), eq(accounts.isActive, true)));
     res.json(rows);
   }),
 );
@@ -40,10 +44,11 @@ accountsRouter.get(
         total: sql<string>`COALESCE(SUM(${accounts.currentBalance}), 0)`,
       })
       .from(accounts)
-      .where(eq(accounts.isActive, true))
+      .where(and(eq(accounts.userId, userId(req)), eq(accounts.isActive, true)))
       .groupBy(accounts.currency);
 
     const { map, stale, oldestFetchedAt } = await getConversionMap(
+      userId(req),
       displayCurrency,
       rows.map((r) => r.currency),
       force,
@@ -72,7 +77,10 @@ accountsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const [row] = await db.select().from(accounts).where(eq(accounts.id, id));
+    const [row] = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.userId, userId(req))));
     if (!row) throw new ApiError(404, 'Cuenta no encontrada');
     res.json(row);
   }),
@@ -86,6 +94,7 @@ accountsRouter.post(
     const [row] = await db
       .insert(accounts)
       .values({
+        userId: userId(req),
         name: data.name,
         type: data.type,
         currency: data.currency,
@@ -106,7 +115,10 @@ accountsRouter.put(
     const id = Number(req.params.id);
     const data = accountSchema.partial().parse(req.body);
 
-    const [existing] = await db.select().from(accounts).where(eq(accounts.id, id));
+    const [existing] = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.userId, userId(req))));
     if (!existing) throw new ApiError(404, 'Cuenta no encontrada');
 
     // Si cambia el saldo inicial, ajusta el balance actual por la diferencia.
@@ -130,7 +142,7 @@ accountsRouter.put(
         ...(data.icon !== undefined && { icon: data.icon }),
         updatedAt: new Date(),
       })
-      .where(eq(accounts.id, id))
+      .where(and(eq(accounts.id, id), eq(accounts.userId, userId(req))))
       .returning();
     res.json(row);
   }),
@@ -144,7 +156,7 @@ accountsRouter.delete(
     const [row] = await db
       .update(accounts)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(accounts.id, id))
+      .where(and(eq(accounts.id, id), eq(accounts.userId, userId(req))))
       .returning();
     if (!row) throw new ApiError(404, 'Cuenta no encontrada');
     res.json({ success: true });

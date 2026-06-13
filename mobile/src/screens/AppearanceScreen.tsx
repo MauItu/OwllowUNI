@@ -5,7 +5,10 @@ import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, SectionTitle } from '../components/common';
 import { Icon } from '../components/Icon';
+import { useAuth } from '../hooks/useAuth';
 import type { ThemeMode } from '../stores/settingsStore';
+
+const ADMIN_EMAIL = 'mauiturriza@gmail.com';
 
 const THEME_MODES: { key: ThemeMode; label: string; icon: string }[] = [
   { key: 'system', label: 'Sistema', icon: 'smartphone' },
@@ -17,6 +20,9 @@ export function AppearanceScreen() {
   const navigation = useNavigation<any>();
   const { theme, paletteId, setPalette, availablePalettes, themeMode, setThemeMode } = useTheme();
   const styles = useThemedStyles(createStyles);
+  const { user } = useAuth();
+  // Solo el admin (o el correo dueño) puede elegir paleta; el resto queda en "Profesional".
+  const canChangePalette = user?.isAdmin === true || user?.email === ADMIN_EMAIL;
 
   return (
     <Screen>
@@ -39,31 +45,35 @@ export function AppearanceScreen() {
           })}
         </View>
 
-        <View style={styles.sectionGap}>
-          <SectionTitle title="Paleta de colores" />
-        </View>
-        {availablePalettes.map((p) => {
-          const selected = paletteId === p.id;
-          return (
-            <Pressable
-              key={p.id}
-              style={[styles.card, selected && styles.cardSelected]}
-              onPress={() => setPalette(p.id)}
-            >
-              <View style={styles.swatchRow}>
-                {p.swatch.map((color, i) => (
-                  <View key={i} style={[styles.swatch, { backgroundColor: color }]} />
-                ))}
-              </View>
-              <Text style={styles.cardLabel}>{p.label}</Text>
-              {selected && (
-                <View style={styles.checkWrap}>
-                  <Icon name="check" size={20} color={theme.colors.primary} />
-                </View>
-              )}
-            </Pressable>
-          );
-        })}
+        {canChangePalette && (
+          <>
+            <View style={styles.sectionGap}>
+              <SectionTitle title="Paleta de colores" />
+            </View>
+            {availablePalettes.map((p) => {
+              const selected = paletteId === p.id;
+              return (
+                <Pressable
+                  key={p.id}
+                  style={[styles.card, selected && styles.cardSelected]}
+                  onPress={() => setPalette(p.id)}
+                >
+                  <View style={styles.swatchRow}>
+                    {p.swatch.map((color, i) => (
+                      <View key={i} style={[styles.swatch, { backgroundColor: color }]} />
+                    ))}
+                  </View>
+                  <Text style={styles.cardLabel}>{p.label}</Text>
+                  {selected && (
+                    <View style={styles.checkWrap}>
+                      <Icon name="check" size={20} color={theme.colors.primary} />
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </>
+        )}
       </ScrollView>
     </Screen>
   );

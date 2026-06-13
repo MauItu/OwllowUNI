@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -7,6 +7,7 @@ import { Screen, ScreenHeader, SectionTitle } from '../components/common';
 import { Icon } from '../components/Icon';
 import { CurrencyPicker } from '../components/CurrencyPicker';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAuth } from '../hooks/useAuth';
 import { currencyInfo } from '../utils/currencies';
 import { API_BASE_URL } from '../api/client';
 
@@ -16,7 +17,23 @@ export function MoreScreen() {
   const styles = useThemedStyles(createStyles);
   const mainCurrency = useSettingsStore((s) => s.mainCurrency);
   const setMainCurrency = useSettingsStore((s) => s.setMainCurrency);
+  const { user, logout } = useAuth();
   const [showCurrency, setShowCurrency] = useState(false);
+
+  const onLogout = () => {
+    Alert.alert('Cerrar sesión', '¿Seguro que querés cerrar sesión?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Cerrar sesión',
+        style: 'destructive',
+        // Al cerrar sesión, isAuthenticated pasa a false y el navigator
+        // vuelve al stack de login automáticamente.
+        onPress: () => {
+          logout();
+        },
+      },
+    ]);
+  };
 
   const items: { label: string; description: string; icon: string; route: string; color: string }[] = [
     { label: 'Insights', description: 'Análisis automático de tus gastos', icon: 'lightbulb', route: 'Insights', color: theme.colors.accentLight },
@@ -126,6 +143,28 @@ export function MoreScreen() {
           <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
         </Pressable>
 
+        <View style={styles.sectionGap}>
+          <SectionTitle title="Cuenta" />
+        </View>
+        <View style={styles.accountCard}>
+          <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.secondary}22` }]}>
+            <Icon name="user" size={22} color={theme.colors.secondary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>{user?.name ?? 'Mi cuenta'}</Text>
+            <Text style={styles.description} numberOfLines={1}>
+              {user?.email ?? ''}
+            </Text>
+          </View>
+        </View>
+        <Pressable
+          style={({ pressed }) => [styles.logout, pressed && { opacity: 0.6 }]}
+          onPress={onLogout}
+        >
+          <Icon name="log-out" size={20} color={theme.colors.expense} />
+          <Text style={styles.logoutText}>Cerrar sesión</Text>
+        </Pressable>
+
         <View style={styles.footer}>
           <Text style={styles.footerTitle}>Wallet Clone</Text>
           <Text style={styles.footerText}>v1.0.0</Text>
@@ -164,6 +203,29 @@ const createStyles = (theme: Theme) =>
     label: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
     description: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 2 },
     sectionGap: { marginTop: theme.spacing.lg },
+    accountCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.borderRadius.lg,
+      padding: theme.spacing.md,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+    },
+    logout: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: theme.spacing.sm,
+      paddingVertical: theme.spacing.md,
+      marginTop: theme.spacing.sm,
+    },
+    logoutText: {
+      color: theme.colors.expense,
+      fontSize: theme.fontSize.md,
+      fontWeight: theme.fontWeight.semibold,
+    },
     footer: { alignItems: 'center', marginTop: theme.spacing.xl, gap: 2 },
     footerTitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
     footerText: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs },

@@ -3,6 +3,7 @@ import { and, gte, lte, eq, sql, desc } from 'drizzle-orm';
 import { db } from '../db/connection.js';
 import { transactions, categories, accounts } from '../db/schema.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 import { getConversionMap } from '../services/exchangeRates.js';
 
 export const statsRouter = Router();
@@ -35,10 +36,16 @@ statsRouter.get(
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-      .where(and(gte(transactions.date, from), lte(transactions.date, to)))
+      .where(
+        and(
+          eq(transactions.userId, userId(req)),
+          gte(transactions.date, from),
+          lte(transactions.date, to),
+        ),
+      )
       .groupBy(accounts.currency, transactions.type);
 
-    const { map } = await getConversionMap(display, rows.map((r) => r.currency));
+    const { map } = await getConversionMap(userId(req), display, rows.map((r) => r.currency));
 
     let income = 0;
     let expense = 0;
@@ -72,7 +79,14 @@ statsRouter.get(
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
-      .where(and(eq(transactions.type, type), gte(transactions.date, from), lte(transactions.date, to)))
+      .where(
+        and(
+          eq(transactions.userId, userId(req)),
+          eq(transactions.type, type),
+          gte(transactions.date, from),
+          lte(transactions.date, to),
+        ),
+      )
       .groupBy(
         transactions.categoryId,
         categories.name,
@@ -81,7 +95,7 @@ statsRouter.get(
         accounts.currency,
       );
 
-    const { map } = await getConversionMap(display, rows.map((r) => r.currency));
+    const { map } = await getConversionMap(userId(req), display, rows.map((r) => r.currency));
 
     // Agrega por categoría tras convertir (una categoría puede tener varias monedas).
     const byCat = new Map<
@@ -135,11 +149,17 @@ statsRouter.get(
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-      .where(and(gte(transactions.date, from), lte(transactions.date, to)))
+      .where(
+        and(
+          eq(transactions.userId, userId(req)),
+          gte(transactions.date, from),
+          lte(transactions.date, to),
+        ),
+      )
       .groupBy(bucketExpr, transactions.type, accounts.currency)
       .orderBy(bucketExpr);
 
-    const { map } = await getConversionMap(display, rows.map((r) => r.currency));
+    const { map } = await getConversionMap(userId(req), display, rows.map((r) => r.currency));
 
     const byBucket = new Map<string, { date: string; income: number; expense: number }>();
     for (const r of rows) {
@@ -173,11 +193,17 @@ statsRouter.get(
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
-      .where(and(gte(transactions.date, from), lte(transactions.date, to)))
+      .where(
+        and(
+          eq(transactions.userId, userId(req)),
+          gte(transactions.date, from),
+          lte(transactions.date, to),
+        ),
+      )
       .groupBy(transactions.date, accounts.currency)
       .orderBy(transactions.date);
 
-    const { map } = await getConversionMap(display, rows.map((r) => r.currency));
+    const { map } = await getConversionMap(userId(req), display, rows.map((r) => r.currency));
 
     // Suma neta por día (ya convertida) y acumulado.
     const byDate = new Map<string, number>();

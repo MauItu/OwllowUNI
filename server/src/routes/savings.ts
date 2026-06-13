@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { eq, desc, asc, sql, count } from 'drizzle-orm';
+import { and, eq, desc, asc, sql, count } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { savingsGoals, savingsContributions, accounts, type SavingsGoal } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { userId } from '../middleware/auth.js';
 
 export const savingsRouter = Router();
 
@@ -34,7 +35,7 @@ const contributionSchema = z.object({
 // GET /api/savings — metas (activas primero, luego completadas)
 savingsRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const rows = await db
       .select({
         id: savingsGoals.id,
@@ -54,6 +55,7 @@ savingsRouter.get(
       })
       .from(savingsGoals)
       .leftJoin(accounts, eq(savingsGoals.accountId, accounts.id))
+      .where(eq(savingsGoals.userId, userId(req)))
       .orderBy(asc(savingsGoals.isCompleted), desc(savingsGoals.createdAt));
     res.json(rows);
   }),
@@ -62,7 +64,7 @@ savingsRouter.get(
 // GET /api/savings/summary — totales y conteo de metas
 savingsRouter.get(
   '/summary',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const [row] = await db
       .select({
         totalSaved: sql<string>`COALESCE(SUM(${savingsGoals.currentAmount}), 0)`,
@@ -70,7 +72,8 @@ savingsRouter.get(
         activeGoals: count(sql`CASE WHEN ${savingsGoals.isCompleted} = false THEN 1 END`),
         completedGoals: count(sql`CASE WHEN ${savingsGoals.isCompleted} = true THEN 1 END`),
       })
-      .from(savingsGoals);
+      .from(savingsGoals)
+      .where(eq(savingsGoals.userId, userId(req)));
 
     const totalSaved = Number(row.totalSaved);
     const totalTarget = Number(row.totalTarget);
@@ -89,7 +92,10 @@ savingsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const [goal] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, id));
+    const [goal] = await db
+      .select()
+      .from(savingsGoals)
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))));
     if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
 
     const contributions = await db
@@ -110,6 +116,7 @@ savingsRouter.post(
     const [row] = await db
       .insert(savingsGoals)
       .values({
+        userId: userId(req),
         name: data.name,
         targetAmount: data.targetAmount.toFixed(2),
         deadline: data.deadline ?? null,
@@ -130,7 +137,10 @@ savingsRouter.put(
     const id = Number(req.params.id);
     const data = goalSchema.partial().parse(req.body);
 
-    const [old] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, id));
+    const [old] = await db
+      .select()
+      .from(savingsGoals)
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))));
     if (!old) throw new ApiError(404, 'Meta de ahorro no encontrada');
 
     // Si cambia el objetivo, recalcular el estado de completitud
@@ -151,7 +161,7 @@ savingsRouter.put(
         completedAt: completedNow ? old.completedAt ?? new Date() : null,
         updatedAt: new Date(),
       })
-      .where(eq(savingsGoals.id, id))
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))))
       .returning();
     res.json(row);
   }),
@@ -162,7 +172,10 @@ savingsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const deleted = await db.delete(savingsGoals).where(eq(savingsGoals.id, id)).returning();
+    const deleted = await db
+      .delete(savingsGoals)
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))))
+      .returning();
     if (deleted.length === 0) throw new ApiError(404, 'Meta de ahorro no encontrada');
     res.json({ success: true });
   }),
@@ -175,7 +188,10 @@ savingsRouter.post(
     const id = Number(req.params.id);
     const data = contributionSchema.parse(req.body);
 
-    const [goal] = await db.select().from(savingsGoals).where(eq(savingsGoals.id, id));
+    const [goal] = await db
+      .select()
+      .from(savingsGoals)
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))));
     if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
 
     const current = Number(goal.currentAmount);

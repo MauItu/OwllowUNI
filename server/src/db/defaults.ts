@@ -1,0 +1,141 @@
+import { db } from './connection.js';
+import { accounts, categories } from './schema.js';
+
+/**
+ * Datos por defecto que recibe CADA usuario nuevo: el catálogo de categorías
+ * (gastos + ingresos, con subcategorías) y una cuenta "Efectivo". Lo usan el
+ * seed (usuario admin) y el registro de nuevos usuarios (`/api/auth/register`).
+ */
+
+export type SeedCategory = {
+  name: string;
+  icon: string;
+  color: string;
+  children?: { name: string; icon: string }[];
+};
+
+export const EXPENSE_CATEGORIES: SeedCategory[] = [
+  {
+    name: 'Alimentación',
+    icon: 'utensils',
+    color: '#EF4444',
+    children: [
+      { name: 'Restaurantes', icon: 'chef-hat' },
+      { name: 'Mercado', icon: 'shopping-cart' },
+      { name: 'Snacks', icon: 'cookie' },
+    ],
+  },
+  {
+    name: 'Transporte',
+    icon: 'bus',
+    color: '#F59E0B',
+    children: [
+      { name: 'Bus', icon: 'bus-front' },
+      { name: 'Taxi', icon: 'car-taxi-front' },
+      { name: 'Gasolina', icon: 'fuel' },
+    ],
+  },
+  {
+    name: 'Vivienda',
+    icon: 'home',
+    color: '#6C5CE7',
+    children: [
+      { name: 'Arriendo', icon: 'key-round' },
+      { name: 'Servicios', icon: 'plug-zap' },
+      { name: 'Internet', icon: 'wifi' },
+    ],
+  },
+  {
+    name: 'Entretenimiento',
+    icon: 'party-popper',
+    color: '#EC4899',
+    children: [
+      { name: 'Streaming', icon: 'tv' },
+      { name: 'Juegos', icon: 'gamepad-2' },
+      { name: 'Salidas', icon: 'beer' },
+    ],
+  },
+  {
+    name: 'Salud',
+    icon: 'heart-pulse',
+    color: '#10B981',
+    children: [
+      { name: 'Medicamentos', icon: 'pill' },
+      { name: 'Consultas', icon: 'stethoscope' },
+      { name: 'Gym', icon: 'dumbbell' },
+    ],
+  },
+  {
+    name: 'Educación',
+    icon: 'graduation-cap',
+    color: '#3B82F6',
+    children: [
+      { name: 'Matrícula', icon: 'school' },
+      { name: 'Libros', icon: 'book-open' },
+      { name: 'Cursos', icon: 'monitor-play' },
+    ],
+  },
+  { name: 'Ropa', icon: 'shirt', color: '#14B8A6' },
+  { name: 'Tecnología', icon: 'smartphone', color: '#8B5CF6' },
+];
+
+export const INCOME_CATEGORIES: SeedCategory[] = [
+  { name: 'Salario', icon: 'briefcase', color: '#10B981' },
+  { name: 'Freelance', icon: 'laptop', color: '#6C5CE7' },
+  { name: 'Inversiones', icon: 'trending-up', color: '#F59E0B' },
+  { name: 'Regalos', icon: 'gift', color: '#EC4899' },
+  { name: 'Reembolsos', icon: 'rotate-ccw', color: '#3B82F6' },
+];
+
+/** Inserta las categorías por defecto de un tipo para un usuario (padres + hijas). */
+async function insertCategoriesOfType(
+  userId: number,
+  list: SeedCategory[],
+  type: 'income' | 'expense',
+): Promise<void> {
+  for (let i = 0; i < list.length; i++) {
+    const cat = list[i];
+    const [parent] = await db
+      .insert(categories)
+      .values({ userId, name: cat.name, type, icon: cat.icon, color: cat.color, sortOrder: i })
+      .returning();
+    if (cat.children) {
+      await db.insert(categories).values(
+        cat.children.map((child, j) => ({
+          userId,
+          name: child.name,
+          type,
+          icon: child.icon,
+          color: cat.color,
+          parentId: parent.id,
+          sortOrder: j,
+        })),
+      );
+    }
+  }
+}
+
+/** Crea la cuenta "Efectivo" por defecto para un usuario. */
+export async function createDefaultAccount(userId: number): Promise<void> {
+  await db.insert(accounts).values({
+    userId,
+    name: 'Efectivo',
+    type: 'cash',
+    currency: 'COP',
+    initialBalance: '0',
+    currentBalance: '0',
+    color: '#10B981',
+    icon: 'banknote',
+  });
+}
+
+/**
+ * Provisiona TODO lo que un usuario recién registrado necesita: las categorías
+ * default (gastos + ingresos) y la cuenta "Efectivo". Pensado para un usuario
+ * nuevo y vacío (no hace deduplicación).
+ */
+export async function provisionUserDefaults(userId: number): Promise<void> {
+  await insertCategoriesOfType(userId, EXPENSE_CATEGORIES, 'expense');
+  await insertCategoriesOfType(userId, INCOME_CATEGORIES, 'income');
+  await createDefaultAccount(userId);
+}

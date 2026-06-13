@@ -1,3 +1,34 @@
+// ─────────────────────────────── Auth ──────────────────────────────
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+  isAdmin: boolean;
+  createdAt: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: User;
+}
+
+export interface RegisterInput {
+  email: string;
+  password: string;
+  name: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface UpdateProfileInput {
+  name?: string;
+  password?: string;
+  currentPassword?: string;
+}
+
 export type AccountType = 'bank' | 'cash' | 'credit_card' | 'digital_wallet';
 export type TxType = 'income' | 'expense' | 'transfer';
 export type CategoryType = 'income' | 'expense';

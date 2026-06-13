@@ -14,9 +14,26 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
+// ─────────────────────────────── users ──────────────────────────────
+// Multi-usuario: cada fila de datos pertenece a un usuario (FK user_id en las
+// tablas padre). El email se guarda en minúsculas y sin espacios; la contraseña
+// SIEMPRE hasheada con bcrypt (nunca en claro).
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+  isAdmin: boolean('is_admin').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // ───────────────────────────── accounts ─────────────────────────────
 export const accounts = pgTable('accounts', {
   id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   name: varchar('name', { length: 100 }).notNull(),
   type: varchar('type', { length: 30 }).notNull(), // bank | cash | credit_card | digital_wallet
   currency: varchar('currency', { length: 3 }).default('COP').notNull(),
@@ -32,6 +49,9 @@ export const accounts = pgTable('accounts', {
 // ──────────────────────────── categories ────────────────────────────
 export const categories = pgTable('categories', {
   id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   name: varchar('name', { length: 80 }).notNull(),
   type: varchar('type', { length: 10 }).notNull(), // income | expense
   icon: varchar('icon', { length: 50 }).notNull(),
@@ -47,6 +67,9 @@ export const categories = pgTable('categories', {
 // ─────────────────────────── transactions ───────────────────────────
 export const transactions = pgTable('transactions', {
   id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   type: varchar('type', { length: 10 }).notNull(), // income | expense | transfer
   amount: decimal('amount', { precision: 15, scale: 2 }).notNull(),
   description: varchar('description', { length: 255 }),
@@ -75,6 +98,9 @@ export const exchangeRates = pgTable(
   'exchange_rates',
   {
     id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .references(() => users.id)
+      .notNull(),
     baseCurrency: varchar('base_currency', { length: 3 }).notNull(),
     targetCurrency: varchar('target_currency', { length: 3 }).notNull(),
     rate: decimal('rate', { precision: 18, scale: 8 }).notNull(),
@@ -82,13 +108,16 @@ export const exchangeRates = pgTable(
     fetchedAt: timestamp('fetched_at').defaultNow().notNull(),
   },
   (t) => ({
-    uniquePair: unique().on(t.baseCurrency, t.targetCurrency),
+    uniquePair: unique().on(t.userId, t.baseCurrency, t.targetCurrency),
   }),
 );
 
 // ───────────────────────────── templates ────────────────────────────
 export const templates = pgTable('templates', {
   id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   name: varchar('name', { length: 100 }).notNull(),
   type: varchar('type', { length: 10 }).notNull(), // income | expense
   amount: decimal('amount', { precision: 15, scale: 2 }),
@@ -101,13 +130,23 @@ export const templates = pgTable('templates', {
 });
 
 // ─────────────────────────────── tags ───────────────────────────────
-export const tags = pgTable('tags', {
-  id: serial('id').primaryKey(),
-  name: varchar('name', { length: 50 }).notNull().unique(),
-  color: varchar('color', { length: 7 }).default('#6C757D').notNull(),
-  icon: varchar('icon', { length: 50 }).default('tag').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+export const tags = pgTable(
+  'tags',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .references(() => users.id)
+      .notNull(),
+    name: varchar('name', { length: 50 }).notNull(),
+    color: varchar('color', { length: 7 }).default('#6C757D').notNull(),
+    icon: varchar('icon', { length: 50 }).default('tag').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    // El nombre es único por usuario (dos usuarios pueden tener la misma etiqueta).
+    uniqueUserName: unique().on(t.userId, t.name),
+  }),
+);
 
 // ──────────────────────── transaction_tags ──────────────────────────
 export const transactionTags = pgTable(
@@ -129,6 +168,9 @@ export const transactionTags = pgTable(
 // ─────────────────────────── savings_goals ──────────────────────────
 export const savingsGoals = pgTable('savings_goals', {
   id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   name: varchar('name', { length: 100 }).notNull(),
   targetAmount: decimal('target_amount', { precision: 15, scale: 2 }).notNull(),
   currentAmount: decimal('current_amount', { precision: 15, scale: 2 }).default('0').notNull(),
@@ -160,6 +202,9 @@ export const savingsContributions = pgTable('savings_contributions', {
 // ─────────────────────────────── debts ──────────────────────────────
 export const debts = pgTable('debts', {
   id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   name: varchar('name', { length: 100 }).notNull(),
   type: varchar('type', { length: 10 }).notNull(), // debt (yo debo) | loan (me deben)
   totalAmount: decimal('total_amount', { precision: 15, scale: 2 }).notNull(),
@@ -196,6 +241,9 @@ export const debtPayments = pgTable('debt_payments', {
 // ─────────────────────────── split_groups ───────────────────────────
 export const splitGroups = pgTable('split_groups', {
   id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
   name: varchar('name', { length: 100 }).notNull(),
   description: varchar('description', { length: 255 }),
   icon: varchar('icon', { length: 50 }).default('users').notNull(),
@@ -285,7 +333,14 @@ export const splitSettlements = pgTable('split_settlements', {
 });
 
 // ───────────────────────────── relations ────────────────────────────
-export const accountsRelations = relations(accounts, ({ many }) => ({
+export const usersRelations = relations(users, ({ many }) => ({
+  accounts: many(accounts),
+  categories: many(categories),
+  transactions: many(transactions),
+}));
+
+export const accountsRelations = relations(accounts, ({ one, many }) => ({
+  user: one(users, { fields: [accounts.userId], references: [users.id] }),
   transactions: many(transactions),
 }));
 
@@ -443,6 +498,8 @@ export const splitSettlementsRelations = relations(splitSettlements, ({ one }) =
 }));
 
 // ─────────────────────────────── types ──────────────────────────────
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
 export type Category = typeof categories.$inferSelect;
