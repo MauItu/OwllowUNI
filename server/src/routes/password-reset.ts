@@ -42,6 +42,11 @@ function generateCode(): string {
 passwordResetRouter.post(
   '/forgot-password',
   asyncHandler(async (req, res) => {
+    // TEMPORALMENTE DESHABILITADO: el flujo de recuperación de contraseña está
+    // bypaseado. El código de abajo se conserva intacto; quitar este return para
+    // reactivarlo.
+    res.status(503).json({ error: 'Función temporalmente deshabilitada.' });
+    return;
     const { email } = forgotSchema.parse(req.body);
 
     // Falla de forma uniforme si no hay clave de correo (antes del lookup, para
@@ -87,6 +92,9 @@ passwordResetRouter.post(
 passwordResetRouter.post(
   '/verify-reset-code',
   asyncHandler(async (req, res) => {
+    // TEMPORALMENTE DESHABILITADO (ver forgot-password). Quitar este return para reactivar.
+    res.status(503).json({ error: 'Función temporalmente deshabilitada.' });
+    return;
     const { email, code } = verifySchema.parse(req.body);
 
     const [match] = await db
@@ -113,6 +121,9 @@ passwordResetRouter.post(
 passwordResetRouter.post(
   '/reset-password',
   asyncHandler(async (req, res) => {
+    // TEMPORALMENTE DESHABILITADO (ver forgot-password). Quitar este return para reactivar.
+    res.status(503).json({ error: 'Función temporalmente deshabilitada.' });
+    return;
     const { token, newPassword } = resetSchema.parse(req.body);
 
     const [reset] = await db

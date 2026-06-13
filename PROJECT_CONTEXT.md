@@ -44,7 +44,12 @@ wallet/                         ← raíz del repo
   - `POST /api/auth/login` — `{ email, password }` → `{ token, user }` (error genérico si fallan).
   - `GET /api/auth/me` (auth) · `PUT /api/auth/profile` (auth) — cambia nombre/contraseña (exige la actual).
   - **Recuperación de contraseña por email** (`routes/password-reset.ts`, públicos; código de 6 dígitos
-    pensado para móvil, no link). Requiere `GMAIL_USER` y `GMAIL_APP_PASSWORD` (envío vía **Gmail SMTP** con **Nodemailer**):
+    pensado para móvil, no link). Requiere `GMAIL_USER` y `GMAIL_APP_PASSWORD` (envío vía **Gmail SMTP** con **Nodemailer**).
+    - ⚠️ **TEMPORALMENTE DESHABILITADO:** los 3 endpoints están bypaseados al inicio de su handler y devuelven
+      **503** `{ error: "Función temporalmente deshabilitada." }`. El código se conserva intacto (solo un `return`
+      temprano); para reactivar, quitar ese `return` en cada handler de `password-reset.ts`. En mobile el link
+      "¿Olvidaste tu contraseña?" de `LoginScreen` está comentado (no borrado). El comportamiento documentado
+      abajo es el original/al reactivar.
     - `POST /api/auth/forgot-password` — `{ email }`. Si el email existe: genera código de 6 dígitos
       (`crypto.randomInt`) + token de 64 chars (`crypto.randomBytes`), expiración 15 min, invalida códigos
       previos no usados del usuario y envía el código por email. **Siempre responde 200** con mensaje genérico

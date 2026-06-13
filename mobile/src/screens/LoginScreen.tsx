@@ -70,6 +70,7 @@ export function LoginScreen() {
             <View style={styles.buttonWrap}>
               <PrimaryButton label="Iniciar sesión" onPress={onSubmit} loading={loading} />
             </View>
+            {/* Recuperación de contraseña deshabilitada temporalmente (ver password-reset.ts).
             <Pressable
               style={styles.forgotRow}
               onPress={() => navigation.navigate('ForgotPassword')}
@@ -77,6 +78,7 @@ export function LoginScreen() {
             >
               <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
             </Pressable>
+            */}
           </View>
 
           <Pressable
