@@ -15,8 +15,8 @@ mobile/ios/
 *.apk
 *.aab
 
-# Drizzle migraciones compiladas
-server/drizzle/meta/
+# Drizzle: el journal (meta/_journal.json + snapshots) SÍ se versiona — drizzle-kit
+# lo necesita para rastrear qué migraciones existen y su orden en checkouts limpios.
 
 # OS
 .DS_Store

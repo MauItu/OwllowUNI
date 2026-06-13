@@ -25,6 +25,58 @@ wallet/                         ← raíz del repo
 
 ---
 
+## AUTENTICACIÓN Y MULTIUSUARIO (JWT)
+
+> El sistema **NO es single-user**: hay registro/login con JWT y **cada fila de datos pertenece a
+> un usuario** (`user_id`). Todas las rutas `/api/*` (salvo `/api/auth/*`) exigen
+> `Authorization: Bearer <token>`.
+
+- Tabla **`users`**: `id` · `email` (único, minúsculas) · `password_hash` (bcrypt, 12 rounds) ·
+  `name` · `is_admin` bool def false · `created_at`/`updated_at`. Admin: `mauiturriza@gmail.com`.
+- **`user_id` (FK→users, NOT NULL)** en todas las tablas **padre**: `accounts`, `categories`,
+  `transactions`, `templates`, `tags`, `savings_goals`, `debts`, `split_groups`, `exchange_rates`.
+  Las tablas **hijas** (`transaction_tags`, `savings_contributions`, `debt_payments`, `split_*`)
+  heredan la propiedad vía su FK al padre; los endpoints verifican propiedad del padre antes de operar
+  (`getOwnedGroup`, `assertAccountsOwned`, `assertTagsOwned`).
+- **Endpoints (`server/src/routes/auth.ts`, públicos):**
+  - `POST /api/auth/register` — `{ email, password(≥8), name }` → `{ token, user }`. Provisiona
+    categorías default + cuenta "Efectivo" (`db/defaults.ts → provisionUserDefaults`).
+  - `POST /api/auth/login` — `{ email, password }` → `{ token, user }` (error genérico si fallan).
+  - `GET /api/auth/me` (auth) · `PUT /api/auth/profile` (auth) — cambia nombre/contraseña (exige la actual).
+- **Middleware `server/src/middleware/auth.ts`:** `authenticate` valida el Bearer e inyecta
+  `req.user = { id, email, isAdmin }`; `userId(req)` y `requireAdmin`. Token expira en **30d**.
+  `JWT_SECRET` es **obligatorio** en el `.env` raíz (el server no arranca sin él).
+- **Mobile:** `LoginScreen`/`RegisterScreen`, `hooks/useAuth.tsx`, `services/auth.ts` (JWT en
+  **expo-secure-store**, nunca AsyncStorage). `api/client.ts` inyecta el Bearer y, ante 401, limpia
+  el token y redirige al login. Paletas restringidas a admin (resto: `professional`).
+
+---
+
+## RENDIMIENTO: ÍNDICES, CACHÉ Y CORS (post-auditoría jun 2026)
+
+- **Índices (migración `0009_complex_morg.sql`, aditiva).** Definidos como `index()` en `schema.ts`:
+  `transactions(user_id,date,id)` y `(user_id,type,date)` (lista, stats, insights),
+  `transactions(account_id|to_account_id|category_id)`, `transaction_tags(tag_id)`,
+  `categories(user_id|parent_id)`, `accounts(user_id)`, y `user_id`/`group_id`/`goal_id`/`debt_id`
+  en `templates`/`debts`/`savings_goals`/`split_groups`/`split_expenses`/`split_settlements`/
+  `savings_contributions`/`debt_payments`. (Las UNIQUE ya cubrían `tags(user_id,…)`,
+  `split_members(group_id,…)`, `split_shares(expense_id,…)`, `transaction_tags(transaction_id,…)`,
+  `exchange_rates(user_id,base,…)` por su columna líder.)
+- **Caché en proceso (`server/src/services/cache.ts`, sin Redis).** Caché en memoria del único
+  proceso Express con **invalidación por sello de versión por usuario**:
+  - `cacheResponse(ttl)` cachea la respuesta JSON de GET caros por `uid+url+querystring+versión`:
+    **`/api/stats/*`** (5 min), **`/api/insights`** (10 min), **`/api/accounts/summary`** (5 min).
+    `refresh=true` siempre hace bypass; solo cachea respuestas 2xx.
+  - `invalidateOnMutation` sube `dataVersion[uid]` tras CADA mutación 2xx del usuario (en `finish`,
+    post-commit) → invalida toda su caché. Montado en todos los routers de datos.
+- **CORS:** `CORS_ORIGINS` (lista separada por comas) restringe orígenes; sin ella, se permite
+  cualquiera (default de dev). Las apps nativas no envían `Origin`, así que el móvil no se afecta.
+- **N+1 splits resuelto:** `GET /api/splits` y `/summary` usan `computeBalancesForGroups` (3 queries
+  totales) en vez de iterar `computeBalances` por grupo.
+- **Errores 500:** el `errorHandler` responde mensaje genérico (el detalle se loguea en el servidor).
+
+---
+
 ## ESTRUCTURA DE ARCHIVOS
 
 ### server/
@@ -198,8 +250,8 @@ mobile/
 
 ### exchange_rates
 `id` serial PK · `base_currency` varchar(3) NN · `target_currency` varchar(3) NN
-· `rate` decimal(18,8) NN (1 base = `rate` target) · `is_manual` bool def false · `fetched_at` timestamp def now()
-· UNIQUE(base_currency, target_currency)
+· `user_id` int FK→users NN · `rate` decimal(18,8) NN (1 base = `rate` target) · `is_manual` bool def false · `fetched_at` timestamp def now()
+· UNIQUE(user_id, base_currency, target_currency)
 > Cache de tasas. Las `is_manual` las fija el usuario y **nunca** se sobreescriben con el refresco automático.
 > Las automáticas se refrescan si tienen ≥24h. Migración `0006_unknown_exodus.sql` (aditiva: tabla nueva + `transactions.to_amount`).
 
@@ -326,7 +378,9 @@ mobile/
 ## STACK
 
 **Backend:** express ^4.21, @neondatabase/serverless ^0.10, drizzle-orm ^0.36, drizzle-zod ^0.5,
-zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1 · dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6.
+zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1, **bcryptjs ^3** (hash de contraseñas),
+**jsonwebtoken ^9** (JWT de sesión) · dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6,
+@types/bcryptjs, @types/jsonwebtoken. Requiere **`JWT_SECRET`** en el `.env` raíz.
 > **Multi-moneda no añade dependencias:** las tasas se consultan con el `fetch` nativo de Node 22 (Frankfurter /
 > open.er-api.com). En mobile la persistencia de la moneda principal usa el middleware `persist` de Zustand sobre
 > `@react-native-async-storage/async-storage` (ya instalado); no se agregó ningún paquete.
@@ -334,6 +388,7 @@ zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1 · dev: drizzle-kit ^0.28, tsx
 **Mobile (Expo SDK 54 — compatible con Expo Go SDK 54 de Play Store):**
 expo ~54.0.0, react 19.1.0, react-native 0.81.5, @react-navigation/* ^7,
 react-native-screens ~4.16, react-native-safe-area-context ~5.6, react-native-gesture-handler ~2.28,
+react-native-keyboard-controller 1.18.5 (manejo de teclado; pasa expo-doctor 18/18),
 react-native-reanimated ~4.1 (requiere react-native-worklets 0.5.1 — instalado), react-native-svg 15.12,
 axios ^1.7, zustand ^5, date-fns ^4.1, lucide-react-native ^0.460, @expo/vector-icons ^15
 (requiere expo-font ~14.0 — instalado), expo-status-bar ~3.0, react-native-toast-message ^2.2,
