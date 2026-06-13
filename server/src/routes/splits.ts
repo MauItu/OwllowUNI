@@ -142,6 +142,53 @@ async function computeBalances(groupId: number) {
 }
 
 /**
+ * Igual que `computeBalances` pero para VARIOS grupos en **3 queries totales**
+ * (grupos + miembros + shares), evitando el N+1 de iterar `computeBalances` por
+ * grupo en los listados. Devuelve un mapa groupId → { members, balances }.
+ */
+async function computeBalancesForGroups(groupIds: number[]) {
+  const result = new Map<number, { members: SplitMember[]; balances: Map<number, number> }>();
+  if (groupIds.length === 0) return result;
+
+  const members = await db
+    .select()
+    .from(splitMembers)
+    .where(inArray(splitMembers.groupId, groupIds))
+    .orderBy(asc(splitMembers.id));
+
+  const rows = await db
+    .select({
+      groupId: splitExpenses.groupId,
+      memberId: splitShares.memberId,
+      amount: splitShares.amount,
+      paidByMemberId: splitExpenses.paidByMemberId,
+    })
+    .from(splitShares)
+    .innerJoin(splitExpenses, eq(splitShares.expenseId, splitExpenses.id))
+    .where(and(inArray(splitExpenses.groupId, groupIds), eq(splitShares.isSettled, false)));
+
+  const membersByGroup = new Map<number, SplitMember[]>();
+  for (const m of members) {
+    const list = membersByGroup.get(m.groupId);
+    if (list) list.push(m);
+    else membersByGroup.set(m.groupId, [m]);
+  }
+  for (const gid of groupIds) {
+    const gMembers = membersByGroup.get(gid) ?? [];
+    result.set(gid, { members: gMembers, balances: new Map(gMembers.map((m) => [m.id, 0])) });
+  }
+  for (const r of rows) {
+    if (r.memberId === r.paidByMemberId) continue;
+    const entry = result.get(r.groupId);
+    if (!entry) continue;
+    const amt = Number(r.amount);
+    entry.balances.set(r.paidByMemberId, (entry.balances.get(r.paidByMemberId) ?? 0) + amt);
+    entry.balances.set(r.memberId, (entry.balances.get(r.memberId) ?? 0) - amt);
+  }
+  return result;
+}
+
+/**
  * Simplificación greedy: el mayor deudor le paga al mayor acreedor,
  * repetir hasta saldar. Minimiza el número de transferencias.
  */
@@ -184,16 +231,16 @@ splitsRouter.get(
       .where(and(eq(splitGroups.userId, userId(req)), eq(splitGroups.isActive, true)))
       .orderBy(desc(splitGroups.createdAt));
 
-    const result = [];
-    for (const g of groups) {
-      const { members, balances } = await computeBalances(g.id);
+    const balancesByGroup = await computeBalancesForGroups(groups.map((g) => g.id));
+    const result = groups.map((g) => {
+      const { members, balances } = balancesByGroup.get(g.id) ?? { members: [], balances: new Map() };
       const me = members.find((m) => m.isMe);
-      result.push({
+      return {
         ...g,
         members,
         myBalance: me ? Math.round((balances.get(me.id) ?? 0) * 100) / 100 : 0,
-      });
-    }
+      };
+    });
     res.json(result);
   }),
 );
@@ -210,8 +257,9 @@ splitsRouter.get(
     let totalOwedToMe = 0;
     let totalIOwe = 0;
     const perGroup = [];
+    const balancesByGroup = await computeBalancesForGroups(groups.map((g) => g.id));
     for (const g of groups) {
-      const { members, balances } = await computeBalances(g.id);
+      const { members, balances } = balancesByGroup.get(g.id) ?? { members: [], balances: new Map() };
       const me = members.find((m) => m.isMe);
       const myBalance = me ? Math.round((balances.get(me.id) ?? 0) * 100) / 100 : 0;
       if (myBalance > 0) totalOwedToMe += myBalance;
