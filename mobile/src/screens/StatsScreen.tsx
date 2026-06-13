@@ -73,8 +73,12 @@ export function StatsScreen() {
   );
 
   const lineData = useMemo(
-    () => balanceEvolution.map((b) => ({ label: b.date, value: b.balance })),
-    [balanceEvolution],
+    () =>
+      balanceEvolution.map((b) => ({
+        label: safeFormat(b.date, period === 'year' ? 'MMM' : 'd/M'),
+        value: b.balance,
+      })),
+    [balanceEvolution, period],
   );
 
   const onSelectPeriod = (p: StatsPeriod) => {
@@ -168,7 +172,7 @@ export function StatsScreen() {
         {/* Evolución del balance */}
         <View style={styles.card}>
           <SectionTitle title="Evolución del balance" />
-          <LineChart data={lineData} />
+          <LineChart data={lineData} currency={mainCurrency} />
         </View>
 
         {/* Top categorías */}

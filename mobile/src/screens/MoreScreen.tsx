@@ -9,7 +9,6 @@ import { CurrencyPicker } from '../components/CurrencyPicker';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuth } from '../hooks/useAuth';
 import { currencyInfo } from '../utils/currencies';
-import { API_BASE_URL } from '../api/client';
 
 export function MoreScreen() {
   const navigation = useNavigation<any>();
@@ -164,14 +163,6 @@ export function MoreScreen() {
           <Icon name="log-out" size={20} color={theme.colors.expense} />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </Pressable>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerTitle}>Wallet Clone</Text>
-          <Text style={styles.footerText}>v1.0.0</Text>
-          <Text style={styles.footerText} numberOfLines={1}>
-            API: {API_BASE_URL}
-          </Text>
-        </View>
       </ScrollView>
 
       <CurrencyPicker
@@ -226,7 +217,4 @@ const createStyles = (theme: Theme) =>
       fontSize: theme.fontSize.md,
       fontWeight: theme.fontWeight.semibold,
     },
-    footer: { alignItems: 'center', marginTop: theme.spacing.xl, gap: 2 },
-    footerTitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
-    footerText: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs },
   });

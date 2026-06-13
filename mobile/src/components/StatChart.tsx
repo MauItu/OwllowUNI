@@ -1,6 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Path, G, Circle, Polyline, Line, Text as SvgText } from 'react-native-svg';
+import Svg, {
+  Path,
+  G,
+  Circle,
+  Line,
+  Text as SvgText,
+  Defs,
+  Stop,
+  LinearGradient as SvgLinearGradient,
+} from 'react-native-svg';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -134,13 +143,34 @@ interface LinePoint {
   value: number;
 }
 
-export function LineChart({ data, height = 180 }: { data: LinePoint[]; height?: number }) {
+/**
+ * Abrevia un monto para etiquetas de eje (1,2M / 350k) reutilizando
+ * `formatCurrency` para respetar símbolo y separadores de la moneda.
+ */
+function abbreviateAmount(value: number, currency: string): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${formatCurrency(value / 1_000_000, currency, { decimals: 1 })}M`;
+  if (abs >= 1_000) return `${formatCurrency(value / 1_000, currency, { decimals: abs >= 10_000 ? 0 : 1 })}k`;
+  return formatCurrency(value, currency, { decimals: 0 });
+}
+
+export function LineChart({
+  data,
+  height = 200,
+  currency = 'COP',
+}: {
+  data: LinePoint[];
+  height?: number;
+  currency?: string;
+}) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const width = 320;
-  const padding = { left: 8, right: 8, top: 12, bottom: 24 };
+  // left amplio para las etiquetas de monto del eje Y; bottom para las fechas.
+  const padding = { left: 46, right: 14, top: 14, bottom: 28 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
+  const baseY = padding.top + chartH;
 
   if (data.length < 2) {
     return (
@@ -158,17 +188,89 @@ export function LineChart({ data, height = 180 }: { data: LinePoint[]; height?: 
 
   const coords = data.map((d, i) => {
     const x = padding.left + i * stepX;
-    const y = padding.top + chartH - ((d.value - min) / span) * chartH;
+    const y = baseY - ((d.value - min) / span) * chartH;
     return { x, y };
   });
-  const polyline = coords.map((c) => `${c.x},${c.y}`).join(' ');
+
+  // Path de la línea (segmentos rectos) y área cerrada hasta la base.
+  const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`).join(' ');
+  const areaPath = `${linePath} L ${coords[coords.length - 1].x} ${baseY} L ${coords[0].x} ${baseY} Z`;
+
+  // Grid + ticks del eje Y (5 líneas horizontales sutiles, con su monto).
+  const TICKS = 4;
+  const yTicks = Array.from({ length: TICKS + 1 }, (_, i) => {
+    const t = i / TICKS;
+    return { value: min + span * t, y: baseY - t * chartH };
+  });
+
+  // Eje X: muestra ~5 fechas como máximo (primera, última y repartidas) para no saturar.
+  const maxLabels = 5;
+  const labelEvery = Math.max(1, Math.ceil(data.length / maxLabels));
+  const isShown = (i: number) => i % labelEvery === 0 || i === data.length - 1;
 
   return (
     <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-      <Polyline points={polyline} fill="none" stroke={theme.colors.accentLight} strokeWidth={2.5} strokeLinejoin="round" />
-      {coords.map((c, i) => (
-        <Circle key={i} cx={c.x} cy={c.y} r={2.5} fill={theme.colors.accentLight} />
+      <Defs>
+        <SvgLinearGradient id="lineArea" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={theme.colors.accentLight} stopOpacity={0.32} />
+          <Stop offset="1" stopColor={theme.colors.accentLight} stopOpacity={0.02} />
+        </SvgLinearGradient>
+      </Defs>
+
+      {/* Grid horizontal + etiquetas de monto (eje Y) */}
+      {yTicks.map((t, i) => (
+        <G key={`y${i}`}>
+          <Line
+            x1={padding.left}
+            y1={t.y}
+            x2={width - padding.right}
+            y2={t.y}
+            stroke={theme.colors.borderLight}
+            strokeWidth={1}
+            strokeOpacity={0.6}
+          />
+          <SvgText
+            x={padding.left - 6}
+            y={t.y + 3}
+            fontSize={9}
+            fill={theme.colors.textMuted}
+            textAnchor="end"
+          >
+            {abbreviateAmount(t.value, currency)}
+          </SvgText>
+        </G>
       ))}
+
+      {/* Eje X */}
+      <Line x1={padding.left} y1={baseY} x2={width - padding.right} y2={baseY} stroke={theme.colors.border} strokeWidth={1} />
+
+      {/* Área bajo la línea (gradiente) + línea principal */}
+      <Path d={areaPath} fill="url(#lineArea)" stroke="none" />
+      <Path d={linePath} fill="none" stroke={theme.colors.accentLight} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+
+      {/* Nodos de datos principales */}
+      {coords.map((c, i) =>
+        isShown(i) ? (
+          <Circle
+            key={`p${i}`}
+            cx={c.x}
+            cy={c.y}
+            r={i === data.length - 1 ? 4 : 3}
+            fill={theme.colors.accentLight}
+            stroke={theme.colors.surface}
+            strokeWidth={1.5}
+          />
+        ) : null,
+      )}
+
+      {/* Etiquetas de fecha (eje X) */}
+      {data.map((d, i) =>
+        isShown(i) ? (
+          <SvgText key={`x${i}`} x={coords[i].x} y={height - 9} fontSize={9} fill={theme.colors.textMuted} textAnchor="middle">
+            {d.label}
+          </SvgText>
+        ) : null,
+      )}
     </Svg>
   );
 }
