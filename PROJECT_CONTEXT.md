@@ -68,7 +68,8 @@ wallet/                         ← raíz del repo
   el token y redirige al login. Paletas restringidas a admin (resto: `professional`). El stack de auth
   incluye además el flujo de recuperación: `ForgotPasswordScreen` (pide email) → `VerifyResetCodeScreen`
   (6 inputs OTP, timer de 15 min, reenviar con throttle de 60 s) → `ResetPasswordScreen` (nueva contraseña).
-  `LoginScreen` enlaza con "¿Olvidaste tu contraseña?".
+  `LoginScreen` enlazaba con "¿Olvidaste tu contraseña?", pero ese link está **comentado** mientras el
+  flujo esté deshabilitado (ver ⚠️ arriba); las pantallas siguen en el stack para reactivar sin reescribir.
 
 ---
 
