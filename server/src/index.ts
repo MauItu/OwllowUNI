@@ -13,6 +13,12 @@ import { insightsRouter } from './routes/insights.js';
 import { ratesRouter } from './routes/rates.js';
 import { authRouter } from './routes/auth.js';
 import { authenticate } from './middleware/auth.js';
+import {
+  invalidateOnMutation,
+  cacheResponse,
+  STATS_TTL_MS,
+  INSIGHTS_TTL_MS,
+} from './services/cache.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -30,17 +36,19 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', authRouter);
 
 // Todas las demás rutas requieren un JWT válido (inyecta req.user).
-app.use('/api/accounts', authenticate, accountsRouter);
-app.use('/api/categories', authenticate, categoriesRouter);
-app.use('/api/transactions', authenticate, transactionsRouter);
-app.use('/api/templates', authenticate, templatesRouter);
-app.use('/api/stats', authenticate, statsRouter);
-app.use('/api/tags', authenticate, tagsRouter);
-app.use('/api/savings', authenticate, savingsRouter);
-app.use('/api/debts', authenticate, debtsRouter);
-app.use('/api/splits', authenticate, splitsRouter);
-app.use('/api/insights', authenticate, insightsRouter);
-app.use('/api/rates', authenticate, ratesRouter);
+// `invalidateOnMutation` sube el sello de versión del usuario tras cada mutación
+// 2xx → invalida su caché en proceso. `cacheResponse` cachea los GET caros.
+app.use('/api/accounts', authenticate, invalidateOnMutation, accountsRouter);
+app.use('/api/categories', authenticate, invalidateOnMutation, categoriesRouter);
+app.use('/api/transactions', authenticate, invalidateOnMutation, transactionsRouter);
+app.use('/api/templates', authenticate, invalidateOnMutation, templatesRouter);
+app.use('/api/stats', authenticate, cacheResponse(STATS_TTL_MS), statsRouter);
+app.use('/api/tags', authenticate, invalidateOnMutation, tagsRouter);
+app.use('/api/savings', authenticate, invalidateOnMutation, savingsRouter);
+app.use('/api/debts', authenticate, invalidateOnMutation, debtsRouter);
+app.use('/api/splits', authenticate, invalidateOnMutation, splitsRouter);
+app.use('/api/insights', authenticate, cacheResponse(INSIGHTS_TTL_MS), insightsRouter);
+app.use('/api/rates', authenticate, invalidateOnMutation, ratesRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

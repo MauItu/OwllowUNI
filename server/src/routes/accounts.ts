@@ -6,6 +6,7 @@ import { accounts } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
 import { getConversionMap } from '../services/exchangeRates.js';
+import { cacheResponse, ACCOUNTS_SUMMARY_TTL_MS } from '../services/cache.js';
 
 export const accountsRouter = Router();
 
@@ -34,6 +35,7 @@ accountsRouter.get(
 // Balance consolidado convertido a la moneda de visualización (debe ir ANTES de /:id).
 accountsRouter.get(
   '/summary',
+  cacheResponse(ACCOUNTS_SUMMARY_TTL_MS),
   asyncHandler(async (req, res) => {
     const displayCurrency = ((req.query.displayCurrency as string) || 'COP').toUpperCase();
     const force = req.query.refresh === 'true' || req.query.refresh === '1';
