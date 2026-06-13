@@ -33,7 +33,8 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   if (err instanceof ApiError) {
     return res.status(err.status).json({ error: err.message });
   }
+  // El detalle se loguea en el servidor; al cliente solo un mensaje genérico
+  // (no filtrar mensajes internos, p. ej. errores de Postgres).
   console.error('Error no controlado:', err);
-  const message = err instanceof Error ? err.message : 'Error interno del servidor';
-  return res.status(500).json({ error: message });
+  return res.status(500).json({ error: 'Error interno del servidor' });
 }

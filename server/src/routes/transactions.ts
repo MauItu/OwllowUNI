@@ -159,6 +159,19 @@ async function assertAccountsOwned(uid: number, ids: (number | null | undefined)
   }
 }
 
+/** Verifica que las etiquetas referenciadas pertenezcan al usuario (400 si no). */
+async function assertTagsOwned(uid: number, tagIds: number[] | undefined): Promise<void> {
+  if (!tagIds || tagIds.length === 0) return;
+  const unique = [...new Set(tagIds)];
+  const owned = await db
+    .select({ id: tags.id })
+    .from(tags)
+    .where(and(eq(tags.userId, uid), inArray(tags.id, unique)));
+  if (owned.length !== unique.length) {
+    throw new ApiError(400, 'Una o más etiquetas no existen');
+  }
+}
+
 // GET /api/transactions — lista con filtros + paginación
 transactionsRouter.get(
   '/',
@@ -470,8 +483,9 @@ transactionsRouter.post(
     if (data.type === 'transfer' && !data.toAccountId) {
       throw new ApiError(400, 'Una transferencia requiere cuenta destino (toAccountId)');
     }
-    // Las cuentas referenciadas deben pertenecer al usuario.
+    // Las cuentas y etiquetas referenciadas deben pertenecer al usuario.
     await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
+    await assertTagsOwned(uid, data.tagIds);
 
     const toAmount = data.type === 'transfer' ? data.toAmount ?? null : null;
     const insertStmt = db
@@ -524,6 +538,7 @@ transactionsRouter.put(
       throw new ApiError(400, 'Una transferencia requiere cuenta destino (toAccountId)');
     }
     await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
+    await assertTagsOwned(uid, data.tagIds);
 
     // Revierte el efecto anterior y aplica el nuevo.
     const revert = balanceStatements(

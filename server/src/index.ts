@@ -24,7 +24,13 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(cors());
+// CORS: si `CORS_ORIGINS` (lista separada por comas) está definida, se restringe
+// a esos orígenes; si no, se permite cualquiera (default de dev). Las apps nativas
+// no envían header Origin, así que el móvil no se ve afectado en ningún caso.
+const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(cors(corsOrigins && corsOrigins.length ? { origin: corsOrigins } : {}));
 app.use(express.json());
 
 app.get('/', (_req, res) => {
