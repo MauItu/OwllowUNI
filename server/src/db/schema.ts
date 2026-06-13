@@ -10,10 +10,11 @@ import {
   time,
   text,
   unique,
+  uniqueIndex,
   index,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 // ─────────────────────────────── users ──────────────────────────────
 // Multi-usuario: cada fila de datos pertenece a un usuario (FK user_id en las
@@ -323,6 +324,10 @@ export const splitMembers = pgTable(
   },
   (t) => ({
     uniqueGroupMemberName: unique().on(t.groupId, t.name),
+    // Un solo miembro "Yo" (is_me=true) por grupo: índice único PARCIAL.
+    oneMePerGroup: uniqueIndex('split_members_one_me_per_group')
+      .on(t.groupId)
+      .where(sql`${t.isMe} = true`),
   }),
 );
 

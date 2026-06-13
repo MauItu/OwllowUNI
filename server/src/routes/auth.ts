@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db/connection.js';
 import { users, type User } from '../db/schema.js';
 import { provisionUserDefaults } from '../db/defaults.js';
-import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { authenticate, signToken, userId } from '../middleware/auth.js';
 
 export const authRouter = Router();
@@ -54,10 +54,18 @@ authRouter.post(
     if (existing) throw new ApiError(409, 'Ya existe una cuenta con ese correo');
 
     const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
-    const [user] = await db
-      .insert(users)
-      .values({ email: data.email, passwordHash, name: data.name, isAdmin: false })
-      .returning();
+    // El check previo es best-effort; la fuente de verdad es el UNIQUE de users.email.
+    // Mapeamos la violación (SQLSTATE 23505) a 409 para cubrir el registro concurrente.
+    let user: User;
+    try {
+      [user] = await db
+        .insert(users)
+        .values({ email: data.email, passwordHash, name: data.name, isAdmin: false })
+        .returning();
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ApiError(409, 'Ya existe una cuenta con ese correo');
+      throw err;
+    }
 
     // Provisiona las categorías por defecto y la cuenta "Efectivo" del usuario.
     await provisionUserDefaults(user.id);

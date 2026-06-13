@@ -15,7 +15,7 @@ import {
   type SplitExpense,
   type Transaction,
 } from '../db/schema.js';
-import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
 
 export const splitsRouter = Router();
@@ -417,11 +417,27 @@ splitsRouter.post(
       if (existing.length > 0) throw new ApiError(400, 'El grupo ya tiene un miembro "Yo"');
     }
 
-    const [row] = await db
-      .insert(splitMembers)
-      .values({ groupId, name: data.name.trim(), isMe: data.isMe ?? false })
-      .returning();
-    res.status(201).json(row);
+    // El check previo es best-effort; la fuente de verdad son los UNIQUE de la tabla
+    // (nombre por grupo, y el índice parcial de un solo "Yo"). Mapeamos la violación
+    // (SQLSTATE 23505) a 409 para cubrir la carrera entre el check y el insert.
+    try {
+      const [row] = await db
+        .insert(splitMembers)
+        .values({ groupId, name: data.name.trim(), isMe: data.isMe ?? false })
+        .returning();
+      res.status(201).json(row);
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        const constraint = (err as { constraint?: string }).constraint ?? '';
+        throw new ApiError(
+          409,
+          constraint.includes('one_me')
+            ? 'El grupo ya tiene un miembro "Yo"'
+            : 'Ya existe un miembro con ese nombre en el grupo',
+        );
+      }
+      throw err;
+    }
   }),
 );
 

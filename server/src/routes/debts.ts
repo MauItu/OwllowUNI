@@ -323,27 +323,42 @@ debtsRouter.post(
     if (debt.isPaidOff) throw new ApiError(400, 'Esta deuda ya está saldada');
     if (data.accountId != null) await assertAccountOwned(uid, data.accountId);
 
-    const remaining = Number(debt.remainingAmount);
-    if (data.amount > remaining) {
-      throw new ApiError(400, 'El pago supera el monto restante');
-    }
-
-    const newRemaining = remaining - data.amount;
-    const paidOff = newRemaining <= 0;
+    // Decremento CONDICIONAL del restante (elimina el TOCTOU: dos pagos concurrentes
+    // que leyeran el mismo `remaining` pasarían ambos una validación en memoria y
+    // sobre-pagarían). El guard `remaining_amount >= amount` va en el WHERE y es
+    // atómico; si afecta 0 filas, otro pago se adelantó o el monto excede → 400.
+    const amountStr = data.amount.toFixed(2);
+    const [updated] = await db
+      .update(debts)
+      .set({
+        remainingAmount: sql`${debts.remainingAmount} - ${amountStr}::numeric`,
+        isPaidOff: sql`${debts.remainingAmount} - ${amountStr}::numeric <= 0`,
+        paidOffAt: sql`CASE WHEN ${debts.remainingAmount} - ${amountStr}::numeric <= 0 THEN COALESCE(${debts.paidOffAt}, now()) ELSE NULL END`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(debts.id, id),
+          eq(debts.userId, uid),
+          eq(debts.isPaidOff, false),
+          sql`${debts.remainingAmount} >= ${amountStr}::numeric`,
+        ),
+      )
+      .returning();
+    if (!updated) throw new ApiError(400, 'El pago supera el monto restante');
 
     // Si hay cuenta, el abono se registra como movimiento real:
     //  - loan (me deben): me pagan → income en la cuenta.
     //  - debt (yo debo):  yo pago  → expense desde la cuenta.
     let transactionId: number | null = null;
     if (data.accountId) {
-      const txType = debt.type === 'loan' ? 'income' : 'expense';
-      const delta = txType === 'income' ? data.amount : -data.amount;
+      const delta = debt.type === 'loan' ? data.amount : -data.amount;
       const insertTx = db
         .insert(transactions)
         .values({
           userId: uid,
-          type: txType,
-          amount: data.amount.toFixed(2),
+          type: debt.type === 'loan' ? 'income' : 'expense',
+          amount: amountStr,
           description: data.description ?? `Abono: ${debt.name}`,
           date: data.date,
           time: nowTime(),
@@ -355,45 +370,36 @@ debtsRouter.post(
       transactionId = (txRes[0] as Transaction[])[0].id;
     }
 
-    const insertStmt = db
-      .insert(debtPayments)
-      .values({
+    // Registrar el pago. Si falla (o ya falló la tx), compensar TODO lo aplicado:
+    // re-sumar el restante y restaurar los flags del decremento, y revertir la tx.
+    try {
+      await db.insert(debtPayments).values({
         debtId: id,
-        amount: data.amount.toFixed(2),
+        amount: amountStr,
         date: data.date,
         description: data.description ?? null,
         accountId: data.accountId ?? null,
         transactionId,
-      })
-      .returning();
-
-    const updateStmt = db
-      .update(debts)
-      .set({
-        remainingAmount: newRemaining.toFixed(2),
-        isPaidOff: paidOff,
-        paidOffAt: paidOff ? new Date() : null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(debts.id, id), eq(debts.userId, uid)))
-      .returning();
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const results = await db.batch([insertStmt, updateStmt] as any);
-      const updated = (results[1] as Debt[])[0];
+      });
       res.status(201).json(updated);
     } catch (err) {
-      // Compensación: si falla el registro del pago, deshacer la transacción ya creada.
+      const undo: unknown[] = [
+        db
+          .update(debts)
+          .set({
+            remainingAmount: sql`${debts.remainingAmount} + ${amountStr}::numeric`,
+            isPaidOff: false,
+            paidOffAt: debt.paidOffAt,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(debts.id, id), eq(debts.userId, uid))),
+      ];
       if (transactionId != null && data.accountId) {
-        const undo = debt.type === 'loan' ? -data.amount : data.amount;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await db.batch([
-          db.delete(transactions).where(eq(transactions.id, transactionId)),
-          balanceUpdate(uid, data.accountId, undo),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ] as any);
+        undo.push(db.delete(transactions).where(eq(transactions.id, transactionId)));
+        undo.push(balanceUpdate(uid, data.accountId, debt.type === 'loan' ? -data.amount : data.amount));
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.batch(undo as any);
       throw err;
     }
   }),

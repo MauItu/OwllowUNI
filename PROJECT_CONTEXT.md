@@ -247,7 +247,8 @@ mobile/
 ### split_members
 `id` serial PK · `group_id` int FK→split_groups ON DELETE CASCADE NN · `name` varchar(100) NN
 · `is_me` bool def false (exactamente uno por grupo = el usuario) · `created_at` timestamp def now()
-· UNIQUE(group_id, name)
+· UNIQUE(group_id, name) · **UNIQUE parcial** `split_members_one_me_per_group` = `(group_id) WHERE is_me = true`
+  (a nivel DB garantiza un solo "Yo" por grupo; migración `0011_slimy_rogue.sql`, aditiva).
 
 ### split_expenses
 `id` serial PK · `group_id` int FK→split_groups ON DELETE CASCADE NN · `description` varchar(255) NN
@@ -298,6 +299,20 @@ mobile/
 > `db.batch` y, si un paso posterior falla, se ejecuta un **batch de compensación** que revierte lo
 > ya aplicado. Endpoints con saga: `POST /api/splits/:groupId/expenses`,
 > `POST /api/splits/:groupId/settle`, `POST /api/debts/:id/pay`. No cambiar a `db.transaction` (no soportado).
+
+> **Concurrencia: guards atómicos en SQL (no TOCTOU).** Donde un saldo se valida y luego se
+> modifica, NO se lee→valida→escribe en memoria (dos requests concurrentes pasarían ambos la
+> validación y sobre-pagarían/sobre-retirarían). En su lugar el decremento es **condicional en el
+> WHERE** y atómico: `POST /api/debts/:id/pay` → `UPDATE debts SET remaining_amount = remaining_amount
+> - amount WHERE … AND is_paid_off = false AND remaining_amount >= amount RETURNING` (0 filas → 400);
+> `POST /api/savings/:id/contribute` (retiro) → `UPDATE … WHERE current_amount >= amount` (0 filas →
+> 400). Ambos recalculan `is_paid_off`/`is_completed` en el mismo UPDATE y compensan el saldo si el
+> insert posterior (pago/contribución) falla.
+> **Unique como fuente de verdad (no solo el check previo).** Los checks "ya existe" son best-effort;
+> ante la carrera, la violación de UNIQUE de Postgres (**SQLSTATE 23505**, helper `isUniqueViolation`
+> en `errorHandler.ts`) se mapea a **409**: registro de email duplicado (`POST /api/auth/register`,
+> `users.email` UNIQUE) y alta de miembro (`POST /api/splits/:groupId/members` — nombre repetido o
+> segundo "Yo" vía el índice parcial).
 
 ---
 
@@ -370,7 +385,7 @@ mobile/
 - `POST   /api/savings`
 - `PUT    /api/savings/:id`
 - `DELETE /api/savings/:id`
-- `POST   /api/savings/:id/contribute` — `{ amount, type: deposit|withdrawal, date, description? }`; marca `is_completed` al llegar al objetivo
+- `POST   /api/savings/:id/contribute` — `{ amount, type: deposit|withdrawal, date, description? }`; marca `is_completed` al llegar al objetivo. El saldo se ajusta con un UPDATE condicional (retiro: guard `current_amount >= amount`, 0 filas → 400) y se compensa si falla el insert de la contribución (anti-TOCTOU)
 
 ### Debts (deudas y préstamos)
 - `GET    /api/debts` — activas primero, con nombre de cuenta
@@ -379,7 +394,7 @@ mobile/
 - `POST   /api/debts` — `remaining_amount` arranca igual a `total_amount`; con `registerInitialTransaction:true` + `accountId` registra el desembolso inicial como `income` (debt: me prestaron) / `expense` (loan: yo presté)
 - `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado
 - `DELETE /api/debts/:id` — CASCADE en pagos + revierte balances y borra las transacciones de los abonos vinculados (db.batch)
-- `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch)
+- `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante (UPDATE condicional `remaining_amount >= amount`, 0 filas → 400, anti-TOCTOU) y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch); compensa el decremento + la tx si falla el registro del pago
 
 ### Splits (gastos compartidos)
 - `GET    /api/splits` — grupos activos con `members[]` y `myBalance`

@@ -194,39 +194,53 @@ savingsRouter.post(
       .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))));
     if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
 
-    const current = Number(goal.currentAmount);
-    if (data.type === 'withdrawal' && data.amount > current) {
-      throw new ApiError(400, 'No puedes retirar más de lo ahorrado');
-    }
+    const uid = userId(req);
+    const isWithdrawal = data.type === 'withdrawal';
+    // `signedStr` ya lleva el signo: suma en depósito, resta en retiro.
+    const amountStr = data.amount.toFixed(2);
+    const signedStr = (isWithdrawal ? -data.amount : data.amount).toFixed(2);
+    const newAmountExpr = sql`${savingsGoals.currentAmount} + ${signedStr}::numeric`;
 
-    const newAmount = data.type === 'deposit' ? current + data.amount : current - data.amount;
-    const completed = newAmount >= Number(goal.targetAmount);
+    // Update CONDICIONAL del saldo. En retiro, el guard `current_amount >= amount`
+    // va en el WHERE y es atómico (elimina el TOCTOU de leer→validar→escribir): si
+    // afecta 0 filas, otro movimiento se adelantó o el monto excede → 400.
+    const conds = [eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)];
+    if (isWithdrawal) conds.push(sql`${savingsGoals.currentAmount} >= ${amountStr}::numeric`);
 
-    const insertStmt = db
-      .insert(savingsContributions)
-      .values({
+    const [updated] = await db
+      .update(savingsGoals)
+      .set({
+        currentAmount: newAmountExpr,
+        isCompleted: sql`(${newAmountExpr}) >= ${savingsGoals.targetAmount}`,
+        completedAt: sql`CASE WHEN (${newAmountExpr}) >= ${savingsGoals.targetAmount} THEN COALESCE(${savingsGoals.completedAt}, now()) ELSE NULL END`,
+        updatedAt: new Date(),
+      })
+      .where(and(...conds))
+      .returning();
+    if (!updated) throw new ApiError(400, 'No puedes retirar más de lo ahorrado');
+
+    // Registrar la contribución. Si falla, compensar el saldo (restar lo sumado y
+    // restaurar los flags previos) para no dejar la meta descuadrada.
+    try {
+      await db.insert(savingsContributions).values({
         goalId: id,
-        amount: data.amount.toFixed(2),
+        amount: amountStr,
         type: data.type,
         description: data.description ?? null,
         date: data.date,
-      })
-      .returning();
-
-    const updateStmt = db
-      .update(savingsGoals)
-      .set({
-        currentAmount: newAmount.toFixed(2),
-        isCompleted: completed,
-        completedAt: completed ? goal.completedAt ?? new Date() : null,
-        updatedAt: new Date(),
-      })
-      .where(eq(savingsGoals.id, id))
-      .returning();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const results = await db.batch([insertStmt, updateStmt] as any);
-    const updated = (results[1] as SavingsGoal[])[0];
-    res.status(201).json(updated);
+      });
+      res.status(201).json(updated);
+    } catch (err) {
+      await db
+        .update(savingsGoals)
+        .set({
+          currentAmount: sql`${savingsGoals.currentAmount} - ${signedStr}::numeric`,
+          isCompleted: goal.isCompleted,
+          completedAt: goal.completedAt,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
+      throw err;
+    }
   }),
 );

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "split_members_one_me_per_group" ON "split_members" USING btree ("group_id") WHERE "split_members"."is_me" = true;
