@@ -51,10 +51,13 @@ import type {
 } from '../types';
 
 /**
- * URL base del backend: la IP de tu PC en la LAN (NO uses localhost:
- * el dispositivo no lo resuelve). Cámbiala aquí si cambia tu IP.
+ * URL base del backend.
+ * - En el APK de producción la inyecta EAS Build vía `EXPO_PUBLIC_API_URL`
+ *   (ver perfil `preview` en eas.json → backend deployado en Render).
+ * - En desarrollo cae al fallback: la IP de tu PC en la LAN (NO uses localhost,
+ *   el dispositivo no lo resuelve). Cámbiala aquí si cambia tu IP.
  */
-export const API_BASE_URL = 'http://192.168.0.12:3000/api';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.0.12:3000/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

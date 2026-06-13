@@ -8,7 +8,10 @@
     },
     "preview": {
       "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://wallet-7v82.onrender.com/api"
+      }
     },
     "production": {
       "android": { "buildType": "app-bundle" }

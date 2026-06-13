@@ -2,12 +2,15 @@
   "expo": {
     "name": "Wallet",
     "slug": "wallet-clone",
+    "owner": "maurarch",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "walletclone",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
     "splash": {
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0F0F14"
     },
@@ -21,14 +24,13 @@
     "android": {
       "package": "com.walletclone.app",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F0F14"
       },
-      "edgeToEdgeEnabled": true
-    },
-    "extra": {
-      "eas": {
-        "projectId": ""
-      }
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-font",
@@ -40,6 +42,11 @@
           "cameraPermission": "Permite tomar una foto del recibo con la cámara."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d1a959a4-1885-4e2e-a90d-53838005629a"
+      }
+    }
   }
 }
