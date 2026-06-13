@@ -1,32 +1,57 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { useColorScheme } from 'react-native';
-import { darkTheme, lightTheme, type Theme, type ThemeColors } from './index';
+import { palettes, type Theme, type ThemeColors, type PaletteId } from './index';
+import { useSettingsStore, type ThemeMode } from '../stores/settingsStore';
 
 interface ThemeContextValue {
   theme: Theme;
   colors: ThemeColors;
   isDark: boolean;
   toggleTheme: () => void;
+  /** 3 colores protagonistas de la paleta activa (EmptyState, selector). */
+  swatch: readonly string[];
+  paletteId: PaletteId;
+  setPalette: (id: PaletteId) => void;
+  availablePalettes: { id: PaletteId; label: string; swatch: readonly string[] }[];
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
+const AVAILABLE_PALETTES = Object.entries(palettes).map(([id, p]) => ({
+  id: id as PaletteId,
+  label: p.label,
+  swatch: p.swatch,
+}));
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
-  // El esquema del sistema define el default; el toggle lo sobreescribe en sesión.
-  const [override, setOverride] = useState<'light' | 'dark' | null>(null);
+  const paletteId = useSettingsStore((s) => s.paletteId);
+  const setPaletteId = useSettingsStore((s) => s.setPaletteId);
+  const themeMode = useSettingsStore((s) => s.themeMode);
+  const setThemeMode = useSettingsStore((s) => s.setThemeMode);
 
-  const isDark = (override ?? systemScheme ?? 'dark') === 'dark';
-  const theme = isDark ? darkTheme : lightTheme;
+  const isDark =
+    themeMode === 'system' ? (systemScheme ?? 'dark') === 'dark' : themeMode === 'dark';
+
+  const palette = palettes[paletteId];
+  const theme = isDark ? palette.dark : palette.light;
 
   const value = useMemo<ThemeContextValue>(
     () => ({
       theme,
       colors: theme.colors,
       isDark,
-      toggleTheme: () => setOverride(isDark ? 'light' : 'dark'),
+      toggleTheme: () => setThemeMode(isDark ? 'light' : 'dark'),
+      swatch: palette.swatch,
+      paletteId,
+      setPalette: setPaletteId,
+      availablePalettes: AVAILABLE_PALETTES,
+      themeMode,
+      setThemeMode,
     }),
-    [theme, isDark],
+    [theme, isDark, palette, paletteId, setPaletteId, themeMode, setThemeMode],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

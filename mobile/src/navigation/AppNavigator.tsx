@@ -34,6 +34,7 @@ import { ImportExportScreen } from '../screens/ImportExportScreen';
 import { InsightsScreen } from '../screens/InsightsScreen';
 import { RatesScreen } from '../screens/RatesScreen';
 import { SecurityScreen } from '../screens/SecurityScreen';
+import { AppearanceScreen } from '../screens/AppearanceScreen';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -164,6 +165,7 @@ export function AppNavigator() {
         <RootStack.Screen name="Insights" component={InsightsScreen} />
         <RootStack.Screen name="Rates" component={RatesScreen} />
         <RootStack.Screen name="Security" component={SecurityScreen} />
+        <RootStack.Screen name="Appearance" component={AppearanceScreen} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

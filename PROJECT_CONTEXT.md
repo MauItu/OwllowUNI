@@ -360,12 +360,18 @@ TypeScript ~5.9, @types/react ~19.1.
 
 ---
 
-## DISEÑO — Sistema de temas dual (rediseño jun 2026)
+## DISEÑO — Sistema de temas dual y selector de paletas (rediseño jun 2026)
 
-Dos paletas conmutables con un switch en la pantalla "Más". Definidas en `mobile/src/theme/index.ts`;
-el estado vive en `mobile/src/theme/ThemeContext.tsx`.
+**4 paletas** conmutables (Bisexual, Gay, Lésbica, Profesional), cada una con variante
+claro/oscuro, seleccionables desde "Más → Apariencia". Definidas en `mobile/src/theme/index.ts`
+como `palettes.<id> = { label, light, dark, swatch }` (`PaletteId = keyof typeof palettes`);
+`lightTheme`/`darkTheme` exportados son alias de compatibilidad de `palettes.bisexual.{light,dark}`
+(paleta por defecto). El estado activo (`paletteId`, `themeMode`) vive en `settingsStore`
+(persistido en AsyncStorage, clave `wallet-settings`) y se resuelve en
+`mobile/src/theme/ThemeContext.tsx`. `type Theme`/`ThemeColors`/`ThemeGradients` y los nombres de
+tokens son los mismos para las 4 paletas — ningún componente cambia.
 
-### MODO CLARO — "Minimalista Nórdico"
+### Paleta BISEXUAL (default) — claro "Minimalista Nórdico"
 ```ts
 colors: {
   background:'#F8F9FA', surface:'#E9ECEF', surfaceLight:'#FFFFFF', surfaceAccent:'#DDE3E9',
@@ -380,7 +386,7 @@ colors: {
 }
 ```
 
-### MODO OSCURO — "Orquídea / Morado Velvet"
+### Paleta BISEXUAL (default) — oscuro "Orquídea / Morado Velvet"
 ```ts
 colors: {
   background:'#241B35', surface:'#32264A', surfaceLight:'#3C2E58', surfaceAccent:'#473768',
@@ -396,10 +402,41 @@ colors: {
 }
 ```
 
+### Paletas adicionales (resumen — tablas completas en `theme/index.ts`)
+
+**Gay (Vincian)** — swatch `#078D70 / #26CEAA / #7BADE2`.
+- Claro: `background:'#F2FAF7'`, `primary:'#0B6E5B'` (teal), `secondary:'#2A6FB5'` (azul),
+  `accent:'#3D1A78'` (índigo), `income:'#297D4E'`, `expense/danger/warning:'#3D1A78'`,
+  `transfer:'#2A6FB5'`.
+- Oscuro: `background:'#0E1C18'`, `primary:'#1FAE90'`, `secondary:'#7BADE2'`,
+  `accent:'#8E7BEA'`, `income:'#4ADE80'`, `expense/danger:'#8E7BEA'`, `transfer:'#7BADE2'`.
+
+**Lésbica (sunset 2018)** — swatch `#D52D00 / #FF9A56 / #A30262`.
+- Claro: `background:'#FFF8F4'`, `primary:'#C8442A'` (naranja), `secondary:'#A30262'` (magenta),
+  `accent:'#D362A4'` (rosa), `income:'#297D4E'`, `expense/danger:'#C8442A'`, `transfer:'#A30262'`.
+- Oscuro: `background:'#221310'`, `primary:'#E8631C'`, `secondary:'#FF8FC2'`,
+  `accent:'#D362A4'`, `income:'#4ADE80'`, `expense/danger:'#E8631C'`, `transfer:'#FF8FC2'`.
+
+**Profesional (fintech corporativo)** — swatch `#2F5BD0 / #0F766E / #475569`.
+- Claro: `background:'#F7F8FA'`, `primary:'#2F5BD0'` (azul), `secondary:'#0F766E'` (teal),
+  `accent:'#6366F1'` (índigo), `income:'#15803D'`, `expense/danger:'#DC2626'`,
+  `transfer:'#2563EB'`. Es la única paleta con `income`/`expense`/`transfer` propios
+  (verde/rojo/azul clásicos fintech) en vez de derivarse de `primary`/`accent`.
+- Oscuro: `background:'#0E1525'`, `primary:'#3B82F6'`, `secondary:'#2DD4BF'`,
+  `accent:'#818CF8'`, `income:'#34D399'`, `expense/danger:'#F87171'`, `transfer:'#60A5FA'`.
+
+Las 4 paletas cumplen WCAG AA (≥4.5:1) para `primary`/`secondary`/`accentLight`/`primaryLight`/
+`text`/`textSecondary` sobre su `background`. Dos anclas de `income`/`success` se ajustaron
+ligeramente respecto al valor "a ojo" inicial para llegar a AA: Profesional claro
+`#16A34A→#15803D` (3.10→4.72:1) y el verde de Gay/Lésbica claro `#2E8B57→#297D4E` (4.0→4.8:1).
+Limitación conocida (igual en las 4, ya presente en Bisexual): el texto blanco sobre el extremo
+`primary` del gradiente `header` en modo oscuro da ~2.8-3.8:1 (<4.5 pero ≥3:1, válido para texto
+grande/negrita como los labels de `ScreenHeader`/`PrimaryButton`).
+
 ### Tokens compartidos
 ```ts
-// chart es POR TEMA: rosa/azul/morado SIEMPRE como los 3 primeros colores
-// claro:  ['#C1437A','#3A60A1','#7B528C', ...] · oscuro: ['#F72585','#4CC9F0','#9D4EDD', ...]
+// chart es POR TEMA: los 3 primeros colores son los protagonistas de la paleta activa
+// bisexual claro: ['#C1437A','#3A60A1','#7B528C', ...] · oscuro: ['#F72585','#4CC9F0','#9D4EDD', ...]
 gradients: { header, cardHighlight, balance, progress, income, expense }   // tuplas de 2 colores por tema
 spacing: { xs:4, sm:8, md:16, lg:24, xl:32, xxl:48 }
 borderRadius: { sm:8, md:12, lg:16, xl:24, full:999 }
@@ -417,12 +454,20 @@ progreso de Stats usan `gradients.progress` (rosa→azul/turquesa); el donut col
 alternan primary/secondary/accent; `TransactionCard` lleva borde izquierdo 4px (rosa=gasto,
 azul=ingreso, morado=transfer); en oscuro las cards llevan `cardBorder` (#443465) y el tab bar usa
 `tabActive` turquesa + dot rosa bajo el tab seleccionado (en claro: tab activo rosa); los empty
-states tienen una ilustración SVG de tres círculos con los colores de la bandera bisexual.
+states tienen una ilustración SVG de tres círculos con los colores del `swatch` de la paleta
+activa (antes fijos a la bandera bisexual, ahora dependen de `paletteId`).
 
 ### Arquitectura del tema (patrón obligatorio para código nuevo)
-- `ThemeProvider` envuelve la app en `App.tsx`. Default = esquema del sistema (`useColorScheme()`);
-  el toggle de la pantalla "Más" lo sobreescribe en sesión (sin persistencia).
-- `useTheme()` → `{ theme, colors, isDark, toggleTheme }`.
+- `ThemeProvider` envuelve la app en `App.tsx`. Lee `paletteId`/`themeMode` de `settingsStore`
+  (persistidos en AsyncStorage). `themeMode` es `'system' | 'light' | 'dark'`; en `'system'`
+  sigue `useColorScheme()`. `theme = palettes[paletteId][isDark ? 'dark' : 'light']`.
+- `useTheme()` → `{ theme, colors, isDark, toggleTheme, swatch, paletteId, setPalette,
+  availablePalettes, themeMode, setThemeMode }`. `toggleTheme` fuerza `themeMode` a
+  `'light'`/`'dark'` (sale de `'system'`). `swatch` = los 3 colores protagonistas de la paleta
+  activa (usados en `EmptyState` y en las cards de `AppearanceScreen`).
+- Pantalla `AppearanceScreen` (`Más → Apariencia`): selector segmentado Sistema/Claro/Oscuro +
+  cards de paleta (swatch de 3 colores + check en la seleccionada). Es la única forma de cambiar
+  `paletteId`/`themeMode`.
 - **Estilos:** nada de `StyleSheet.create` a nivel de módulo con colores. El patrón es:
   ```ts
   const createStyles = (theme: Theme) => StyleSheet.create({ ... });   // al final del archivo

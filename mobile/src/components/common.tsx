@@ -207,16 +207,16 @@ export function SectionTitle({ title, action }: { title: string; action?: React.
 }
 
 export function EmptyState({ icon = 'inbox', text }: { icon?: string; text: string }) {
-  const { theme } = useTheme();
+  const { theme, swatch } = useTheme();
   const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.empty}>
       <View style={styles.emptyArt}>
-        {/* Tres círculos superpuestos con los colores de la bandera bisexual */}
+        {/* Tres círculos superpuestos con los colores protagonistas de la paleta activa */}
         <Svg width={120} height={84} viewBox="0 0 120 84">
-          <Circle cx={38} cy={42} r={34} fill={theme.colors.primary} opacity={0.3} />
-          <Circle cx={60} cy={42} r={34} fill={theme.colors.accent} opacity={0.32} />
-          <Circle cx={82} cy={42} r={34} fill={theme.colors.secondary} opacity={0.3} />
+          <Circle cx={38} cy={42} r={34} fill={swatch[0]} opacity={0.3} />
+          <Circle cx={60} cy={42} r={34} fill={swatch[1]} opacity={0.32} />
+          <Circle cx={82} cy={42} r={34} fill={swatch[2]} opacity={0.3} />
         </Svg>
         <View style={styles.emptyIconOverlay} pointerEvents="none">
           <Icon name={icon} size={34} color={theme.colors.primaryLight} strokeWidth={1.8} />

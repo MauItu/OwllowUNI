@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Switch } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -12,7 +12,7 @@ import { API_BASE_URL } from '../api/client';
 
 export function MoreScreen() {
   const navigation = useNavigation<any>();
-  const { theme, isDark, toggleTheme } = useTheme();
+  const { theme, isDark, availablePalettes, paletteId } = useTheme();
   const styles = useThemedStyles(createStyles);
   const mainCurrency = useSettingsStore((s) => s.mainCurrency);
   const setMainCurrency = useSettingsStore((s) => s.setMainCurrency);
@@ -110,28 +110,21 @@ export function MoreScreen() {
           </View>
           <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
         </Pressable>
-
-        <View style={styles.sectionGap}>
-          <SectionTitle title="Apariencia" />
-        </View>
-        <View style={styles.item}>
+        <Pressable
+          style={({ pressed }) => [styles.item, pressed && { opacity: 0.7 }]}
+          onPress={() => navigation.navigate('Appearance')}
+        >
           <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.secondary}22` }]}>
-            <Icon name={isDark ? 'moon' : 'sun'} size={22} color={theme.colors.secondary} />
+            <Icon name="palette" size={22} color={theme.colors.secondary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Tema oscuro</Text>
+            <Text style={styles.label}>Apariencia</Text>
             <Text style={styles.description}>
-              {isDark ? 'Orquídea / Morado Velvet' : 'Minimalista Nórdico'}
+              {availablePalettes.find((p) => p.id === paletteId)?.label} · {isDark ? 'Oscuro' : 'Claro'}
             </Text>
           </View>
-          <Switch
-            value={isDark}
-            onValueChange={toggleTheme}
-            trackColor={{ false: theme.colors.border, true: theme.colors.primaryDark }}
-            thumbColor={isDark ? theme.colors.primary : theme.colors.surfaceLight}
-            accessibilityLabel="Cambiar entre tema claro y oscuro"
-          />
-        </View>
+          <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
+        </Pressable>
 
         <View style={styles.footer}>
           <Text style={styles.footerTitle}>Wallet Clone</Text>
