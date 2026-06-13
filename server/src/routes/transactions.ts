@@ -383,16 +383,34 @@ transactionsRouter.post(
     const errors: { row: number; reason: string }[] = [];
 
     // Acumula los statements de las filas válidas y los ejecuta en batches (en vez
-    // de un round-trip HTTP por fila). La validación sigue siendo por fila.
+    // de un round-trip HTTP por fila). La validación sigue siendo por fila. Cada
+    // batch es atómico (neon-http): si un flush falla, ESE lote completo se revierte,
+    // así que NO se suma a `imported` y se registra un error con su rango de filas.
+    // Resultado parcial veraz: lo que sí entró se cuenta, lo que falló se reporta.
     const BATCH_ROWS = 50;
     let pending: unknown[] = [];
-    let rowsInBatch = 0;
+    let batchRows: number[] = []; // nº de fila (1-based) de cada fila válida del lote actual
     const flush = async () => {
       if (pending.length === 0) return;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await db.batch(pending as any);
+      const stmts = pending;
+      const rowsInBatch = batchRows;
       pending = [];
-      rowsInBatch = 0;
+      batchRows = [];
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.batch(stmts as any);
+        imported += rowsInBatch.length; // solo se cuenta lo que realmente se commiteó
+      } catch {
+        const first = rowsInBatch[0];
+        const last = rowsInBatch[rowsInBatch.length - 1];
+        errors.push({
+          row: first,
+          reason:
+            first === last
+              ? `No se pudo guardar (fila ${first})`
+              : `No se pudo guardar el lote (filas ${first}–${last})`,
+        });
+      }
     };
 
     for (let i = 0; i < rows.length; i++) {
@@ -463,8 +481,8 @@ transactionsRouter.post(
         });
       const balance = balanceStatements(uid, type, amount, account.id, toAccountId, 1);
       pending.push(insertStmt, ...balance);
-      imported++;
-      if (++rowsInBatch >= BATCH_ROWS) await flush();
+      batchRows.push(rowNum);
+      if (batchRows.length >= BATCH_ROWS) await flush();
     }
     await flush();
 

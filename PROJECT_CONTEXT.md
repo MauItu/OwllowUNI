@@ -290,6 +290,15 @@ mobile/
 - `transfer`→ `account.current_balance -= amount` y `to_account.current_balance += amount`
 - Editar/eliminar: revertir el efecto anterior y aplicar el nuevo.
 
+> **Atomicidad (restricción dura del driver).** La conexión usa **`drizzle-orm/neon-http`**:
+> `db.batch([...])` ejecuta todos los statements en **una transacción atómica** (rollback
+> automático ante un fallo), pero **NO existe `db.transaction()` interactivo** sobre HTTP. Por eso,
+> cuando una operación necesita ids generados a mitad de camino (que no se pueden referenciar dentro
+> de un mismo batch), se usa el **patrón saga/compensación**: se aplica el estado en uno o dos
+> `db.batch` y, si un paso posterior falla, se ejecuta un **batch de compensación** que revierte lo
+> ya aplicado. Endpoints con saga: `POST /api/splits/:groupId/expenses`,
+> `POST /api/splits/:groupId/settle`, `POST /api/debts/:id/pay`. No cambiar a `db.transaction` (no soportado).
+
 ---
 
 ## API REST
@@ -321,7 +330,7 @@ mobile/
 > la imagen del recibo se guarda LOCAL en el dispositivo (ver feature "Recibos"). El backend no recibe ni
 > almacena la imagen. Borrar la transacción NO borra el archivo (eso lo hace el cliente).
 - `GET    /api/transactions/export` — query: `format=csv|json, from, to, accountId?, categoryId?, type?`. Devuelve el archivo con `Content-Disposition: attachment`. **CSV**: UTF-8 con BOM (Excel + tildes), separador coma, filas CRLF, columnas `fecha, hora, tipo, monto, descripción, cuenta, cuenta destino, categoría, subcategoría, etiquetas` (separadas por `;`)`, notas`. `tipo` se exporta en español (Ingreso/Gasto/Transferencia); `categoría/subcategoría` se derivan del `parentId` (si la categoría es hija → categoría=padre, subcategoría=hija). **JSON**: arreglo de filas normalizadas (mismo shape que acepta el import). Ruta registrada **antes** de `/:id`.
-- `POST   /api/transactions/import` — body `{ transactions: NormalizedRow[] }` (o un arreglo directo). Valida cada fila: tipo (acepta español o inglés), monto numérico > 0, fecha `yyyy-MM-dd`, cuenta existente (match por nombre case-insensitive; transfer exige cuenta destino), categoría opcional (match por subcategoría→categoría; si no existe, `null`). Cada importada actualiza `current_balance` como una creación normal (`db.batch`). Respuesta `{ imported: n, errors: [{ row, reason }] }`. **El CSV exportado es round-trippable** (export → import sin errores). Las etiquetas no se importan (solo informativas en el CSV).
+- `POST   /api/transactions/import` — body `{ transactions: NormalizedRow[] }` (o un arreglo directo). Valida cada fila: tipo (acepta español o inglés), monto numérico > 0, fecha `yyyy-MM-dd`, cuenta existente (match por nombre case-insensitive; transfer exige cuenta destino), categoría opcional (match por subcategoría→categoría; si no existe, `null`). Cada importada actualiza `current_balance` como una creación normal. Los statements se ejecutan en **batches de 50 filas** (`db.batch`, cada lote atómico). Respuesta `{ imported: n, errors: [{ row, reason }] }` con **resultado parcial veraz**: si un lote falla, ese lote completo se revierte (no se suma a `imported`) y se añade a `errors` un item con el rango de filas del lote (las demás filas válidas sí se importan). **El CSV exportado es round-trippable** (export → import sin errores). Las etiquetas no se importan (solo informativas en el CSV).
 
 ### Templates
 - `GET    /api/templates` — orden `use_count DESC`
@@ -379,9 +388,9 @@ mobile/
 - `POST   /api/splits` — acepta `members[]` inline (exactamente un `isMe`, nombres únicos)
 - `PUT    /api/splits/:id` · `DELETE /api/splits/:id` (CASCADE)
 - `POST   /api/splits/:groupId/members` · `DELETE /api/splits/:groupId/members/:id` (solo sin gastos asociados)
-- `GET    /api/splits/:groupId/expenses` — con shares y `accountName`; `POST` acepta `accountId?` (solo si paga `is_me` → transacción `expense`), valida que los shares sumen el total (±0.01)
+- `GET    /api/splits/:groupId/expenses` — con shares y `accountName`; `POST` acepta `accountId?` (solo si paga `is_me` → transacción `expense`), valida que los shares sumen el total (±0.01). Saga: si paga `is_me` se crea primero la tx+balance (batch); el gasto y sus shares van dentro de un `try` que, ante fallo, borra el gasto (CASCADE en shares) y revierte la tx (no deja movimientos huérfanos).
 - `GET    /api/splits/:groupId/balances` — balance por miembro + `transfers[]` simplificadas (greedy: mayor deudor paga al mayor acreedor)
-- `POST   /api/splits/:groupId/settle` — `{ fromMemberId, toMemberId, amount, date?, accountId? }`; marca shares pareados como settled (antiguos primero), persiste en `split_settlements` y, si involucra a `is_me` con `accountId`, crea transacción `income`(me pagan)/`expense`(yo pago); si la simplificación redirigió deudas, registra el remanente como gasto "Liquidación"
+- `POST   /api/splits/:groupId/settle` — `{ fromMemberId, toMemberId, amount, date?, accountId? }`; marca shares pareados como settled (antiguos primero), persiste en `split_settlements` y, si involucra a `is_me` con `accountId`, crea transacción `income`(me pagan)/`expense`(yo pago); si la simplificación redirigió deudas, registra el remanente como gasto "Liquidación". **Saga de 2 batches:** Batch A aplica todo (shares settled + gasto Liquidación + tx + balance, con `.returning()` de los ids); Batch B inserta lo dependiente de esos ids (share de la Liquidación + fila de settlement con su `transactionId`). Si Batch B falla, un batch de compensación revierte **todo** el Batch A (des-liquida shares, borra el gasto y la tx, revierte el balance).
 - `GET    /api/splits/:groupId/settlements` — historial de liquidaciones del grupo
 
 ### Insights (análisis automático)

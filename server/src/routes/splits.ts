@@ -562,28 +562,34 @@ splitsRouter.post(
       transactionId = (txRes[0] as Transaction[])[0].id;
     }
 
-    const [expense] = await db
-      .insert(splitExpenses)
-      .values({
-        groupId,
-        description: data.description,
-        totalAmount: data.totalAmount.toFixed(2),
-        paidByMemberId: data.paidByMemberId,
-        date: data.date,
-        categoryId: data.categoryId ?? null,
-        accountId: data.accountId ?? null,
-        transactionId,
-      })
-      .returning();
-
+    // El gasto, sus shares y (si pago yo) la transacción de cuenta forman una saga:
+    // neon-http no da transacción interactiva, así que ante un fallo compensamos a
+    // mano. El insert del gasto va DENTRO del try para que su propio fallo dispare
+    // la reversión de la transacción de cuenta ya creada (no dejar movimiento huérfano).
+    let expense: SplitExpense | undefined;
     try {
+      const [created] = await db
+        .insert(splitExpenses)
+        .values({
+          groupId,
+          description: data.description,
+          totalAmount: data.totalAmount.toFixed(2),
+          paidByMemberId: data.paidByMemberId,
+          date: data.date,
+          categoryId: data.categoryId ?? null,
+          accountId: data.accountId ?? null,
+          transactionId,
+        })
+        .returning();
+      expense = created;
+
       const shares = await db
         .insert(splitShares)
         .values(
           data.shares
             .filter((s) => s.amount > 0)
             .map((s) => ({
-              expenseId: expense.id,
+              expenseId: created.id,
               memberId: s.memberId,
               amount: s.amount.toFixed(2),
               // El share del pagador nace liquidado (se pagó a sí mismo)
@@ -592,10 +598,11 @@ splitsRouter.post(
             })),
         )
         .returning();
-      res.status(201).json({ ...expense, shares });
+      res.status(201).json({ ...created, shares });
     } catch (err) {
-      // Compensación: si fallan los shares, no dejar el gasto huérfano ni la transacción.
-      await db.delete(splitExpenses).where(eq(splitExpenses.id, expense.id));
+      // Compensación: borrar el gasto si llegó a crearse (su CASCADE borra los
+      // shares) y revertir la transacción de cuenta para no dejar movimientos huérfanos.
+      if (expense) await db.delete(splitExpenses).where(eq(splitExpenses.id, expense.id));
       if (transactionId != null && data.accountId != null) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await db.batch([
@@ -675,84 +682,115 @@ splitsRouter.post(
       }
     }
 
-    if (toSettle.length > 0) {
-      await db
-        .update(splitShares)
-        .set({ isSettled: true, settledAt: new Date() })
-        .where(inArray(splitShares.id, toSettle));
-    }
-
-    if (remaining > 0.009) {
-      const [expense] = await db
-        .insert(splitExpenses)
-        .values({
-          groupId,
-          description: `Liquidación: ${from.name} → ${to.name}`,
-          totalAmount: remaining.toFixed(2),
-          paidByMemberId: from.id,
-          date: data.date ?? new Date().toISOString().slice(0, 10),
-        })
-        .returning();
-      await db.insert(splitShares).values({
-        expenseId: expense.id,
-        memberId: to.id,
-        amount: remaining.toFixed(2),
-      });
-    }
-
+    // ── Saga en 2 batches. Con neon-http `db.batch` es atómico pero NO hay
+    // transacción interactiva: el Batch B depende de los ids generados en el
+    // Batch A, así que si B falla compensamos TODO el Batch A a mano. ──
     const settleDate = data.date ?? new Date().toISOString().slice(0, 10);
+    const involvesMe = from.isMe || to.isMe;
+    // La cuenta solo aplica si la liquidación involucra al usuario (`is_me`).
+    const accountId = involvesMe ? data.accountId ?? null : null;
+    if (accountId != null) await assertAccountOwned(uid, accountId);
 
-    // Si la liquidación involucra al usuario y hay cuenta, registrar el movimiento real:
-    //  - el usuario RECIBE (es "to") → income en su cuenta.
-    //  - el usuario PAGA   (es "from") → expense desde su cuenta.
-    let transactionId: number | null = null;
-    if (data.accountId != null && (from.isMe || to.isMe)) {
-      await assertAccountOwned(uid, data.accountId);
-      const meReceives = to.isMe;
-      const txType = meReceives ? 'income' : 'expense';
-      const delta = meReceives ? data.amount : -data.amount;
-      const description = meReceives
-        ? `Pago recibido de ${from.name}`
-        : `Pago a ${to.name}`;
-      const insertTx = db
-        .insert(transactions)
-        .values({
-          userId: uid,
-          type: txType,
-          amount: data.amount.toFixed(2),
-          description,
-          date: settleDate,
-          time: nowTime(),
-          accountId: data.accountId,
-        })
-        .returning();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const txRes = await db.batch([insertTx, balanceUpdate(uid, data.accountId, delta)] as any);
-      transactionId = (txRes[0] as Transaction[])[0].id;
+    // El usuario RECIBE (es "to") → income en su cuenta; PAGA (es "from") → expense.
+    const meReceives = to.isMe;
+    const delta = meReceives ? data.amount : -data.amount;
+
+    // Batch A: marcar shares settled + gasto "Liquidación" (remanente) + tx de
+    // cuenta + update de balance. Pedimos `.returning()` de expense.id y tx.id.
+    const settledAt = new Date();
+    const batchA: unknown[] = [];
+    if (toSettle.length > 0) {
+      batchA.push(
+        db.update(splitShares).set({ isSettled: true, settledAt }).where(inArray(splitShares.id, toSettle)),
+      );
+    }
+    let expenseIdx = -1;
+    if (remaining > 0.009) {
+      expenseIdx = batchA.length;
+      batchA.push(
+        db
+          .insert(splitExpenses)
+          .values({
+            groupId,
+            description: `Liquidación: ${from.name} → ${to.name}`,
+            totalAmount: remaining.toFixed(2),
+            paidByMemberId: from.id,
+            date: settleDate,
+          })
+          .returning(),
+      );
+    }
+    let txIdx = -1;
+    if (accountId != null) {
+      txIdx = batchA.length;
+      batchA.push(
+        db
+          .insert(transactions)
+          .values({
+            userId: uid,
+            type: meReceives ? 'income' : 'expense',
+            amount: data.amount.toFixed(2),
+            description: meReceives ? `Pago recibido de ${from.name}` : `Pago a ${to.name}`,
+            date: settleDate,
+            time: nowTime(),
+            accountId,
+          })
+          .returning(),
+      );
+      batchA.push(balanceUpdate(uid, accountId, delta));
     }
 
-    // Persistir la liquidación (historial + enlace a la transacción si la hubo).
-    // Si esto falla y ya movimos dinero, compensamos la transacción para no dejar
-    // un movimiento de cuenta huérfano (mismo patrón que pay/addExpense).
-    try {
-      await db.insert(splitSettlements).values({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resultsA = batchA.length > 0 ? await db.batch(batchA as any) : [];
+    const expenseId = expenseIdx >= 0 ? (resultsA[expenseIdx] as SplitExpense[])[0].id : null;
+    const transactionId = txIdx >= 0 ? (resultsA[txIdx] as Transaction[])[0].id : null;
+
+    // Batch B: lo que depende de los ids del Batch A → el share de la Liquidación
+    // (usa expense.id) y la fila de settlement (con su transactionId, nunca null
+    // cuando hubo movimiento de cuenta).
+    const batchB: unknown[] = [];
+    if (expenseId != null) {
+      batchB.push(
+        db.insert(splitShares).values({ expenseId, memberId: to.id, amount: remaining.toFixed(2) }),
+      );
+    }
+    batchB.push(
+      db.insert(splitSettlements).values({
         groupId,
         fromMemberId: from.id,
         toMemberId: to.id,
         amount: data.amount.toFixed(2),
         date: settleDate,
-        accountId: from.isMe || to.isMe ? data.accountId ?? null : null,
+        accountId,
         transactionId,
-      });
+      }),
+    );
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.batch(batchB as any);
     } catch (err) {
-      if (transactionId != null && data.accountId != null) {
-        const undo = to.isMe ? -data.amount : data.amount;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await db.batch([
-          db.delete(transactions).where(eq(transactions.id, transactionId)),
-          balanceUpdate(uid, data.accountId, undo),
-        ] as any);
+      // Compensación COMPLETA del Batch A (un solo batch atómico): des-liquidar los
+      // shares, borrar el gasto de Liquidación (su CASCADE borra el share si llegó
+      // a entrar) y borrar la tx revirtiendo el balance. Así nada queda a medias.
+      const undo: unknown[] = [];
+      if (toSettle.length > 0) {
+        undo.push(
+          db
+            .update(splitShares)
+            .set({ isSettled: false, settledAt: null })
+            .where(inArray(splitShares.id, toSettle)),
+        );
       }
+      if (expenseId != null) {
+        undo.push(db.delete(splitExpenses).where(eq(splitExpenses.id, expenseId)));
+      }
+      if (transactionId != null && accountId != null) {
+        undo.push(db.delete(transactions).where(eq(transactions.id, transactionId)));
+        undo.push(balanceUpdate(uid, accountId, -delta));
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (undo.length > 0) await db.batch(undo as any);
       throw err;
     }
 
