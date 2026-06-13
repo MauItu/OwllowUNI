@@ -1,22 +1,22 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 import { ApiError } from '../middleware/errorHandler.js';
 
-// Remitente del email. En el free tier de Resend, sin dominio verificado, el
-// único `from` permitido es el dominio compartido `onboarding@resend.dev`.
-// Cuando verifiques tu propio dominio en resend.com, cámbialo a algo como
-// `Wallet Clone <noreply@tudominio.com>`.
-const FROM = 'Wallet Clone <onboarding@resend.dev>';
+// Envío de emails vía Gmail SMTP (Nodemailer). Requiere dos variables de entorno:
+//   GMAIL_USER          → la dirección de Gmail que envía (también es el `from`).
+//   GMAIL_APP_PASSWORD  → una "contraseña de aplicación" de 16 caracteres generada
+//                         en la cuenta de Google (NO la contraseña normal; requiere 2FA).
+// Si faltan, los endpoints de recuperación responden 503 (no se crashea el server).
 
 /**
- * Lanza si `RESEND_API_KEY` no está configurada. Se llama al inicio de
+ * Lanza si faltan las credenciales de Gmail. Se llama al inicio de
  * `forgot-password` (antes de buscar el usuario) para que el error de
  * configuración sea uniforme y no revele si el email existe.
  */
 export function assertEmailConfigured(): void {
-  if (!process.env.RESEND_API_KEY) {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
     throw new ApiError(
       503,
-      'El servicio de correo no está configurado (falta RESEND_API_KEY).',
+      'El servicio de correo no está configurado (faltan GMAIL_USER y/o GMAIL_APP_PASSWORD).',
     );
   }
 }
@@ -42,24 +42,36 @@ function resetEmailHtml(code: string): string {
 }
 
 /**
- * Envía el email con el código de recuperación. Lanza `ApiError` si Resend
- * falla (clave inválida, dominio no permitido, etc.) en lugar de crashear.
+ * Envía el email con el código de recuperación vía Gmail SMTP. Lanza `ApiError`
+ * si faltan las credenciales (503) o si el envío falla (502), en lugar de crashear.
  */
 export async function sendResetCodeEmail(to: string, code: string): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    throw new ApiError(503, 'El servicio de correo no está configurado (falta RESEND_API_KEY).');
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) {
+    throw new ApiError(
+      503,
+      'El servicio de correo no está configurado (faltan GMAIL_USER y/o GMAIL_APP_PASSWORD).',
+    );
   }
-  const resend = new Resend(apiKey);
-  const { error } = await resend.emails.send({
-    from: FROM,
-    to,
-    subject: RESET_EMAIL_SUBJECT,
-    html: resetEmailHtml(code),
+
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: { user, pass },
   });
-  if (error) {
+
+  try {
+    await transporter.sendMail({
+      from: user,
+      to,
+      subject: RESET_EMAIL_SUBJECT,
+      html: resetEmailHtml(code),
+    });
+  } catch (err) {
     // El detalle se loguea en el servidor; al cliente solo un mensaje genérico.
-    console.error('Error enviando email de recuperación:', error);
+    console.error('Error enviando email de recuperación:', err);
     throw new ApiError(502, 'No se pudo enviar el correo de recuperación.');
   }
 }

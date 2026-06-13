@@ -44,12 +44,12 @@ wallet/                         ← raíz del repo
   - `POST /api/auth/login` — `{ email, password }` → `{ token, user }` (error genérico si fallan).
   - `GET /api/auth/me` (auth) · `PUT /api/auth/profile` (auth) — cambia nombre/contraseña (exige la actual).
   - **Recuperación de contraseña por email** (`routes/password-reset.ts`, públicos; código de 6 dígitos
-    pensado para móvil, no link). Requiere `RESEND_API_KEY` (envío vía **Resend**, free tier 100/día):
+    pensado para móvil, no link). Requiere `GMAIL_USER` y `GMAIL_APP_PASSWORD` (envío vía **Gmail SMTP** con **Nodemailer**):
     - `POST /api/auth/forgot-password` — `{ email }`. Si el email existe: genera código de 6 dígitos
       (`crypto.randomInt`) + token de 64 chars (`crypto.randomBytes`), expiración 15 min, invalida códigos
       previos no usados del usuario y envía el código por email. **Siempre responde 200** con mensaje genérico
       (anti-enumeración). Rate limit **3/hora por email** (cuenta filas en `password_resets`, sin Redis) → 429.
-      Si falta `RESEND_API_KEY` responde 503 con mensaje claro (no crashea).
+      Si faltan `GMAIL_USER`/`GMAIL_APP_PASSWORD` responde 503 con mensaje claro (no crashea).
     - `POST /api/auth/verify-reset-code` — `{ email, code }` → `{ token }` si el código es válido/no usado/no
       expirado (JOIN con `users`); 400 si no. **No** marca el código como usado todavía.
     - `POST /api/auth/reset-password` — `{ token, newPassword(≥6) }`. Rehashea con bcrypt 12 y, en un `db.batch`
@@ -402,10 +402,11 @@ mobile/
 
 **Backend:** express ^4.21, @neondatabase/serverless ^0.10, drizzle-orm ^0.36, drizzle-zod ^0.5,
 zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1, **bcryptjs ^3** (hash de contraseñas),
-**jsonwebtoken ^9** (JWT de sesión), **resend ^6** (envío de emails de recuperación de contraseña) ·
-dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6, @types/bcryptjs, @types/jsonwebtoken.
-Requiere **`JWT_SECRET`** en el `.env` raíz; **`RESEND_API_KEY`** es obligatoria solo para enviar emails
-de recuperación (si falta, esos endpoints responden 503 con mensaje claro; el resto de la API funciona igual).
+**jsonwebtoken ^9** (JWT de sesión), **nodemailer ^8** (envío de emails de recuperación vía Gmail SMTP) ·
+dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6, @types/bcryptjs, @types/jsonwebtoken, @types/nodemailer.
+Requiere **`JWT_SECRET`** en el `.env` raíz; **`GMAIL_USER`** y **`GMAIL_APP_PASSWORD`** son obligatorias solo
+para enviar emails de recuperación (si faltan, esos endpoints responden 503 con mensaje claro; el resto de la
+API funciona igual). El transporter usa `smtp.gmail.com:465` (secure) y el `from` es `GMAIL_USER`.
 > **Multi-moneda no añade dependencias:** las tasas se consultan con el `fetch` nativo de Node 22 (Frankfurter /
 > open.er-api.com). En mobile la persistencia de la moneda principal usa el middleware `persist` de Zustand sobre
 > `@react-native-async-storage/async-storage` (ya instalado); no se agregó ningún paquete.

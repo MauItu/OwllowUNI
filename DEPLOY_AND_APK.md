@@ -96,7 +96,8 @@ En **Settings → Environment** del servicio, configurá:
 |---|---|---|---|
 | `DATABASE_URL` | *(secreto — ver abajo)* | ✅ Sí | Connection string de Neon. **Está en el `.env` de la raíz del repo.** Copiala desde ahí. El server no arranca sin ella. |
 | `JWT_SECRET` | *(secreto — poné uno fuerte)* | ✅ Sí | El server **no arranca** sin esto. En el repo el `.env` trae el default de dev `wallet-clone-secret-change-in-production`; **en Render poné un valor aleatorio fuerte** (ver comando abajo). |
-| `RESEND_API_KEY` | *(secreto — ver abajo)* | ⚠️ Para recuperar contraseña | Clave de [Resend](https://resend.com) para enviar el email con el código de recuperación. **Sin ella la API arranca igual**, pero `forgot-password` responde 503 (no se puede recuperar contraseña). El resto de la app funciona normal. |
+| `GMAIL_USER` | *(secreto — ver abajo)* | ⚠️ Para recuperar contraseña | Dirección de Gmail que **envía** el email con el código de recuperación (también es el remitente `from`). Va de la mano con `GMAIL_APP_PASSWORD`. **Sin ambas la API arranca igual**, pero `forgot-password` responde 503. El resto de la app funciona normal. |
+| `GMAIL_APP_PASSWORD` | *(secreto — ver abajo)* | ⚠️ Para recuperar contraseña | **Contraseña de aplicación** de 16 caracteres generada en la cuenta de Google (NO la contraseña normal; requiere verificación en 2 pasos). Va de la mano con `GMAIL_USER`. |
 | `CORS_ORIGINS` | *(no setear)* | ❌ No | Sin esta var, CORS permite cualquier origen. **El APK nativo no envía header `Origin`, así que el móvil funciona igual.** Solo definila (lista separada por comas) si algún día sirvís un frontend web. |
 | `PORT` | *(no setear)* | ❌ No | Lo inyecta Render. |
 | `NODE_VERSION` | `22` | recomendado | El código usa `fetch` nativo de Node 22 (tasas de cambio). |
@@ -122,20 +123,26 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 > **primera** vez que prod corre con auth, no hay tokens válidos vivos → poné el secreto fuerte ahora sin
 > problema. Si lo cambiás más adelante, el APP forzará re-login en todos los dispositivos.
 
-**Obtener la `RESEND_API_KEY` (recuperación de contraseña por email):**
+**Obtener `GMAIL_USER` y `GMAIL_APP_PASSWORD` (recuperación de contraseña por email vía Gmail SMTP):**
 
-1. Creá una cuenta gratis en **[resend.com](https://resend.com)** (free tier: **100 emails/día**, 3000/mes).
-2. En el dashboard → **API Keys → Create API Key** (permiso *Sending access* alcanza). Copiá la clave
-   (empieza con `re_...`) — solo se muestra una vez.
-3. Pegala en Render → **Settings → Environment** como `RESEND_API_KEY`. (Para probar localmente, agregala
-   también al `.env` de la raíz del repo.)
-4. **Remitente (`from`):** sin dominio propio verificado, Resend solo permite enviar desde su dominio
-   compartido `onboarding@resend.dev` — es lo que usa `server/src/services/email.ts` por defecto. Para usar
-   tu propio dominio (`noreply@tudominio.com`), verificalo en **Resend → Domains** (agregás registros DNS) y
-   actualizá la constante `FROM` en `email.ts`.
+El envío usa **Nodemailer** contra el SMTP de Gmail (`smtp.gmail.com:465`). Gmail no permite usar tu
+contraseña normal desde apps: hay que generar una **contraseña de aplicación** (16 caracteres). Para eso
+la cuenta de Google necesita **verificación en 2 pasos (2FA) activada**.
 
-> Sin `RESEND_API_KEY`, todo lo demás funciona: solo el flujo "¿Olvidaste tu contraseña?" devuelve un error
-> claro (503). El login/registro normal no la necesita.
+1. Activá la **verificación en 2 pasos** en tu cuenta de Google:
+   [myaccount.google.com/security](https://myaccount.google.com/security) → "Verificación en 2 pasos".
+2. Generá una **contraseña de aplicación** en
+   [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords): poné un nombre
+   (ej. "Wallet Clone") y Google te muestra una clave de **16 caracteres** (sin espacios). Se muestra
+   una sola vez — copiala.
+3. En Render → **Settings → Environment** configurá:
+   - `GMAIL_USER` = tu dirección de Gmail (ej. `mauiturriza@gmail.com`).
+   - `GMAIL_APP_PASSWORD` = la contraseña de aplicación de 16 caracteres (pegala sin espacios).
+   (Para probar localmente, agregá ambas también al `.env` de la raíz del repo.)
+4. **Remitente (`from`):** es directamente `GMAIL_USER`; el email sale desde tu propia dirección de Gmail.
+
+> Sin `GMAIL_USER`/`GMAIL_APP_PASSWORD`, todo lo demás funciona: solo el flujo "¿Olvidaste tu contraseña?"
+> devuelve un error claro (503). El login/registro normal no las necesita.
 
 ### 1.4 Migraciones en producción
 
