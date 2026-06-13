@@ -1,0 +1,305 @@
+# DEPLOY_AND_APK.md — Deploy del backend (Render) + build del APK (EAS)
+
+> Guía copy-paste con los valores **reales** de este repo. Hecha el 2026-06-13.
+>
+> **Valores reales detectados:**
+> - Servicio Render: **`https://wallet-7v82.onrender.com`** (de `mobile/eas.json` → perfil `preview`).
+> - API base que consume el móvil: **`https://wallet-7v82.onrender.com/api`**.
+> - DB: **Neon PostgreSQL** (`DATABASE_URL` en el `.env` de la raíz). **Ya está migrada (0000→0009) y seedeada.**
+> - Backend: `server/` — build `tsc` → `dist/`, arranque `node dist/index.js`. Package manager **pnpm**.
+> - App móvil: Expo SDK 54, slug `wallet-clone`, owner `maurarch`, EAS projectId `d1a959a4-1885-4e2e-a90d-53838005629a`.
+
+---
+
+## ⚠️ DIAGNÓSTICO ACTUAL (leer primero)
+
+Producción está **desactualizada**. Lo comprobé contra la URL real:
+
+```bash
+curl -s https://wallet-7v82.onrender.com/api/auth/me   # → HTTP 404  (no existe auth en prod)
+curl -s https://wallet-7v82.onrender.com/api/accounts   # → HTTP 200 SIN token (versión vieja single-user)
+```
+
+**Causa raíz:** todo el código de multiusuario/auth **y los cambios de la auditoría** (índices, caché,
+CORS, 500s genéricos) están **solo en la rama `APK`**, no en `main`. Render despliega desde **`main`**
+(`origin/HEAD → main`). Por eso sirve el código viejo.
+
+Commits que están en `APK` y faltan en `main`:
+
+```
+8db4099 docs: document auth/multiuser, indexes, cache, CORS; version drizzle journal
+9649800 refactor: batch CSV import, compensate settle, dedupe tag links
+e1c3287 security: generic 500s, CORS allowlist via env, validate tagIds ownership
+aec9fb9 perf(cache): in-process response cache with per-user version invalidation
+92bea69 perf(splits): fix N+1 in GET /splits and /summary
+e4650ba perf(db): add secondary indexes on user_id, FKs and (user_id,date) hot paths
+f3e95d8 Multi-usuarios feat: ... (toda la feature de auth)
+```
+
+**La DB ya NO necesita migraciones** (lo verifiqué: las 10 migraciones 0000→0009 están aplicadas en Neon,
+la tabla `users` ya tiene filas y los índices de `0009` existen). El único trabajo de deploy es **llevar el
+código de `APK` a la rama que Render despliega y redeployar.**
+
+---
+
+## 1) Deploy del backend actualizado a Render
+
+### 1.1 Llevar el código de `APK` a `main` (lo que Render despliega)
+
+> Render hace auto-deploy al hacer push a `main`. Mergeá `APK → main` y pusheá.
+
+```bash
+cd /home/mauro/Documents/proyectos/wallet
+
+# Asegurate de tener APK al día en el remoto
+git checkout APK
+git push origin APK
+
+# Merge a main
+git checkout main
+git pull origin main
+git merge APK            # debería ser fast-forward o un merge limpio
+git push origin main     # ← esto dispara el auto-deploy en Render
+```
+
+> **Alternativa (sin tocar main):** en el dashboard de Render → tu servicio → **Settings → Build & Deploy →
+> Branch**, cambialo de `main` a `APK` y guardá. Render redeployará desde `APK`. (Recomiendo el merge a `main`
+> para no dejar `main` desincronizado.)
+
+### 1.2 Configuración del servicio en Render (Web Service)
+
+Si el servicio ya existe (lo está, responde en `wallet-7v82.onrender.com`), verificá que tenga **exactamente**
+esta config. Si lo creás de cero, usá estos valores:
+
+| Campo | Valor |
+|---|---|
+| **Environment** | Node |
+| **Root Directory** | `server` |
+| **Build Command** | `corepack enable && pnpm install --frozen-lockfile && pnpm run build` |
+| **Start Command** | `pnpm start`  *(= `node dist/index.js`)* |
+| **Branch** | `main` (o `APK` si elegiste la alternativa) |
+| **Auto-Deploy** | Yes |
+
+> Notas reales:
+> - El `start` script es `node dist/index.js` y el `build` es `tsc` (ver `server/package.json`). El `tsc`
+>   compila a `dist/`, por eso el Build Command **debe** incluir `pnpm run build`.
+> - El server escucha en `process.env.PORT || 3000` (`server/src/index.ts:25`). **Render inyecta `PORT`
+>   automáticamente** — *no* lo definas a mano.
+> - `connection.ts` y `migrate.ts` hacen `dotenv.config()` sobre `../.env` y `./.env`; en Render esos archivos
+>   no existen, así que dotenv **no pisa** las env vars del dashboard. Por eso basta con setearlas en Render.
+
+### 1.3 Variables de entorno en Render
+
+En **Settings → Environment** del servicio, configurá:
+
+| Variable | Valor | Obligatoria | Notas |
+|---|---|---|---|
+| `DATABASE_URL` | *(secreto — ver abajo)* | ✅ Sí | Connection string de Neon. **Está en el `.env` de la raíz del repo.** Copiala desde ahí. El server no arranca sin ella. |
+| `JWT_SECRET` | *(secreto — poné uno fuerte)* | ✅ Sí | El server **no arranca** sin esto. En el repo el `.env` trae el default de dev `wallet-clone-secret-change-in-production`; **en Render poné un valor aleatorio fuerte** (ver comando abajo). |
+| `RESEND_API_KEY` | *(secreto — ver abajo)* | ⚠️ Para recuperar contraseña | Clave de [Resend](https://resend.com) para enviar el email con el código de recuperación. **Sin ella la API arranca igual**, pero `forgot-password` responde 503 (no se puede recuperar contraseña). El resto de la app funciona normal. |
+| `CORS_ORIGINS` | *(no setear)* | ❌ No | Sin esta var, CORS permite cualquier origen. **El APK nativo no envía header `Origin`, así que el móvil funciona igual.** Solo definila (lista separada por comas) si algún día sirvís un frontend web. |
+| `PORT` | *(no setear)* | ❌ No | Lo inyecta Render. |
+| `NODE_VERSION` | `22` | recomendado | El código usa `fetch` nativo de Node 22 (tasas de cambio). |
+
+**`DATABASE_URL`** (no lo pego completo acá por ser secreto; está en `/home/mauro/Documents/proyectos/wallet/.env`):
+
+```
+postgresql://neondb_owner:****@ep-polished-salad-ajzloqar-pooler.c-3.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+```
+
+> Tomá el valor exacto (con la password) del archivo `.env` de la raíz:
+> ```bash
+> grep DATABASE_URL /home/mauro/Documents/proyectos/wallet/.env
+> ```
+
+**Generar un `JWT_SECRET` fuerte para producción:**
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
+
+> ⚠️ Cambiar `JWT_SECRET` invalida cualquier token JWT ya emitido (expiran a 30 días). Como esta es la
+> **primera** vez que prod corre con auth, no hay tokens válidos vivos → poné el secreto fuerte ahora sin
+> problema. Si lo cambiás más adelante, el APP forzará re-login en todos los dispositivos.
+
+**Obtener la `RESEND_API_KEY` (recuperación de contraseña por email):**
+
+1. Creá una cuenta gratis en **[resend.com](https://resend.com)** (free tier: **100 emails/día**, 3000/mes).
+2. En el dashboard → **API Keys → Create API Key** (permiso *Sending access* alcanza). Copiá la clave
+   (empieza con `re_...`) — solo se muestra una vez.
+3. Pegala en Render → **Settings → Environment** como `RESEND_API_KEY`. (Para probar localmente, agregala
+   también al `.env` de la raíz del repo.)
+4. **Remitente (`from`):** sin dominio propio verificado, Resend solo permite enviar desde su dominio
+   compartido `onboarding@resend.dev` — es lo que usa `server/src/services/email.ts` por defecto. Para usar
+   tu propio dominio (`noreply@tudominio.com`), verificalo en **Resend → Domains** (agregás registros DNS) y
+   actualizá la constante `FROM` en `email.ts`.
+
+> Sin `RESEND_API_KEY`, todo lo demás funciona: solo el flujo "¿Olvidaste tu contraseña?" devuelve un error
+> claro (503). El login/registro normal no la necesita.
+
+### 1.4 Migraciones en producción
+
+**No hay migraciones pendientes.** La DB Neon ya tiene las 10 migraciones (`0000`→`0009`) aplicadas, `users`
+poblada y los índices de la auditoría creados (lo verifiqué con `psql` contra la URL real).
+
+Si en el futuro generás una migración nueva (`pnpm db:generate` en `server/`), aplicala a Neon con cualquiera
+de estas dos vías:
+
+- **Desde tu máquina** (la más simple, el `.env` de la raíz apunta a la DB real):
+  ```bash
+  cd /home/mauro/Documents/proyectos/wallet/server
+  pnpm db:migrate          # = tsx src/db/migrate.ts ; idempotente, drizzle saltea las ya aplicadas
+  ```
+- **Desde Render** (Shell del servicio, requiere plan con Shell): `pnpm db:migrate`. Como `tsx` es devDependency
+  y el Build Command instala todo, está disponible. Es idempotente.
+
+> El usuario admin ya existe: **`mauiturriza@gmail.com` / `admin123`** (lo fija `pnpm db:seed`; cambialo desde
+> la app en *Más → Perfil*). Si necesitaras re-seedear (recrea categorías default y rehashea la pass del admin):
+> `cd server && pnpm db:seed`.
+
+---
+
+## 2) Verificar que producción responde bien
+
+Tras el redeploy, corré estos curls (URL real). **El cambio clave es que `/api/auth/me` ya NO da 404 y
+`/api/accounts` SIN token ahora da 401.**
+
+```bash
+# a) Liveness (debe responder siempre)
+curl -s https://wallet-7v82.onrender.com/health
+# → {"status":"ok"}
+
+curl -s https://wallet-7v82.onrender.com/
+# → {"name":"Wallet Clone API","status":"ok","version":"1.0.0"}
+
+# b) Auth montado (antes daba 404). Sin body válido debe dar 400, NO 404:
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  https://wallet-7v82.onrender.com/api/auth/login \
+  -H 'Content-Type: application/json' -d '{}'
+# → 400  (la ruta existe; faltan campos)
+
+# c) Rutas de datos ahora EXIGEN token (antes daban 200 sin token):
+curl -s -o /dev/null -w "%{http_code}\n" https://wallet-7v82.onrender.com/api/accounts
+# → 401
+
+# d) Login real → debe devolver { token, user }:
+curl -s -X POST https://wallet-7v82.onrender.com/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"mauiturriza@gmail.com","password":"admin123"}'
+# → {"token":"eyJ...","user":{...}}
+
+# e) Usar el token para una ruta protegida:
+TOKEN=$(curl -s -X POST https://wallet-7v82.onrender.com/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"mauiturriza@gmail.com","password":"admin123"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+
+curl -s https://wallet-7v82.onrender.com/api/accounts \
+  -H "Authorization: Bearer $TOKEN"
+# → [ ...tus cuentas... ]  (HTTP 200)
+```
+
+> Si el servicio estaba dormido (free tier), el **primer** curl puede tardar ~30–60 s en responder mientras
+> Render lo despierta. Reintentá.
+
+---
+
+## 3) Build del APK con EAS
+
+### 3.1 Variables de entorno del build
+
+Ya están resueltas en `mobile/eas.json` → perfil **`preview`**:
+
+```json
+"preview": {
+  "distribution": "internal",
+  "android": { "buildType": "apk" },
+  "env": { "EXPO_PUBLIC_API_URL": "https://wallet-7v82.onrender.com/api" }
+}
+```
+
+- `EXPO_PUBLIC_API_URL` se inyecta en el build y lo lee `mobile/src/api/client.ts:60`
+  (`process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.0.12:3000/api'`). En el APK toma el de Render; el
+  fallback `192.168.0.12` es solo para correr en dev sobre tu LAN.
+- **No necesitás `mobile/.env`** (no existe y no hace falta): el valor vive en `eas.json`. Si en el futuro
+  movés la URL, editá ese `env` del perfil `preview`.
+
+### 3.2 Comando de build (perfil que ya existe)
+
+```bash
+cd /home/mauro/Documents/proyectos/wallet/mobile
+
+# Login en Expo (cuenta owner = maurarch) si no lo estás:
+npx eas login        # o: npx eas whoami   para verificar
+
+# Build del APK (perfil preview → buildType apk, en los servidores de EAS):
+npx eas build --platform android --profile preview
+```
+
+> - Usa la cuenta `maurarch` y el `projectId d1a959a4-1885-4e2e-a90d-53838005629a` (de `mobile/app.json`).
+> - Al terminar, EAS imprime una **URL de descarga** del `.apk` y queda en
+>   `https://expo.dev/accounts/maurarch/projects/wallet-clone/builds`.
+> - Si querés compilar local en vez de en la nube: agregá `--local` (requiere Android SDK/JDK instalados).
+
+### 3.3 Descargar e instalar el APK
+
+```bash
+# Opción A: con adb (teléfono conectado por USB, depuración USB activada)
+adb install -r ~/Downloads/wallet-clone.apk     # ajustá el nombre/ruta del .apk descargado
+
+# Opción B: ver el último build y bajar el APK por consola
+cd /home/mauro/Documents/proyectos/wallet/mobile
+npx eas build:list --platform android --limit 1
+# Copiá la "Artifact URL" y descargalo, o abrí la URL en el teléfono y instalá
+# (hay que permitir "Instalar apps de orígenes desconocidos" en Android).
+```
+
+> El primer arranque del APK contra Render free tier puede tardar si el server estaba dormido; reintentá el login.
+
+---
+
+## 4) Troubleshooting
+
+**El APK login da error / "No se pudo conectar con el servidor".**
+- Render free tier **duerme** tras ~15 min de inactividad. El primer request tarda ~30–60 s. Reintentá.
+  Verificá que despierta: `curl https://wallet-7v82.onrender.com/health`.
+- El `timeout` de Axios es **5 s** (`mobile/src/api/client.ts:64`). Si el server estaba frío, el primer login
+  puede pasarse de 5 s → da timeout. Reintentá una vez que `/health` responda rápido.
+
+**`/api/auth/...` sigue dando 404 después del deploy.**
+- Render desplegó código viejo. Confirmá que el commit de auth llegó a la rama que Render despliega:
+  `git log --oneline origin/main -1` debe mostrar `8db4099` (o más nuevo). Si no, repetí el paso **1.1**
+  (merge `APK → main` + push). En Render → **Manual Deploy → Clear build cache & deploy** para forzar.
+
+**`/api/accounts` devuelve 200 SIN token.**
+- Es la versión vieja single-user. Mismo problema que arriba: el deploy no tomó el código de auth. Redeployá.
+
+**El server no arranca en Render / crashea al boot.**
+- Falta `JWT_SECRET` o `DATABASE_URL`. El middleware de auth exige `JWT_SECRET` y `connection.ts` lanza si no
+  hay `DATABASE_URL`. Revisá **Settings → Environment** y los logs del deploy.
+
+**Build de Render falla en `pnpm` / "command not found".**
+- Asegurá el Build Command `corepack enable && pnpm install --frozen-lockfile && pnpm run build` y
+  **Root Directory = `server`**. Si `--frozen-lockfile` falla por lockfile desactualizado, corré
+  `pnpm install` localmente en `server/`, commiteá el `pnpm-lock.yaml` y redeployá.
+
+**"relation ... does not exist" / faltan columnas `user_id` en runtime.**
+- La DB no tiene las migraciones. No es el caso hoy (verificado), pero si pasara: `cd server && pnpm db:migrate`.
+  Es idempotente.
+
+**Login dice credenciales inválidas con `admin123`.**
+- La pass del admin fue cambiada desde la app, o `db:seed` no corrió. Para resetear a `admin123`:
+  `cd server && pnpm db:seed` (rehashea la pass del admin a `admin123`). Después cambiala en *Más → Perfil*.
+
+**El APK apunta a `localhost` / `192.168.0.12` y no a Render.**
+- Estás corriendo en dev (Expo Go) o el build no tomó `eas.json`. En el APK de EAS, `EXPO_PUBLIC_API_URL` viene
+  del `env` del perfil `preview`. Verificá que buildeaste con `--profile preview` y que ese `env` siga apuntando
+  a `https://wallet-7v82.onrender.com/api`.
+
+**CORS bloquea requests.**
+- Solo afecta a clientes web (mandan `Origin`). El APK nativo **no** manda `Origin`, nunca lo afecta. Si servís
+  un frontend web, definí `CORS_ORIGINS` en Render con la lista de orígenes permitidos (separados por coma).
+
+**Las stats/insights no reflejan un cambio reciente.**
+- Hay caché en proceso: stats 5 min, insights 10 min, accounts/summary 5 min. Cualquier **mutación** del usuario
+  la invalida; o forzá bypass con `?refresh=true`. Además, en Render free, un reinicio del proceso vacía la caché.
+```

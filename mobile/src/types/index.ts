@@ -29,6 +29,28 @@ export interface UpdateProfileInput {
   currentPassword?: string;
 }
 
+export interface ForgotPasswordInput {
+  email: string;
+}
+
+export interface VerifyResetCodeInput {
+  email: string;
+  code: string;
+}
+
+export interface ResetPasswordInput {
+  token: string;
+  newPassword: string;
+}
+
+export interface MessageResponse {
+  message: string;
+}
+
+export interface VerifyResetCodeResponse {
+  token: string;
+}
+
 export type AccountType = 'bank' | 'cash' | 'credit_card' | 'digital_wallet';
 export type TxType = 'income' | 'expense' | 'transfer';
 export type CategoryType = 'income' | 'expense';

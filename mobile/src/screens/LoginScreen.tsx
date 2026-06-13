@@ -70,6 +70,13 @@ export function LoginScreen() {
             <View style={styles.buttonWrap}>
               <PrimaryButton label="Iniciar sesión" onPress={onSubmit} loading={loading} />
             </View>
+            <Pressable
+              style={styles.forgotRow}
+              onPress={() => navigation.navigate('ForgotPassword')}
+              hitSlop={8}
+            >
+              <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+            </Pressable>
           </View>
 
           <Pressable
@@ -119,6 +126,12 @@ const createStyles = (theme: Theme) =>
     },
     form: { gap: theme.spacing.xs },
     buttonWrap: { marginTop: theme.spacing.md },
+    forgotRow: { alignItems: 'center', marginTop: theme.spacing.md },
+    forgotText: {
+      color: theme.colors.primaryLight,
+      fontSize: theme.fontSize.sm,
+      fontWeight: theme.fontWeight.medium,
+    },
     linkRow: {
       flexDirection: 'row',
       justifyContent: 'center',

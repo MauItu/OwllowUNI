@@ -6,6 +6,11 @@ import type {
   RegisterInput,
   LoginInput,
   UpdateProfileInput,
+  ForgotPasswordInput,
+  VerifyResetCodeInput,
+  ResetPasswordInput,
+  MessageResponse,
+  VerifyResetCodeResponse,
   Account,
   AccountInput,
   Category,
@@ -126,6 +131,13 @@ export const authApi = {
   me: () => api.get<User>('/auth/me').then((r) => r.data),
   updateProfile: (data: UpdateProfileInput) =>
     api.put<User>('/auth/profile', data).then((r) => r.data),
+  // Recuperación de contraseña por email (código de 6 dígitos).
+  forgotPassword: (data: ForgotPasswordInput) =>
+    api.post<MessageResponse>('/auth/forgot-password', data).then((r) => r.data),
+  verifyResetCode: (data: VerifyResetCodeInput) =>
+    api.post<VerifyResetCodeResponse>('/auth/verify-reset-code', data).then((r) => r.data),
+  resetPassword: (data: ResetPasswordInput) =>
+    api.post<MessageResponse>('/auth/reset-password', data).then((r) => r.data),
 };
 
 // ───────────────────────── Accounts ─────────────────────────

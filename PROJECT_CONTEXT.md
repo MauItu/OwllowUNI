@@ -43,12 +43,27 @@ wallet/                         ← raíz del repo
     categorías default + cuenta "Efectivo" (`db/defaults.ts → provisionUserDefaults`).
   - `POST /api/auth/login` — `{ email, password }` → `{ token, user }` (error genérico si fallan).
   - `GET /api/auth/me` (auth) · `PUT /api/auth/profile` (auth) — cambia nombre/contraseña (exige la actual).
+  - **Recuperación de contraseña por email** (`routes/password-reset.ts`, públicos; código de 6 dígitos
+    pensado para móvil, no link). Requiere `RESEND_API_KEY` (envío vía **Resend**, free tier 100/día):
+    - `POST /api/auth/forgot-password` — `{ email }`. Si el email existe: genera código de 6 dígitos
+      (`crypto.randomInt`) + token de 64 chars (`crypto.randomBytes`), expiración 15 min, invalida códigos
+      previos no usados del usuario y envía el código por email. **Siempre responde 200** con mensaje genérico
+      (anti-enumeración). Rate limit **3/hora por email** (cuenta filas en `password_resets`, sin Redis) → 429.
+      Si falta `RESEND_API_KEY` responde 503 con mensaje claro (no crashea).
+    - `POST /api/auth/verify-reset-code` — `{ email, code }` → `{ token }` si el código es válido/no usado/no
+      expirado (JOIN con `users`); 400 si no. **No** marca el código como usado todavía.
+    - `POST /api/auth/reset-password` — `{ token, newPassword(≥6) }`. Rehashea con bcrypt 12 y, en un `db.batch`
+      atómico, actualiza `users.password_hash` y marca el reset `used=true` (token de un solo uso). 400 si el
+      token es inválido/expirado/usado.
 - **Middleware `server/src/middleware/auth.ts`:** `authenticate` valida el Bearer e inyecta
   `req.user = { id, email, isAdmin }`; `userId(req)` y `requireAdmin`. Token expira en **30d**.
   `JWT_SECRET` es **obligatorio** en el `.env` raíz (el server no arranca sin él).
 - **Mobile:** `LoginScreen`/`RegisterScreen`, `hooks/useAuth.tsx`, `services/auth.ts` (JWT en
   **expo-secure-store**, nunca AsyncStorage). `api/client.ts` inyecta el Bearer y, ante 401, limpia
-  el token y redirige al login. Paletas restringidas a admin (resto: `professional`).
+  el token y redirige al login. Paletas restringidas a admin (resto: `professional`). El stack de auth
+  incluye además el flujo de recuperación: `ForgotPasswordScreen` (pide email) → `VerifyResetCodeScreen`
+  (6 inputs OTP, timer de 15 min, reenviar con throttle de 60 s) → `ResetPasswordScreen` (nueva contraseña).
+  `LoginScreen` enlaza con "¿Olvidaste tu contraseña?".
 
 ---
 
@@ -255,6 +270,14 @@ mobile/
 > Cache de tasas. Las `is_manual` las fija el usuario y **nunca** se sobreescriben con el refresco automático.
 > Las automáticas se refrescan si tienen ≥24h. Migración `0006_unknown_exodus.sql` (aditiva: tabla nueva + `transactions.to_amount`).
 
+### password_resets
+`id` serial PK · `user_id` int FK→users NN · `code` varchar(6) NN (6 dígitos) · `token` varchar(64) NN UNIQUE
+· `expires_at` timestamp NN (now + 15 min) · `used` bool def false · `created_at` timestamp def now()
+· INDEX(user_id, used, expires_at) — el UNIQUE de `token` ya cubre el lookup por token.
+> Recuperación de contraseña por email. El `code` (6 dígitos) viaja en el email; el `token` (64 chars hex) es el
+> secreto opaco que la app obtiene al verificar el código y usa para cambiar la contraseña. Códigos/tokens de un
+> solo uso, expiran a los 15 min. Migración `0010_sour_slayback.sql` (aditiva).
+
 ### Reglas de balance (atómicas, dentro de una misma transacción SQL)
 - `income`  → `account.current_balance += amount`
 - `expense` → `account.current_balance -= amount`
@@ -379,8 +402,10 @@ mobile/
 
 **Backend:** express ^4.21, @neondatabase/serverless ^0.10, drizzle-orm ^0.36, drizzle-zod ^0.5,
 zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1, **bcryptjs ^3** (hash de contraseñas),
-**jsonwebtoken ^9** (JWT de sesión) · dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6,
-@types/bcryptjs, @types/jsonwebtoken. Requiere **`JWT_SECRET`** en el `.env` raíz.
+**jsonwebtoken ^9** (JWT de sesión), **resend ^6** (envío de emails de recuperación de contraseña) ·
+dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6, @types/bcryptjs, @types/jsonwebtoken.
+Requiere **`JWT_SECRET`** en el `.env` raíz; **`RESEND_API_KEY`** es obligatoria solo para enviar emails
+de recuperación (si falta, esos endpoints responden 503 con mensaje claro; el resto de la API funciona igual).
 > **Multi-moneda no añade dependencias:** las tasas se consultan con el `fetch` nativo de Node 22 (Frankfurter /
 > open.er-api.com). En mobile la persistencia de la moneda principal usa el middleware `persist` de Zustand sobre
 > `@react-native-async-storage/async-storage` (ya instalado); no se agregó ningún paquete.

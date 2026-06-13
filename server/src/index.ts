@@ -12,6 +12,7 @@ import { splitsRouter } from './routes/splits.js';
 import { insightsRouter } from './routes/insights.js';
 import { ratesRouter } from './routes/rates.js';
 import { authRouter } from './routes/auth.js';
+import { passwordResetRouter } from './routes/password-reset.js';
 import { authenticate } from './middleware/auth.js';
 import {
   invalidateOnMutation,
@@ -40,6 +41,8 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // Autenticación (público).
 app.use('/api/auth', authRouter);
+// Recuperación de contraseña por email (público): forgot/verify/reset.
+app.use('/api/auth', passwordResetRouter);
 
 // Todas las demás rutas requieren un JWT válido (inyecta req.user).
 // `invalidateOnMutation` sube el sello de versión del usuario tras cada mutación

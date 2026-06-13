@@ -29,6 +29,31 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// ────────────────────────── password_resets ─────────────────────────
+// Recuperación de contraseña por email (código de 6 dígitos para móvil).
+// El `code` se muestra al usuario en el email; el `token` (64 chars) es el
+// secreto opaco que la app obtiene tras verificar el código y usa para cambiar
+// la contraseña. Códigos/tokens de un solo uso, expiran a los 15 minutos.
+export const passwordResets = pgTable('password_resets', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
+  code: varchar('code', { length: 6 }).notNull(),
+  token: varchar('token', { length: 64 }).notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  used: boolean('used').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  // El UNIQUE de `token` ya cubre el lookup por token (reset-password).
+  // Índice compuesto para verify-reset-code y el rate limit (códigos vivos del usuario).
+  userUsedExpiresIdx: index('password_resets_user_used_expires_idx').on(
+    t.userId,
+    t.used,
+    t.expiresAt,
+  ),
+}));
+
 // ───────────────────────────── accounts ─────────────────────────────
 export const accounts = pgTable('accounts', {
   id: serial('id').primaryKey(),
@@ -534,6 +559,8 @@ export const splitSettlementsRelations = relations(splitSettlements, ({ one }) =
 // ─────────────────────────────── types ──────────────────────────────
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type PasswordReset = typeof passwordResets.$inferSelect;
+export type NewPasswordReset = typeof passwordResets.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
 export type Category = typeof categories.$inferSelect;
