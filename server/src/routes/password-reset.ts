@@ -7,11 +7,11 @@ import { db } from '../db/connection.js';
 import { users, passwordResets } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { assertEmailConfigured, sendResetCodeEmail } from '../services/email.js';
+import { BCRYPT_ROUNDS } from '../utils/constants.js';
 
 // Router público (sin JWT): se monta bajo /api/auth junto al authRouter.
 export const passwordResetRouter = Router();
 
-const SALT_ROUNDS = 12;
 const CODE_TTL_MS = 15 * 60 * 1000; // 15 minutos
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hora
 const RATE_LIMIT_MAX = 3; // máx. solicitudes por email por hora
@@ -139,7 +139,7 @@ passwordResetRouter.post(
 
     if (!reset) throw new ApiError(400, 'Token inválido o expirado');
 
-    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
     // Cambio de contraseña + consumo del token de forma atómica (db.batch).
     await db.batch([

@@ -8,10 +8,9 @@ import { provisionUserDefaults } from '../db/defaults.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { authenticate, signToken, userId } from '../middleware/auth.js';
 import { loginLimiter, registerLimiter } from '../middleware/rateLimiter.js';
+import { BCRYPT_ROUNDS } from '../utils/constants.js';
 
 export const authRouter = Router();
-
-const SALT_ROUNDS = 12;
 
 /** Datos públicos del usuario (nunca el hash de la contraseña). */
 function publicUser(u: User) {
@@ -55,7 +54,7 @@ authRouter.post(
     const [existing] = await db.select().from(users).where(eq(users.email, data.email));
     if (existing) throw new ApiError(409, 'Ya existe una cuenta con ese correo');
 
-    const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
+    const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
     // El check previo es best-effort; la fuente de verdad es el UNIQUE de users.email.
     // Mapeamos la violación (SQLSTATE 23505) a 409 para cubrir el registro concurrente.
     let user: User;
@@ -125,7 +124,7 @@ authRouter.put(
         ? await bcrypt.compare(data.currentPassword, user.passwordHash)
         : false;
       if (!ok) throw new ApiError(401, 'La contraseña actual es incorrecta');
-      updates.passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
+      updates.passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
     }
 
     const [updated] = await db

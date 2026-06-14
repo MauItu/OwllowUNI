@@ -7,6 +7,7 @@ import { transactions, accounts, categories, tags, transactionTags, type Transac
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
+import { PAGINATION_DEFAULT_LIMIT, PAGINATION_MAX_LIMIT, IMPORT_BATCH_SIZE } from '../utils/constants.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 
 export const transactionsRouter = Router();
@@ -188,7 +189,7 @@ transactionsRouter.get(
       to_date,
       search,
       page = '1',
-      limit = '30',
+      limit = String(PAGINATION_DEFAULT_LIMIT),
     } = req.query as Record<string, string>;
 
     const conditions: SQL[] = [eq(transactions.userId, userId(req))];
@@ -205,7 +206,7 @@ transactionsRouter.get(
 
     const where = conditions.length ? and(...conditions) : undefined;
     const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.min(100, Math.max(1, Number(limit)));
+    const limitNum = Math.min(PAGINATION_MAX_LIMIT, Math.max(1, Number(limit)));
     const offset = (pageNum - 1) * limitNum;
 
     const toAccounts = alias(accounts, 'to_accounts');
@@ -390,7 +391,7 @@ transactionsRouter.post(
     // batch es atómico (neon-http): si un flush falla, ESE lote completo se revierte,
     // así que NO se suma a `imported` y se registra un error con su rango de filas.
     // Resultado parcial veraz: lo que sí entró se cuenta, lo que falló se reporta.
-    const BATCH_ROWS = 50;
+    const BATCH_ROWS = IMPORT_BATCH_SIZE;
     let pending: unknown[] = [];
     let batchRows: number[] = []; // nº de fila (1-based) de cada fila válida del lote actual
     const flush = async () => {

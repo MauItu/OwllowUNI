@@ -104,7 +104,8 @@ wallet/                         ← raíz del repo
   - `cacheResponse(ttl)` cachea la respuesta JSON de GET caros por `uid+url+querystring+versión`:
     **`/api/stats/*`** (5 min), **`/api/insights`** (10 min), **`/api/accounts/summary`** (5 min) y los
     summaries de **`/api/debts/summary`**, **`/api/savings/summary`** y **`/api/splits/summary`** (5 min,
-    `SUMMARY_TTL_MS`). `refresh=true` siempre hace bypass; solo cachea respuestas 2xx.
+    `SUMMARY_TTL_MS`). `refresh=true` siempre hace bypass; solo cachea respuestas 2xx. Los TTLs en ms
+    (`*_TTL_MS`) se derivan de los valores canónicos en segundos de `utils/constants.ts` (`CACHE_TTL_*`).
   - `invalidateOnMutation` sube `dataVersion[uid]` tras CADA mutación 2xx del usuario (en `finish`,
     post-commit) → invalida toda su caché. Montado en todos los routers de datos.
 - **CORS:** `CORS_ORIGINS` (lista separada por comas) restringe orígenes; sin ella, se permite
@@ -170,7 +171,8 @@ server/
 │   └── utils/
 │       ├── safeCompensate.ts ← rollback de saga tolerante a fallos (log estructurado, no pisa el error original)
 │       ├── validateEnv.ts    ← validación de env con Zod al arrancar (import PRIMERO en index.ts) + JWT_EXPIRATION
-│       └── parseId.ts        ← parseId(req.params.*) → entero > 0 o ApiError(400)
+│       ├── parseId.ts        ← parseId(req.params.*) → entero > 0 o ApiError(400)
+│       └── constants.ts      ← números mágicos centralizados (BCRYPT_ROUNDS, PAGINATION_*, IMPORT_BATCH_SIZE, CACHE_TTL_*)
 └── drizzle/                    ← migraciones generadas por drizzle-kit
 ```
 
@@ -919,3 +921,35 @@ pnpm start          # Expo dev server (SDK 54 / Expo Go)
 pnpm typecheck      # tsc --noEmit
 pnpm build:apk      # eas build -p android --profile preview
 ```
+
+---
+
+## DEUDA TÉCNICA
+
+> Inventario de pendientes conocidos. No bloquean nada hoy; documentados para un refactor futuro.
+
+### TODOs en código (`grep -rn TODO`)
+- `server/src/routes/debts.ts:169` — `// TODO: paginar con load-more en mobile` (cap `.limit(200)` en `payments` de `GET /api/debts/:id`).
+- `server/src/routes/savings.ts:111` — `// TODO: paginar con load-more en mobile` (cap `.limit(200)` en `contributions` de `GET /api/savings/:id`).
+- `server/src/routes/splits.ts:524` — `// TODO: paginar con load-more en mobile` (cap `.limit(200)` en `expenses` de `GET /api/splits/:groupId/expenses`).
+- `server/src/routes/splits.ts:856` — `// TODO: paginar con load-more en mobile` (cap `.limit(200)` en `settlements` de `GET /api/splits/:groupId/settlements`).
+
+> Todos comparten la misma causa: las colecciones hijas tienen un cap defensivo de 200 filas (sin
+> paginación en el contrato) hasta que el mobile implemente "cargar más". No hay FIXME ni HACK en el código.
+
+### Tipos duplicados server ↔ mobile (sincronización **manual**)
+El backend deriva sus tipos del esquema Drizzle (`server/src/db/schema.ts`, `typeof tabla.$inferSelect`) y el
+mobile los reescribe a mano en `mobile/src/types/index.ts`. **No comparten paquete a propósito** (no hay
+workspace linking en el monorepo; un paquete compartido complicaría el build de Expo). Hay que mantenerlos
+sincronizados a mano. Entidades duplicadas: `User`, `Account`, `Category`, `Transaction`, `TransactionTag`,
+`Template`, `Tag`, `SavingsGoal`, `SavingsContribution`, `Debt`, `DebtPayment`, `SplitGroup`, `SplitMember`,
+`SplitExpense`, `SplitShare`, `SplitSettlement`, más los enums `AccountType`/`TxType`/`CategoryType`/
+`DebtType`/`ContributionType`. Diferencia esperada: en el server los `decimal` son `string` y las fechas
+`Date | string`; el mobile los modela como `string`. Refactor futuro posible: generar los tipos del mobile
+desde el esquema (p. ej. con un script) en vez de a mano. **No mover archivos por ahora.**
+
+### Exports sin uso
+- `server/src/middleware/auth.ts → requireAdmin`: middleware de guard admin definido pero **sin rutas admin
+  montadas** todavía. Se conserva como API intencional del módulo de auth (el flag `isAdmin` ya viaja en el
+  JWT y `mauiturriza@gmail.com` es admin); es el gancho para futuras rutas admin. (El wrapper muerto
+  `getRate` de `exchangeRates.ts` sí se eliminó: era redundante con `getRates`.)

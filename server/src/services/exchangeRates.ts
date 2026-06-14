@@ -177,12 +177,6 @@ export async function getRates(
   return results;
 }
 
-/** Tasa puntual base→target (1 si son iguales). */
-export async function getRate(uid: number, base: string, target: string): Promise<RateResult> {
-  const [r] = await getRates(uid, base, [target]);
-  return r;
-}
-
 export interface ConversionMap {
   /** Factor para convertir un monto EN `currency` A `displayCurrency`. */
   map: Map<string, number>;
