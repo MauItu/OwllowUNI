@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { LockScreen } from './src/screens/LockScreen';
+import { SetupPinScreen } from './src/screens/SetupPinScreen';
 import { Sidebar } from './src/components/Sidebar';
 import { createToastConfig } from './src/components/toastConfig';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
@@ -55,7 +56,7 @@ const eb = StyleSheet.create({
 function ThemedApp() {
   const { theme, isDark } = useTheme();
   const { ready, locked, unlock } = useAppLock();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, needsPinSetup, completePinSetup } = useAuth();
   const toastConfig = useMemo(() => createToastConfig(theme), [theme]);
 
   // Programa el recordatorio diario y reprograma alertas de deudas/metas SOLO
@@ -75,6 +76,9 @@ function ThemedApp() {
         <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.background }]} />
       )}
       {isAuthenticated && ready && locked && <LockScreen onUnlock={unlock} />}
+      {/* Onboarding obligatorio de PIN tras el primer login/registro (overlay
+          one-way: sin back ni gesto de swipe). Tiene prioridad sobre el lock. */}
+      {isAuthenticated && needsPinSetup && <SetupPinScreen onDone={completePinSetup} />}
       <Toast config={toastConfig} />
     </>
   );

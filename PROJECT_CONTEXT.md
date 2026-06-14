@@ -202,7 +202,7 @@ mobile/
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense,
-    │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen
+    │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen, SetupPin
     │                              (More.tsx queda huérfano: el Sidebar lo reemplaza)
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
@@ -924,6 +924,18 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
   `<AppLockProvider>` y renderiza `<LockScreen>` como **overlay absoluto sobre el navigator** (no lo desmonta, así no
   se pierde el estado de navegación); mientras `!ready` tapa el contenido con un `View` del color de fondo.
   `SecurityScreen` llama `refresh()` tras activar/desactivar (al activar NO bloquea en sesión).
+- **PIN obligatorio en el primer login/registro (`SetupPinScreen`, onboarding):** tras un login/registro exitoso,
+  `useAuth.applySession` comprueba `isPinEnabled()`; si NO hay PIN, expone `needsPinSetup=true` y `App.tsx` renderiza
+  `<SetupPinScreen>` como **overlay raíz one-way** (igual que `LockScreen`: sin navegación → sin botón de back ni gesto
+  de swipe; tiene prioridad sobre el `LockScreen`). Es un flujo en pasos dentro de UNA sola pantalla:
+  (1) "Configura tu PIN" (4 dígitos, `PinKeypad`+`PinDots`) → (2) "Confirma tu PIN" (si no coincide: mensaje "Los PINs
+  no coinciden" + **shake** con `Animated` y vuelve al paso 1; si coincide: `setPin()` y `useAppLock.refresh()`) →
+  (3) **biometría opcional** (solo si `isBiometricAvailable()`: "Activar" prueba `authenticateBiometric()` y si pasa
+  `enableBiometric(true)`, si falla toast "Puedes activarlo después en Seguridad"; o "Ahora no") → (4) "¡Listo! Tu app
+  está protegida" con ícono `shield-check` y botón "Continuar" → `completePinSetup()` revela el Home. **NO bloquea en
+  esta sesión** (el usuario recién se autenticó; el auto-lock aplica la próxima vez que vuelva de background > 60s).
+  La detección es SOLO en login/registro (`applySession`), **NO** al restaurar sesión en cold-start. Si el usuario
+  luego **desactiva** el PIN en `SecurityScreen`, es su decisión y **no se vuelve a forzar** el setup.
 - ⚠️ **Expo Go vs APK:** el **PIN** funciona en Expo Go. La **biometría** depende del hardware/enrolamiento; en
   emuladores o Expo Go puede no estar disponible (la UI lo refleja y cae a PIN). **Se prueba de verdad en el APK /
   development build** (`pnpm build:apk`).

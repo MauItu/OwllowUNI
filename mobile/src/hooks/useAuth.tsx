@@ -3,16 +3,25 @@ import { authApi, setAuthToken, setUnauthorizedHandler } from '../api/client';
 import { saveToken, getToken, removeToken } from '../services/auth';
 import { loadSettingsForUser } from '../stores/settingsStore';
 import { useAppStore } from '../stores/appStore';
+import { isPinEnabled } from '../services/security';
 import type { User } from '../types';
 
 interface AuthValue {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /**
+   * true cuando el usuario acaba de hacer login/registro y aún NO tiene PIN:
+   * dispara el onboarding obligatorio de PIN (SetupPinScreen) antes del Home.
+   * Solo se activa en login/registro, NO al restaurar sesión en cold-start.
+   */
+  needsPinSetup: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  /** Marca el onboarding de PIN como completado (revela el Home). */
+  completePinSetup: () => void;
 }
 
 const Ctx = createContext<AuthValue | null>(null);
@@ -20,12 +29,19 @@ const Ctx = createContext<AuthValue | null>(null);
 function useProvideAuth(): AuthValue {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [needsPinSetup, setNeedsPinSetup] = useState(false);
 
-  /** Aplica una sesión: cachea el token y carga las preferencias del usuario. */
+  /**
+   * Aplica una sesión nueva (login/registro): cachea el token, carga las
+   * preferencias del usuario y, si todavía no hay PIN configurado, dispara el
+   * onboarding obligatorio de PIN. NO se usa al restaurar sesión en cold-start.
+   */
   const applySession = useCallback(async (token: string, u: User) => {
     setAuthToken(token);
     await saveToken(token);
     await loadSettingsForUser(u.id);
+    const hasPin = await isPinEnabled();
+    setNeedsPinSetup(!hasPin);
     setUser(u);
   }, []);
 
@@ -34,6 +50,7 @@ function useProvideAuth(): AuthValue {
     setAuthToken(null);
     await removeToken();
     setUser(null);
+    setNeedsPinSetup(false);
     // Limpia el estado en memoria de la app (filtros, plantilla pendiente) y
     // fuerza un refresh para que las pantallas no muestren datos del anterior.
     const appStore = useAppStore.getState();
@@ -62,6 +79,10 @@ function useProvideAuth(): AuthValue {
   const logout = useCallback(async () => {
     await clearSession();
   }, [clearSession]);
+
+  const completePinSetup = useCallback(() => {
+    setNeedsPinSetup(false);
+  }, []);
 
   const refreshUser = useCallback(async () => {
     try {
@@ -113,10 +134,12 @@ function useProvideAuth(): AuthValue {
     user,
     isLoading,
     isAuthenticated: !!user,
+    needsPinSetup,
     login,
     register,
     logout,
     refreshUser,
+    completePinSetup,
   };
 }
 
