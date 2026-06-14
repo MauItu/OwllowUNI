@@ -4,12 +4,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useIsFocused, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader, EmptyState, ErrorState, Loading, SectionTitle, PrimaryButton } from '../components/common';
+import { Screen, ScreenHeader, EmptyState, ErrorState, Loading, SectionTitle, PrimaryButton, SelectRow } from '../components/common';
 import { BottomSheet } from '../components/BottomSheet';
+import { CalculatorSheet } from '../components/CalculatorSheet';
 import { AccountChips } from '../components/AccountChips';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { splitsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -26,6 +28,7 @@ export function SplitGroupDetailScreen() {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
+  const mainCurrency = useSettingsStore((s) => s.mainCurrency);
   const { accounts } = useAccounts();
 
   const [group, setGroup] = useState<SplitGroup | null>(null);
@@ -36,6 +39,8 @@ export function SplitGroupDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [settling, setSettling] = useState<SplitTransfer | null>(null);
   const [settleAccountId, setSettleAccountId] = useState<number | null>(null);
+  const [settleAmount, setSettleAmount] = useState(0);
+  const [showSettleCalc, setShowSettleCalc] = useState(false);
   const [settleBusy, setSettleBusy] = useState(false);
 
   const load = useCallback(
@@ -80,20 +85,45 @@ export function SplitGroupDetailScreen() {
         ? { text: `Debes ${formatCurrency(-myBalance)}`, color: theme.colors.expense }
         : { text: 'Estás a mano', color: theme.colors.textMuted };
 
+  const openSettle = (t: SplitTransfer) => {
+    setSettleAccountId(null);
+    setSettleAmount(t.amount); // pre-llenado con el total adeudado
+    setSettling(t);
+  };
+
+  const closeSettle = () => {
+    setSettling(null);
+    setSettleAccountId(null);
+    setSettleAmount(0);
+  };
+
   const settle = async () => {
     if (!settling) return;
+    if (settleAmount <= 0) {
+      showError('El monto debe ser mayor a 0');
+      return;
+    }
+    if (settleAmount > settling.amount + 0.01) {
+      showError(`El monto no puede superar lo adeudado (${formatCurrency(settling.amount, mainCurrency)})`);
+      return;
+    }
     try {
       setSettleBusy(true);
       const meInvolved = settling.fromMemberId === me?.id || settling.toMemberId === me?.id;
-      await splitsApi.settle(groupId, {
+      const res = await splitsApi.settle(groupId, {
         fromMemberId: settling.fromMemberId,
         toMemberId: settling.toMemberId,
-        amount: settling.amount,
+        amount: settleAmount,
         accountId: meInvolved ? settleAccountId : null,
       });
-      showSuccess('Deuda liquidada');
-      setSettling(null);
-      setSettleAccountId(null);
+      if (res.remaining > 0.009) {
+        showSuccess(
+          `Liquidado ${formatCurrency(res.settled, mainCurrency)}. Pendiente: ${formatCurrency(res.remaining, mainCurrency)}`,
+        );
+      } else {
+        showSuccess('Deuda liquidada completamente');
+      }
+      closeSettle();
       triggerRefresh();
       load(true);
     } catch (err) {
@@ -183,7 +213,7 @@ export function SplitGroupDetailScreen() {
                             {formatCurrency(t.amount)}
                           </Text>
                         </View>
-                        <Pressable style={styles.settleBtn} onPress={() => { setSettleAccountId(null); setSettling(t); }}>
+                        <Pressable style={styles.settleBtn} onPress={() => openSettle(t)}>
                           <Icon name="hand-coins" size={15} color="#FFFFFF" />
                           <Text style={styles.settleBtnText}>Liquidar</Text>
                         </Pressable>
@@ -225,25 +255,34 @@ export function SplitGroupDetailScreen() {
             <Icon name="plus" size={26} color="#FFFFFF" strokeWidth={2.6} />
           </Pressable>
 
-          {/* Confirmación de liquidación */}
-          <BottomSheet
-            visible={settling != null}
-            title="Liquidar deuda"
-            onClose={() => {
-              setSettling(null);
-              setSettleAccountId(null);
-            }}
-          >
+          {/* Liquidación (total o parcial) */}
+          <BottomSheet visible={settling != null} title="Liquidar deuda" onClose={closeSettle}>
             {settling && (
               <View style={{ gap: theme.spacing.md }}>
                 <Text style={styles.settleConfirmText}>
-                  {settling.fromMemberId === me?.id ? 'Tú' : memberName(settling.fromMemberId)} le paga{' '}
-                  <Text style={{ fontWeight: theme.fontWeight.bold, color: theme.colors.text }}>
-                    {formatCurrency(settling.amount)}
-                  </Text>{' '}
-                  a {settling.toMemberId === me?.id ? 'ti' : memberName(settling.toMemberId)}. ¿Confirmas que esta
-                  deuda quedó saldada?
+                  {settling.fromMemberId === me?.id ? 'Tú' : memberName(settling.fromMemberId)} le paga a{' '}
+                  {settling.toMemberId === me?.id ? 'ti' : memberName(settling.toMemberId)}.
                 </Text>
+
+                <SelectRow
+                  label="Monto a liquidar"
+                  value={settleAmount > 0 ? formatCurrency(settleAmount, mainCurrency) : undefined}
+                  placeholder="Toca para ingresar"
+                  icon="calculator"
+                  onPress={() => setShowSettleCalc(true)}
+                />
+                <Text style={styles.settleHint}>Total adeudado: {formatCurrency(settling.amount, mainCurrency)}</Text>
+
+                {settleAmount > 0 && settleAmount < settling.amount - 0.01 && (
+                  <View style={styles.partialNote}>
+                    <Icon name="info" size={15} color={theme.colors.secondary} />
+                    <Text style={styles.partialNoteText}>
+                      Liquidación parcial: quedarán {formatCurrency(settling.amount - settleAmount, mainCurrency)}{' '}
+                      pendientes.
+                    </Text>
+                  </View>
+                )}
+
                 {(settling.fromMemberId === me?.id || settling.toMemberId === me?.id) && (
                   <View style={{ gap: theme.spacing.xs }}>
                     <Text style={styles.settleAccountLabel}>
@@ -264,6 +303,19 @@ export function SplitGroupDetailScreen() {
               </View>
             )}
           </BottomSheet>
+
+          <CalculatorSheet
+            visible={showSettleCalc}
+            title="Monto a liquidar"
+            type="expense"
+            initialValue={settleAmount}
+            currency={mainCurrency}
+            onConfirm={(v) => {
+              setSettleAmount(v);
+              setShowSettleCalc(false);
+            }}
+            onClose={() => setShowSettleCalc(false)}
+          />
         </>
       ) : null}
     </Screen>
@@ -322,6 +374,16 @@ const createStyles = (theme: Theme) =>
     },
     settleBtnText: { color: '#FFFFFF', fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.bold },
     settleConfirmText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.md, lineHeight: 22 },
+    settleHint: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginTop: -theme.spacing.sm },
+    partialNote: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      backgroundColor: `${theme.colors.secondary}1A`,
+      borderRadius: theme.borderRadius.md,
+      padding: theme.spacing.sm + 2,
+    },
+    partialNoteText: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.sm },
     settleAccountLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
     expenseRow: {
       flexDirection: 'row',

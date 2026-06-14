@@ -517,6 +517,16 @@ export interface SettleInput {
   accountId?: number | null;
 }
 
+export interface SettleResult {
+  success: boolean;
+  /** Monto efectivamente liquidado. */
+  settled: number;
+  /** Lo que queda pendiente de la deuda tras esta liquidación. */
+  remaining: number;
+  settledShares: number;
+  totalShares: number;
+}
+
 export interface SplitsSummary {
   totalOwedToMe: number;
   totalIOwe: number;

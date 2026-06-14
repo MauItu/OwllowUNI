@@ -692,6 +692,23 @@ splitsRouter.post(
       throw new ApiError(400, 'Miembros inválidos para liquidar');
     }
 
+    // Total adeudado de from→to = la transferencia SIMPLIFICADA entre ambos (lo
+    // mismo que ve el mobile en /balances). Se usa para validar parcial vs total
+    // y para informar cuánto queda. NO es la suma de shares directos: cuando la
+    // deuda fue redirigida por la simplificación puede no haber shares directos.
+    const { balances } = await computeBalances(groupId);
+    const transfer = simplifyTransfers(balances).find(
+      (t) => t.fromMemberId === from.id && t.toMemberId === to.id,
+    );
+    const totalDebt = transfer ? transfer.amount : 0;
+    if (totalDebt <= 0.009) {
+      throw new ApiError(400, 'No hay deuda pendiente entre estos miembros');
+    }
+    // amount > 0 ya lo garantiza el schema; aquí acotamos por arriba.
+    if (data.amount > totalDebt + 0.01) {
+      throw new ApiError(400, 'El monto supera la deuda total');
+    }
+
     const pending = await db
       .select({
         id: splitShares.id,
@@ -710,6 +727,13 @@ splitsRouter.post(
       )
       .orderBy(asc(splitExpenses.date), asc(splitShares.id));
 
+    const totalShares = pending.length;
+    // Liquidación PARCIAL o TOTAL según `amount`:
+    //  - se marcan shares completos (de más antiguos a más nuevos) que quepan
+    //    dentro de `amount` (los shares son atómicos: o se liquidan completos o no);
+    //  - el remanente (amount − suma de shares completos liquidados) se registra
+    //    abajo como gasto "Liquidación" (contra-gasto), de modo que computeBalances
+    //    —que se basa en shares no liquidados— refleje EXACTO lo que queda.
     let remaining = data.amount;
     const toSettle: number[] = [];
     for (const s of pending) {
@@ -837,7 +861,15 @@ splitsRouter.post(
       throw err;
     }
 
-    res.json({ success: true, settledShares: toSettle.length });
+    const settled = Math.round(data.amount * 100) / 100;
+    const remainingDebt = Math.round((totalDebt - data.amount) * 100) / 100;
+    res.json({
+      success: true,
+      settled,
+      remaining: Math.max(0, remainingDebt),
+      settledShares: toSettle.length,
+      totalShares,
+    });
   }),
 );
 

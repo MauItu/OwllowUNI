@@ -42,6 +42,7 @@ import type {
   SplitExpenseInput,
   SplitBalances,
   SettleInput,
+  SettleResult,
   SplitSettlement,
   SplitsSummary,
   Paginated,
@@ -289,7 +290,7 @@ export const splitsApi = {
   balances: (groupId: number) =>
     api.get<SplitBalances>(`/splits/${groupId}/balances`).then((r) => r.data),
   settle: (groupId: number, data: SettleInput) =>
-    api.post(`/splits/${groupId}/settle`, data).then((r) => r.data),
+    api.post<SettleResult>(`/splits/${groupId}/settle`, data).then((r) => r.data),
   settlements: (groupId: number) =>
     api.get<SplitSettlement[]>(`/splits/${groupId}/settlements`).then((r) => r.data),
   summary: () => api.get<SplitsSummary>('/splits/summary').then((r) => r.data),
