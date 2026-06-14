@@ -61,8 +61,24 @@ wallet/                         ← raíz del repo
       atómico, actualiza `users.password_hash` y marca el reset `used=true` (token de un solo uso). 400 si el
       token es inválido/expirado/usado.
 - **Middleware `server/src/middleware/auth.ts`:** `authenticate` valida el Bearer e inyecta
-  `req.user = { id, email, isAdmin }`; `userId(req)` y `requireAdmin`. Token expira en **30d**.
+  `req.user = { id, email, isAdmin }`; `userId(req)` y `requireAdmin`. La expiración del token sale de
+  `JWT_EXPIRATION` (default **30d**, configurable por env), centralizada en `utils/validateEnv.ts`.
   `JWT_SECRET` es **obligatorio** en el `.env` raíz (el server no arranca sin él).
+- **Hardening de producción (server):**
+  - **Rate limiting (`middleware/rateLimiter.ts`, `express-rate-limit`):** por IP, montado ANTES del
+    handler en `auth.ts`. `POST /api/auth/login` = 5/15 min; `POST /api/auth/register` = 3/hora; 429 con
+    `{ error: 'Demasiados intentos. Intenta de nuevo en unos minutos.' }`. En dev (`NODE_ENV !== 'production'`)
+    los límites son **10x** más permisivos. (El throttle de `forgot-password` sigue siendo 3/hora por email
+    en DB, aparte.) `index.ts` hace `app.set('trust proxy', 1)` para keying por IP real detrás del proxy de Render.
+  - **Helmet (`helmet()` en `index.ts`, ANTES de CORS):** headers de seguridad por defecto
+    (X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, Cross-Origin-*, quita X-Powered-By).
+  - **Validación de entorno al arrancar (`utils/validateEnv.ts`, Zod):** importado PRIMERO en `index.ts`.
+    Valida `DATABASE_URL` (url), `JWT_SECRET` (≥32 chars), `JWT_EXPIRATION` (default '30d'), `NODE_ENV`
+    (default 'development'), `PORT` (default 3000); `GMAIL_USER`/`GMAIL_APP_PASSWORD` opcionales (si faltan,
+    `console.warn` "Recuperación de contraseña deshabilitada: faltan GMAIL_*"). Si algo falla → `process.exit(1)`
+    con el detalle, NO arranca en estado roto.
+  - **Sanitización de ids (`utils/parseId.ts`):** TODAS las rutas usan `parseId(req.params.id|groupId)` en vez
+    de `Number(...)`. Exige entero > 0 (rechaza `NaN`, decimales, negativos y arrays de Express 5) → `ApiError(400, 'ID inválido')`.
 - **Mobile:** `LoginScreen`/`RegisterScreen`, `hooks/useAuth.tsx`, `services/auth.ts` (JWT en
   **expo-secure-store**, nunca AsyncStorage). `api/client.ts` inyecta el Bearer y, ante 401, limpia
   el token y redirige al login. Paletas restringidas a admin (resto: `professional`). El stack de auth
@@ -148,9 +164,13 @@ server/
 │   ├── services/
 │   │   └── exchangeRates.ts    ← Frankfurter + open.er-api.com, cache 24h, stale, manuales
 │   ├── middleware/
-│   │   └── errorHandler.ts
+│   │   ├── errorHandler.ts
+│   │   ├── auth.ts            ← authenticate/userId/requireAdmin + signToken (JWT)
+│   │   └── rateLimiter.ts    ← express-rate-limit: loginLimiter (5/15m), registerLimiter (3/h) por IP
 │   └── utils/
-│       └── safeCompensate.ts  ← rollback de saga tolerante a fallos (log estructurado, no pisa el error original)
+│       ├── safeCompensate.ts ← rollback de saga tolerante a fallos (log estructurado, no pisa el error original)
+│       ├── validateEnv.ts    ← validación de env con Zod al arrancar (import PRIMERO en index.ts) + JWT_EXPIRATION
+│       └── parseId.ts        ← parseId(req.params.*) → entero > 0 o ApiError(400)
 └── drizzle/                    ← migraciones generadas por drizzle-kit
 ```
 
@@ -468,7 +488,9 @@ mobile/
 
 **Backend:** express ^4.21, @neondatabase/serverless ^0.10, drizzle-orm ^0.36, drizzle-zod ^0.5,
 zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1, **bcryptjs ^3** (hash de contraseñas),
-**jsonwebtoken ^9** (JWT de sesión), **nodemailer ^8** (envío de emails de recuperación vía Gmail SMTP) ·
+**jsonwebtoken ^9** (JWT de sesión), **nodemailer ^8** (envío de emails de recuperación vía Gmail SMTP),
+**express-rate-limit ^8** (rate limiting por IP en `/api/auth/login` y `/register`),
+**helmet ^8** (headers HTTP de seguridad) · ambos traen sus propios tipos (sin `@types/*`) ·
 dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6, @types/bcryptjs, @types/jsonwebtoken, @types/nodemailer.
 Requiere **`JWT_SECRET`** en el `.env` raíz; **`GMAIL_USER`** y **`GMAIL_APP_PASSWORD`** son obligatorias solo
 para enviar emails de recuperación (si faltan, esos endpoints responden 503 con mensaje claro; el resto de la

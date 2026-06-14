@@ -1,4 +1,8 @@
+// Validación de entorno: PRIMERO de todo. Si falta/está mal, el proceso muere
+// con un mensaje claro antes de levantar nada (ver utils/validateEnv.ts).
+import './utils/validateEnv.js';
 import express from 'express';
+import helmet from 'helmet';
 import cors from 'cors';
 import { accountsRouter } from './routes/accounts.js';
 import { categoriesRouter } from './routes/categories.js';
@@ -24,6 +28,15 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+
+// Detrás del proxy de Render (1 hop): permite que `req.ip` (y por tanto el rate
+// limiting por IP) use el X-Forwarded-For real. Valor numérico, no `true`, para no
+// disparar la validación de "trust proxy permisivo" de express-rate-limit.
+app.set('trust proxy', 1);
+
+// Headers de seguridad (X-Content-Type-Options, X-Frame-Options, HSTS, etc.).
+// Va ANTES de CORS para que aplique a todas las respuestas.
+app.use(helmet());
 
 // CORS: si `CORS_ORIGINS` (lista separada por comas) está definida, se restringe
 // a esos orígenes; si no, se permite cualquiera (default de dev). Las apps nativas

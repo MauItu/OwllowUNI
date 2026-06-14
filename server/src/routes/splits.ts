@@ -16,6 +16,7 @@ import {
   type Transaction,
 } from '../db/schema.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
+import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
@@ -282,7 +283,7 @@ splitsRouter.get(
 splitsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const group = await getOwnedGroup(userId(req), id);
 
     const members = await db
@@ -341,7 +342,7 @@ splitsRouter.post(
 splitsRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = groupSchema.omit({ members: true }).partial().parse(req.body);
     const [row] = await db
       .update(splitGroups)
@@ -365,7 +366,7 @@ splitsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const uid = userId(req);
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     await getOwnedGroup(uid, id);
 
     // Transacciones generadas por gastos pagados por mí y por liquidaciones.
@@ -417,7 +418,7 @@ splitsRouter.delete(
 splitsRouter.post(
   '/:groupId/members',
   asyncHandler(async (req, res) => {
-    const groupId = Number(req.params.groupId);
+    const groupId = parseId(req.params.groupId);
     const data = memberSchema.parse(req.body);
 
     await getOwnedGroup(userId(req), groupId);
@@ -458,8 +459,8 @@ splitsRouter.post(
 splitsRouter.delete(
   '/:groupId/members/:id',
   asyncHandler(async (req, res) => {
-    const groupId = Number(req.params.groupId);
-    const id = Number(req.params.id);
+    const groupId = parseId(req.params.groupId);
+    const id = parseId(req.params.id);
 
     await getOwnedGroup(userId(req), groupId);
 
@@ -492,7 +493,7 @@ splitsRouter.delete(
 splitsRouter.get(
   '/:groupId/expenses',
   asyncHandler(async (req, res) => {
-    const groupId = Number(req.params.groupId);
+    const groupId = parseId(req.params.groupId);
     await getOwnedGroup(userId(req), groupId);
     const expenses = await db
       .select({
@@ -543,7 +544,7 @@ splitsRouter.post(
   '/:groupId/expenses',
   asyncHandler(async (req, res) => {
     const uid = userId(req);
-    const groupId = Number(req.params.groupId);
+    const groupId = parseId(req.params.groupId);
     const data = expenseSchema.parse(req.body);
 
     await getOwnedGroup(uid, groupId);
@@ -657,7 +658,7 @@ splitsRouter.post(
 splitsRouter.get(
   '/:groupId/balances',
   asyncHandler(async (req, res) => {
-    const groupId = Number(req.params.groupId);
+    const groupId = parseId(req.params.groupId);
     await getOwnedGroup(userId(req), groupId);
 
     const { members, balances } = await computeBalances(groupId);
@@ -680,7 +681,7 @@ splitsRouter.post(
   '/:groupId/settle',
   asyncHandler(async (req, res) => {
     const uid = userId(req);
-    const groupId = Number(req.params.groupId);
+    const groupId = parseId(req.params.groupId);
     const data = settleSchema.parse(req.body);
 
     await getOwnedGroup(uid, groupId);
@@ -844,7 +845,7 @@ splitsRouter.post(
 splitsRouter.get(
   '/:groupId/settlements',
   asyncHandler(async (req, res) => {
-    const groupId = Number(req.params.groupId);
+    const groupId = parseId(req.params.groupId);
     await getOwnedGroup(userId(req), groupId);
     const rows = await db
       .select()

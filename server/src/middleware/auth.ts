@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { config } from 'dotenv';
 import { resolve } from 'node:path';
 import { ApiError } from './errorHandler.js';
+import { JWT_EXPIRATION } from '../utils/validateEnv.js';
 
 // Asegura que el .env de la raíz esté cargado sin depender del orden de imports.
 config({ path: resolve(process.cwd(), '../.env') });
@@ -17,8 +18,6 @@ if (!JWT_SECRET) {
 }
 // A partir de aquí JWT_SECRET es string (TS lo estrecha tras el guard).
 const SECRET: string = JWT_SECRET;
-
-const TOKEN_EXPIRATION = '30d';
 
 export interface AuthUser {
   id: number;
@@ -36,9 +35,9 @@ declare global {
   }
 }
 
-/** Firma un JWT con los datos del usuario (expira en 30 días). */
+/** Firma un JWT con los datos del usuario (expira según `JWT_EXPIRATION`, default 30d). */
 export function signToken(user: AuthUser): string {
-  return jwt.sign(user, SECRET, { expiresIn: TOKEN_EXPIRATION });
+  return jwt.sign(user, SECRET, { expiresIn: JWT_EXPIRATION as jwt.SignOptions['expiresIn'] });
 }
 
 /**

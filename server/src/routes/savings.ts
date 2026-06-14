@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { savingsGoals, savingsContributions, accounts, type SavingsGoal } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
@@ -94,7 +95,7 @@ savingsRouter.get(
 savingsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const [goal] = await db
       .select()
       .from(savingsGoals)
@@ -140,7 +141,7 @@ savingsRouter.post(
 savingsRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = goalSchema.partial().parse(req.body);
 
     const [old] = await db
@@ -177,7 +178,7 @@ savingsRouter.put(
 savingsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const deleted = await db
       .delete(savingsGoals)
       .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))))
@@ -191,7 +192,7 @@ savingsRouter.delete(
 savingsRouter.post(
   '/:id/contribute',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = contributionSchema.parse(req.body);
 
     const [goal] = await db

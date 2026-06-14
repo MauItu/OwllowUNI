@@ -11,6 +11,7 @@ import {
   type Transaction,
 } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
@@ -141,7 +142,7 @@ debtsRouter.get(
 debtsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const [debt] = await db
       .select()
       .from(debts)
@@ -226,7 +227,7 @@ debtsRouter.post(
 debtsRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = debtSchema.partial().parse(req.body);
 
     const [old] = await db
@@ -279,7 +280,7 @@ debtsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const uid = userId(req);
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const [debt] = await db
       .select()
       .from(debts)
@@ -328,7 +329,7 @@ debtsRouter.post(
   '/:id/pay',
   asyncHandler(async (req, res) => {
     const uid = userId(req);
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = paymentSchema.parse(req.body);
 
     const [debt] = await db

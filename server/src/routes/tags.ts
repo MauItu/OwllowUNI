@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { tags, transactionTags } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 
 export const tagsRouter = Router();
@@ -67,7 +68,7 @@ tagsRouter.post(
 tagsRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = tagSchema.partial().parse(req.body);
 
     if (data.name) {
@@ -96,7 +97,7 @@ tagsRouter.put(
 tagsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const deleted = await db
       .delete(tags)
       .where(and(eq(tags.id, id), eq(tags.userId, userId(req))))

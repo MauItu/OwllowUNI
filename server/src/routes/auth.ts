@@ -7,6 +7,7 @@ import { users, type User } from '../db/schema.js';
 import { provisionUserDefaults } from '../db/defaults.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { authenticate, signToken, userId } from '../middleware/auth.js';
+import { loginLimiter, registerLimiter } from '../middleware/rateLimiter.js';
 
 export const authRouter = Router();
 
@@ -47,6 +48,7 @@ const profileSchema = z
 // POST /api/auth/register
 authRouter.post(
   '/register',
+  registerLimiter,
   asyncHandler(async (req, res) => {
     const data = registerSchema.parse(req.body);
 
@@ -78,6 +80,7 @@ authRouter.post(
 // POST /api/auth/login
 authRouter.post(
   '/login',
+  loginLimiter,
   asyncHandler(async (req, res) => {
     const data = loginSchema.parse(req.body);
 

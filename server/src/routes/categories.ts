@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { categories, type Category } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 
 export const categoriesRouter = Router();
@@ -89,7 +90,7 @@ categoriesRouter.post(
 categoriesRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = categorySchema.partial().parse(req.body);
     const [row] = await db
       .update(categories)
@@ -112,7 +113,7 @@ categoriesRouter.put(
 categoriesRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const deleted = await db
       .delete(categories)
       .where(and(eq(categories.id, id), eq(categories.userId, userId(req))))

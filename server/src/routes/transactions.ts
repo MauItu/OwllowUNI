@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { transactions, accounts, categories, tags, transactionTags, type Transaction } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 
@@ -499,7 +500,7 @@ transactionsRouter.post(
 transactionsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const [row] = await db
       .select()
       .from(transactions)
@@ -593,7 +594,7 @@ transactionsRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
     const uid = userId(req);
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = txSchema.parse(req.body);
 
     const [old] = await db
@@ -669,7 +670,7 @@ transactionsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const uid = userId(req);
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const [old] = await db
       .select()
       .from(transactions)

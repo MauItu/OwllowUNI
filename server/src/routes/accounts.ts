@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { accounts } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { getConversionMap } from '../services/exchangeRates.js';
 import { cacheResponse, ACCOUNTS_SUMMARY_TTL_MS } from '../services/cache.js';
@@ -78,7 +79,7 @@ accountsRouter.get(
 accountsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const [row] = await db
       .select()
       .from(accounts)
@@ -114,7 +115,7 @@ accountsRouter.post(
 accountsRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = accountSchema.partial().parse(req.body);
 
     const [existing] = await db
@@ -154,7 +155,7 @@ accountsRouter.put(
 accountsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const [row] = await db
       .update(accounts)
       .set({ isActive: false, updatedAt: new Date() })

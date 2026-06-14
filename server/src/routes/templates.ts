@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { templates, accounts, categories } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 
 export const templatesRouter = Router();
@@ -72,7 +73,7 @@ templatesRouter.post(
 templatesRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const data = templateSchema.partial().parse(req.body);
     const [row] = await db
       .update(templates)
@@ -95,7 +96,7 @@ templatesRouter.put(
 templatesRouter.post(
   '/:id/use',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const [row] = await db
       .update(templates)
       .set({ useCount: sql`${templates.useCount} + 1` })
@@ -110,7 +111,7 @@ templatesRouter.post(
 templatesRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parseId(req.params.id);
     const deleted = await db
       .delete(templates)
       .where(and(eq(templates.id, id), eq(templates.userId, userId(req))))
