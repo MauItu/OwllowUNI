@@ -224,6 +224,28 @@ export interface TagInput {
   icon?: string;
 }
 
+// ──────────────────── Estados de cuenta (tarjetas) ──────────────────
+export interface CreditCardStatement {
+  id: number;
+  accountId: number;
+  userId: number;
+  periodStart: string;
+  periodEnd: string;
+  paymentDueDate: string;
+  totalAmount: string;
+  paidAmount: string;
+  isPaid: boolean;
+  isOverdue: boolean;
+  debtId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PayStatementInput {
+  amount: number;
+  paymentAccountId: number;
+}
+
 export interface AccountInput {
   name: string;
   type: AccountType;

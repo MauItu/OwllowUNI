@@ -86,7 +86,11 @@ export function SearchScreen() {
                   <AccountCard
                     key={a.id}
                     account={a}
-                    onPress={() => navigation.navigate('Transactions', { accountId: a.id })}
+                    onPress={() =>
+                      a.type === 'credit_card'
+                        ? navigation.navigate('CreditCardDetail', { accountId: a.id })
+                        : navigation.navigate('Transactions', { accountId: a.id })
+                    }
                   />
                 ))}
               </Section>

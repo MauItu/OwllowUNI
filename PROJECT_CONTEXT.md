@@ -199,7 +199,7 @@ mobile/
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
     ├── stores/settingsStore.ts ← Zustand + persist/AsyncStorage (mainCurrency)
     ├── stores/sidebarStore.ts  ← Zustand (estado abierto/cerrado del Sidebar: isOpen/open/close/toggle)
-    ├── screens/                ← Home, Transactions, AddTransaction, Accounts, AddAccount,
+    ├── screens/                ← Home, Transactions, AddTransaction, Accounts, AddAccount, CreditCardDetail,
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Budgets, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense,
@@ -939,6 +939,29 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     `utilizationPercentage`, `billingCycleDay`, `paymentDueDay`, `allowOverdraft`, `nextBillingDate`,
     `nextPaymentDueDate`) y de alta/edición (`creditLimit`, `billingCycleDay`, `paymentDueDay`,
     `allowOverdraft`) que ya devuelve/acepta el backend (Prompt 7A).
+
+24. **CreditCardDetailScreen (UI mobile, Prompt 7B):** pantalla de detalle de una tarjeta de crédito,
+    registrada en el stack (`CreditCardDetail: { accountId }`). Al tocar un `AccountCard` con
+    `type==='credit_card'` (en `AccountsScreen` y en los resultados de `SearchScreen`) se navega aquí en
+    lugar de `AddAccount`/`Transactions`. Secciones:
+    - **Medidor de utilización**: arco semicircular dibujado a mano con `react-native-svg` (`Path` con `A`
+      de SVG, fondo `surfaceLight` + arco relleno con el color del tramo de `utilizationColor`, 0-180°),
+      porcentaje centrado debajo del arco. Debajo, grilla con `Límite`, `Usado`, `Disponible` (`creditLimit`/
+      `creditUsed`/`creditAvailable`), `Día de corte` y `Día de pago`. Botón "Editar límite" → navega a
+      `AddAccount { accountId }` (mismo formulario de edición de Prompt 7A).
+    - **"Estado de cuenta actual"**: trae el corte más reciente vía `accountsApi.statements(id, {limit:12})`
+      (orden `period_end desc`, el primero es el actual) y muestra periodo/total/pagado/pendiente. Si no hay
+      ningún corte generado, `EmptyState`. Si el corte no está pagado, botón "Pagar" abre un `BottomSheet`
+      con el monto pre-llenado (= pendiente, `TextField` numérico editable) y un `SelectRow` que abre
+      `AccountPicker` filtrado a cuentas no-tarjeta (`type !== 'credit_card'`) para elegir la cuenta de
+      origen; confirmar llama a `accountsApi.payStatement(id, statementId, {amount, paymentAccountId})`.
+    - **"Historial"**: los hasta 12 cortes devueltos, cada fila con periodo (`periodStart`–`periodEnd`),
+      monto total y badge de estado — `Pagado` (verde, `isPaid`), `Vencido` (rojo, `paymentDueDate < hoy` y
+      no pagado) o `Pendiente` (amarillo).
+    - **"Últimas compras"**: últimas 10 transacciones de la cuenta (`transactionsApi.list({account_id, limit:
+      10})`) renderizadas con `TransactionCard`; acción "Ver todas" → `Transactions { accountId }`.
+    Tipo nuevo `CreditCardStatement` y `PayStatementInput` en `types/index.ts` (espejo de la tabla
+    `credit_card_statements`); `accountsApi.statements`/`accountsApi.payStatement` nuevos en `api/client.ts`.
 
 ---
 

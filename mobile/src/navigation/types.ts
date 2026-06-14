@@ -10,6 +10,7 @@ export type RootStackParamList = {
       }
     | undefined;
   AddAccount: { accountId?: number } | undefined;
+  CreditCardDetail: { accountId: number };
   Categories: undefined;
   Templates: undefined;
   Tags: undefined;

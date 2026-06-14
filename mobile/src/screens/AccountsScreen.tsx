@@ -31,7 +31,10 @@ export function AccountsScreen() {
   // Handlers estables (no dependen del closure de cada item) → la AccountCard
   // memoizada no se re-renderiza cuando la lista se vuelve a renderizar.
   const openAccount = useCallback(
-    (a: Account) => navigation.navigate('AddAccount', { accountId: a.id }),
+    (a: Account) =>
+      a.type === 'credit_card'
+        ? navigation.navigate('CreditCardDetail', { accountId: a.id })
+        : navigation.navigate('AddAccount', { accountId: a.id }),
     [navigation],
   );
   const keyExtractor = useCallback((a: Account) => String(a.id), []);

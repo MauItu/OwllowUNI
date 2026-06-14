@@ -13,6 +13,8 @@ import type {
   VerifyResetCodeResponse,
   Account,
   AccountInput,
+  CreditCardStatement,
+  PayStatementInput,
   Category,
   CategoryInput,
   Transaction,
@@ -156,6 +158,13 @@ export const accountsApi = {
   summary: (displayCurrency: string, refresh = false) =>
     api
       .get<AccountsSummary>('/accounts/summary', { params: { displayCurrency, refresh: refresh || undefined } })
+      .then((r) => r.data),
+  // Estados de cuenta de una tarjeta de crédito (cortes), del más reciente al más antiguo.
+  statements: (id: number, params?: { limit?: number; offset?: number }) =>
+    api.get<CreditCardStatement[]>(`/accounts/${id}/statements`, { params }).then((r) => r.data),
+  payStatement: (id: number, statementId: number, data: PayStatementInput) =>
+    api
+      .post<{ success: boolean; statement: CreditCardStatement }>(`/accounts/${id}/statements/${statementId}/pay`, data)
       .then((r) => r.data),
 };
 

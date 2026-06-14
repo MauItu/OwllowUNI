@@ -17,6 +17,7 @@ import { TransactionsScreen } from '../screens/TransactionsScreen';
 import { AddTransactionScreen } from '../screens/AddTransactionScreen';
 import { AccountsScreen } from '../screens/AccountsScreen';
 import { AddAccountScreen } from '../screens/AddAccountScreen';
+import { CreditCardDetailScreen } from '../screens/CreditCardDetailScreen';
 import { CategoriesScreen } from '../screens/CategoriesScreen';
 import { TemplatesScreen } from '../screens/TemplatesScreen';
 import { TagsScreen } from '../screens/TagsScreen';
@@ -209,6 +210,7 @@ export function AppNavigator() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <RootStack.Screen name="AddAccount" component={AddAccountScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="CreditCardDetail" component={CreditCardDetailScreen} />
         <RootStack.Screen name="Categories" component={CategoriesScreen} />
         <RootStack.Screen name="Templates" component={TemplatesScreen} />
         <RootStack.Screen name="Tags" component={TagsScreen} />
