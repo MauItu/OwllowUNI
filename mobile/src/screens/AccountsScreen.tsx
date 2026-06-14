@@ -1,5 +1,5 @@
-import React, { useCallback } from 'react';
-import { View, Text, FlatList, RefreshControl, Pressable, StyleSheet } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { View, Text, SectionList, RefreshControl, Pressable, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { formatDistanceToNow } from 'date-fns';
@@ -41,6 +41,45 @@ export function AccountsScreen() {
   const renderItem = useCallback(
     ({ item }: { item: Account }) => <AccountCard account={item} onPress={openAccount} />,
     [openAccount],
+  );
+
+  // Dos secciones: cuentas de débito (bank/cash/digital_wallet) y tarjetas de crédito.
+  const debitAccounts = useMemo(() => accounts.filter((a) => a.type !== 'credit_card'), [accounts]);
+  const creditAccounts = useMemo(() => accounts.filter((a) => a.type === 'credit_card'), [accounts]);
+
+  const sections = useMemo(() => {
+    const result: { key: string; title: string; value: string; data: Account[] }[] = [];
+    if (debitAccounts.length > 0) {
+      const debitTotal =
+        summary?.debitTotal ?? debitAccounts.reduce((s, a) => s + parseFloat(a.currentBalance), 0);
+      result.push({
+        key: 'debit',
+        title: 'Cuentas de débito',
+        value: formatCurrency(debitTotal, mainCurrency),
+        data: debitAccounts,
+      });
+    }
+    if (creditAccounts.length > 0) {
+      result.push({
+        key: 'credit',
+        title: 'Tarjetas de crédito',
+        value: `Usado ${formatCurrency(summary?.creditUsed ?? 0, mainCurrency)} · Disponible ${formatCurrency(summary?.creditAvailable ?? 0, mainCurrency)}`,
+        data: creditAccounts,
+      });
+    }
+    return result;
+  }, [debitAccounts, creditAccounts, summary, mainCurrency]);
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: { title: string; value: string } }) => (
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionHeaderTitle}>{section.title}</Text>
+        <Text style={styles.sectionHeaderValue} numberOfLines={1}>
+          {section.value}
+        </Text>
+      </View>
+    ),
+    [styles],
   );
 
   // ¿Hay cuentas en una moneda distinta a la principal? → mostrar nota de tasas.
@@ -103,13 +142,15 @@ export function AccountsScreen() {
       {error && accounts.length === 0 ? (
         <ErrorState message={error} onRetry={() => refetch()} />
       ) : (
-        <FlatList
-          data={accounts}
+        <SectionList
+          sections={sections}
           keyExtractor={keyExtractor}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
           renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
+          stickySectionHeadersEnabled={false}
           removeClippedSubviews
           maxToRenderPerBatch={15}
           windowSize={10}
@@ -142,4 +183,27 @@ const createStyles = (theme: Theme) =>
   ratesNote: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: theme.spacing.sm },
   ratesNoteText: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.xs },
   list: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.sm,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+    backgroundColor: theme.colors.background,
+  },
+  sectionHeaderTitle: {
+    color: theme.colors.textSecondary,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  sectionHeaderValue: {
+    color: theme.colors.text,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
 });

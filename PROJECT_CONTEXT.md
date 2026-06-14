@@ -963,6 +963,18 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     Tipo nuevo `CreditCardStatement` y `PayStatementInput` en `types/index.ts` (espejo de la tabla
     `credit_card_statements`); `accountsApi.statements`/`accountsApi.payStatement` nuevos en `api/client.ts`.
 
+25. **AccountsScreen con secciones (débito/crédito) y alertas de crédito en Home:** `AccountsScreen` usa
+    `SectionList` (antes `FlatList`) con dos secciones: **"Cuentas de débito"** (`bank`/`cash`/
+    `digital_wallet`, header con el subtotal = `summary.debitTotal`) y **"Tarjetas de crédito"** (header con
+    "Usado X · Disponible Y" = `summary.creditUsed`/`creditAvailable`); secciones vacías no se muestran.
+    `HomeSummaryCard` ganó una prop opcional `extra?: React.ReactNode` (se renderiza debajo de la fila
+    principal; el resto de usos —ahorro/deudas/splits— quedan igual). En `HomeScreen`, si el usuario tiene
+    tarjetas de crédito, se agrega una card "Crédito disponible" justo debajo de `BalanceSummary` con
+    `acctSummary.creditAvailable`; si alguna tarjeta supera 80% de utilización, muestra hasta 2 alertas
+    "⚠️ [nombre] al X% del límite" (las de mayor % primero) vía `extra`. El tipo `AccountsSummary` en
+    `types/index.ts` se extendió con `debitTotal`, `creditTotal`, `creditLimit`, `creditUsed` y
+    `creditAvailable` (ya devueltos por `GET /api/accounts/summary`, faltaban en el tipo mobile).
+
 ---
 
 ## SEED DATA

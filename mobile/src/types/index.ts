@@ -610,7 +610,18 @@ export interface RatesResponse {
 
 export interface AccountsSummary {
   displayCurrency: string;
+  /** Patrimonio neto líquido = debitTotal + creditTotal. */
   total: number;
+  /** Suma de cuentas no-tarjeta (bank, cash, digital_wallet), convertida. */
+  debitTotal: number;
+  /** Suma de saldos de tarjetas de crédito (negativo), convertida. */
+  creditTotal: number;
+  /** Suma de límites de todas las tarjetas, convertida. */
+  creditLimit: number;
+  /** Suma de crédito usado de todas las tarjetas, convertida. */
+  creditUsed: number;
+  /** creditLimit − creditUsed, convertida. */
+  creditAvailable: number;
   byCurrency: { currency: string; total: number; converted: number }[];
   stale: boolean;
   ratesUpdatedAt: string | null;

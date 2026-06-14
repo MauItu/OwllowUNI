@@ -44,7 +44,7 @@ export function HomeScreen() {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<any>();
-  const { totalBalance, loading: loadingAccounts, refetch: refetchAccounts } = useAccounts();
+  const { accounts, totalBalance, loading: loadingAccounts, refetch: refetchAccounts } = useAccounts();
   const mainCurrency = useSettingsStore((s) => s.mainCurrency);
   const { summary: acctSummary, refetch: refetchAcctSummary } = useAccountsSummary(mainCurrency);
   const { from, to } = currentMonthRange();
@@ -86,6 +86,13 @@ export function HomeScreen() {
     .sort((a, b) => b.percentage - a.percentage)
     .slice(0, 2);
 
+  // Tarjetas de crédito: alertas de utilización por encima del 80%, las 2 más altas.
+  const creditCards = accounts.filter((a) => a.type === 'credit_card');
+  const creditAlerts = creditCards
+    .filter((a) => (a.utilizationPercentage ?? 0) > 80)
+    .sort((a, b) => (b.utilizationPercentage ?? 0) - (a.utilizationPercentage ?? 0))
+    .slice(0, 2);
+
   return (
     <Screen>
       <LinearGradient
@@ -122,6 +129,27 @@ export function HomeScreen() {
           expense={summary.expense}
           currency={mainCurrency}
         />
+
+        {creditCards.length > 0 && (
+          <HomeSummaryCard
+            icon="credit-card"
+            color={theme.colors.primary}
+            title="Crédito disponible"
+            value={formatCurrency(acctSummary?.creditAvailable ?? 0, mainCurrency)}
+            onPress={() => navigation.navigate('Accounts')}
+            extra={
+              creditAlerts.length > 0 ? (
+                <View style={styles.creditAlerts}>
+                  {creditAlerts.map((a) => (
+                    <Text key={a.id} style={styles.creditAlertText} numberOfLines={1}>
+                      ⚠️ {a.name} al {Math.round(a.utilizationPercentage ?? 0)}% del límite
+                    </Text>
+                  ))}
+                </View>
+              ) : undefined
+            }
+          />
+        )}
 
         {budgetAlerts.length > 0 && (
           <View style={styles.budgetAlerts}>
@@ -312,6 +340,8 @@ const createStyles = (theme: Theme) =>
     paddingVertical: theme.spacing.sm + 2,
   },
   budgetAlertText: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+  creditAlerts: { marginTop: theme.spacing.sm, gap: 2 },
+  creditAlertText: { color: '#F59E0B', fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.medium },
   carousel: { gap: theme.spacing.sm, paddingRight: theme.spacing.lg, paddingVertical: theme.spacing.xs },
   seeAll: { color: theme.colors.primaryLight, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
   // Botón de texto (no elevado), centrado, color primario, padding vertical 12px.
