@@ -7,6 +7,7 @@ import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, EmptyState, ErrorState } from '../components/common';
 import { TransactionCard } from '../components/TransactionCard';
 import { TransactionFiltersBar } from '../components/TransactionFiltersBar';
+import { AccountTypeFilter, type AccountTypeValue } from '../components/AccountTypeFilter';
 import { AccountPicker } from '../components/AccountPicker';
 import { DateRangePicker } from '../components/DateRangePicker';
 import { TagPicker } from '../components/TagPicker';
@@ -34,6 +35,7 @@ export function TransactionsScreen() {
 
   const [search, setSearch] = useState(route.params?.search ?? '');
   const [typeFilter, setTypeFilter] = useState<TxType | 'all'>('all');
+  const [accountType, setAccountType] = useState<AccountTypeValue>('all');
   const [accountId, setAccountId] = useState<number | undefined>(route.params?.accountId);
   const [tagId, setTagId] = useState<number | undefined>(undefined);
   const [range, setRange] = useState<{ from?: string; to?: string }>({});
@@ -55,19 +57,35 @@ export function TransactionsScreen() {
 
   const { transactions, loading, refreshing, loadingMore, error, refresh, loadMore, hasMore } = useTransactions(filters);
 
+  // El endpoint GET /api/transactions acepta un único account_id, no un tipo de
+  // cuenta, así que el filtro débito/crédito se aplica en cliente: agrupamos los
+  // ids de las tarjetas de crédito y filtramos por pertenencia (transfers incluidas
+  // por su cuenta origen, account_id).
+  const creditIds = useMemo(
+    () => new Set(accounts.filter((a) => a.type === 'credit_card').map((a) => a.id)),
+    [accounts],
+  );
+
+  const visibleTransactions = useMemo(() => {
+    if (accountType === 'all') return transactions;
+    return transactions.filter((t) =>
+      accountType === 'credit' ? creditIds.has(t.accountId) : !creditIds.has(t.accountId),
+    );
+  }, [transactions, accountType, creditIds]);
+
   const sections = useMemo(() => {
     const map = new Map<string, Transaction[]>();
-    for (const t of transactions) {
+    for (const t of visibleTransactions) {
       const label = groupLabel(t.date);
       if (!map.has(label)) map.set(label, []);
       map.get(label)!.push(t);
     }
     return Array.from(map.entries()).map(([title, data]) => ({ title, data }));
-  }, [transactions]);
+  }, [visibleTransactions]);
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
   const selectedTag = tags.find((t) => t.id === tagId);
-  const hasFilters = typeFilter !== 'all' || accountId != null || range.from != null || tagId != null;
+  const hasFilters = typeFilter !== 'all' || accountType !== 'all' || accountId != null || range.from != null || tagId != null;
 
   const remove = useCallback(
     async (t: Transaction) => {
@@ -147,12 +165,16 @@ export function TransactionsScreen() {
         hasFilters={hasFilters}
         onClearFilters={() => {
           setTypeFilter('all');
+          setAccountType('all');
           setAccountId(undefined);
           setTagId(undefined);
           setRange({});
         }}
         theme={theme}
       />
+
+      {/* Filtro por tipo de cuenta: Todas | Débito | Crédito (client-side) */}
+      <AccountTypeFilter value={accountType} onChange={setAccountType} />
 
       {error && transactions.length === 0 ? (
         <ErrorState message={error} onRetry={refresh} />

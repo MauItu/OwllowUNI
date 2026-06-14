@@ -209,13 +209,15 @@ mobile/
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
     │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, Sidebar, GlobalSearchBar,
-    │                              PinDots, PinKeypad, PinModal, ReceiptViewer, BottomSheet, DayPickerSheet, Icon, common
+    │                              AccountTypeFilter (filtro Todas/Débito/Crédito), PinDots, PinKeypad, PinModal,
+    │                              ReceiptViewer, BottomSheet, DayPickerSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks (NavigationContainer con navigationRef)
     ├── navigation/navigationRef.ts  ← createNavigationContainerRef: navegar desde fuera del árbol (Sidebar)
     ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
     ├── theme/ThemeContext.tsx  ← ThemeProvider, useTheme(), useThemedStyles()
     ├── utils/                  ← formatCurrency (Intl + fallback manual), currencies (catálogo curado),
     │                              formatDate, calculatorEngine, csv (parser propio + csvToImportRows),
+    │                              statsAggregation (recálculo client-side de stats por tipo de cuenta),
     │                              receiptStorage (fotos de recibos locales: comprimir/guardar/borrar/rutas)
     └── types/index.ts          ← tipos compartidos
 ```
@@ -761,15 +763,18 @@ la app dibuja bajo las barras del sistema. El fix:
   SplitGroupDetail) suman `insets.bottom` a su `bottom`.
 
 **Navegación (bottom tabs, `CustomTabBar`):** SOLO 3 tabs esenciales — Inicio (house) · Agregar
-(botón central circular elevado -24, fondo primary, borde del color background) · Cuentas (wallet).
-Tab activo en `primary`, inactivo en `textMuted`, labels `fontSize.xs`; cada slot es `flex:1` con
-contenido centrado (al ser 3, el FAB "Agregar" queda perfectamente centrado). El botón central abre
-el modal `AddTransaction` del root stack. `AccountsScreen` es ahora un **tab** (antes era screen del
-stack), sin botón "atrás" en su header.
-> **Transacciones, Estadísticas y "Más" ya NO son tabs.** `TransactionsScreen` y `StatsScreen` se
-> registran como **screens del root stack** (`Transactions: { accountId? }`, `Stats`). Transacciones se
-> abre desde Home ("Últimas transacciones → Ver todas"); Estadísticas, desde el Sidebar. El tab "Más"
-> se reemplazó por el **Sidebar** (drawer lateral custom, ver abajo).
+(botón central circular elevado -24, fondo primary, borde del color background) · Estadísticas
+(`bar-chart-3`). Tab activo en `primary`, inactivo en `textMuted`, labels `fontSize.xs`; cada slot es
+`flex:1` con contenido centrado (al ser 3, el FAB "Agregar" queda perfectamente centrado). El botón
+central abre el modal `AddTransaction` del root stack. `StatsScreen` es ahora un **tab** (carga diferida
+vía `lazyScreen`); su `ScreenHeader` no lleva botón "atrás".
+> **Cuentas ya NO es un tab: pasó al Sidebar.** `AccountsScreen` se registra como **screen del root
+> stack** (`Accounts: { selectAccountId? }`) y se abre desde el **Sidebar** ("Cuentas", sección Finanzas)
+> y desde los atajos del header de Home (icono wallet + card "Crédito disponible"); su header recuperó el
+> botón "atrás" (`onBack` → `goBack`).
+> **Transacciones y "Más" tampoco son tabs.** `TransactionsScreen` se registra como screen del root
+> stack (`Transactions: { accountId? }`) y se abre desde Home ("Últimas transacciones → Ver todas"). El
+> tab "Más" se reemplazó por el **Sidebar** (drawer lateral custom, ver abajo).
 
 > **Sidebar (drawer lateral custom — reemplaza el tab "Más").** `components/Sidebar.tsx`, **sin
 > `@react-navigation/drawer`** (evita deps nativas). Se abre con el **botón hamburguesa** (`Icon menu`)
@@ -782,15 +787,22 @@ stack), sin botón "atrás" en su header.
 > driver) + overlay semitransparente (`rgba(0,0,0,0.5)`, opacidad animada) que al tocarlo cierra; se
 > desmonta al terminar el cierre (no captura toques oculto). Ancho `min(80%, 320px)`. Contenido: perfil
 > (nombre + email de `useAuth`) arriba, luego las opciones que estaban en MoreScreen agrupadas con
-> separadores sutiles — **Finanzas** (Categorías, Plantillas, Etiquetas, Metas de ahorro, Deudas,
-> Gastos compartidos), **Análisis** (Estadísticas, Insights, Tasas de cambio, Importar/Exportar, Moneda
-> principal vía `CurrencyPicker`), **Ajustes** (Notificaciones, Seguridad, Apariencia) y **Cerrar
+> separadores sutiles — **Finanzas** (Cuentas, Categorías, Plantillas, Etiquetas, Metas de ahorro,
+> Deudas, Gastos compartidos), **Análisis** (Insights, Tasas de cambio, Importar/Exportar, Moneda
+> principal vía `CurrencyPicker` — Estadísticas ya NO está aquí: vive en la barra inferior),
+> **Ajustes** (Notificaciones, Seguridad, Apariencia) y **Cerrar
 > sesión** (con `Alert.alert` de confirmación). Cada opción cierra el drawer y navega. Colores del theme
 > (`surface` de fondo). `MoreScreen.tsx` queda huérfano (ya no se referencia).
 
 **HomeScreen:** header con **botón hamburguesa** (abre el Sidebar) a la izquierda, saludo por hora
-("Buenos días/tardes/noches") + fecha al centro y atajo a Cuentas (wallet) a la derecha; `BalanceSummary` con balance en
-`fontSize.hero` ($ en `accent`) y dos pills (ingresos/gastos); pull-to-refresh. **Sección "Últimas
+("Buenos días/tardes/noches") + fecha al centro y atajo a Cuentas (wallet) a la derecha; `BalanceSummary`
+con **saldo separado débito/crédito**: "Balance total · $Y" en pequeño (subtítulo, = `debitTotal+creditTotal`
+del endpoint `/api/accounts/summary`) y debajo dos líneas prominentes — **Débito** (verde, = `debitTotal`,
+cuentas bank/cash/digital_wallet) y **Crédito usado** (naranja, = `creditUsed` en positivo; solo si el usuario
+tiene tarjetas de crédito) — más las dos pills de ingresos/gastos del mes. Si no hay tarjetas, la línea de
+crédito se omite. (Si no se pasa `debitTotal`, el card cae al layout antiguo de saldo único en `fontSize.hero`.)
+Las **alertas ⚠️ de utilización >80%** siguen en la card "Crédito disponible" (`HomeSummaryCard`) debajo del
+balance. Pull-to-refresh. **Sección "Últimas
 transacciones"** (debajo del resumen/cards): renderiza las **últimas 5** del usuario
 (`GET /api/transactions?limit=5&page=1`) con `TransactionCard` y, **debajo de la lista**, un botón de
 texto centrado (color primary, padding vertical 12px) "Ver todas las transacciones →" que navega a
@@ -803,11 +815,24 @@ plantillas (cada una con botón "Usar"); enlace "Gestionar plantillas" lleva al 
 (cuenta / categoría o destino / fecha); input de descripción opcional; `Calculator` en la mitad inferior.
 
 **TransactionsScreen:** búsqueda pill (`borderRadius.full`), chips de filtro scrollables (tipo + cuenta +
-fecha + limpiar), lista agrupada por fecha, swipe-to-delete (fondo `expense`), FAB `primary` abajo-derecha.
+fecha + limpiar), **filtro por tipo de cuenta** (`AccountTypeFilter`: Todas | Débito | Crédito), lista
+agrupada por fecha, swipe-to-delete (fondo `expense`), FAB `primary` abajo-derecha.
 
-**StatsScreen:** tabs de período scrollables; cards de resumen Ingresos/Gastos + card de Balance neto;
-donut por categoría con leyenda y porcentajes; barras (top redondeado) ingresos vs gastos; línea de
-evolución (`accentLight`); top categorías con barra de progreso.
+**StatsScreen:** tabs de período scrollables; **filtro por tipo de cuenta** (`AccountTypeFilter`: Todas |
+Débito | Crédito); cards de resumen Ingresos/Gastos + card de Balance neto; donut por categoría con leyenda
+y porcentajes; barras (top redondeado) ingresos vs gastos; línea de evolución (`accentLight`); top categorías
+con barra de progreso.
+
+> **Filtro por tipo de cuenta (`components/AccountTypeFilter.tsx`).** Componente reutilizable: 3 chips
+> horizontales (`'all' | 'debit' | 'credit'`), el activo resaltado con color del theme (primary/income/naranja).
+> **Débito** = cuentas bank/cash/digital_wallet; **Crédito** = `credit_card`. Como el endpoint
+> `GET /api/transactions` solo acepta UN `account_id` (no un tipo) y los de `/api/stats/*` no aceptan cuenta,
+> el filtro se aplica **client-side**: se arma un `Set` de los ids de tarjetas (`useAccounts`) y se filtra por
+> pertenencia de `accountId` (transfers por su cuenta origen). En **Transactions** se filtra la lista ya cargada
+> (combina con los demás filtros; nota: con paginación solo filtra lo descargado). En **Stats**, cuando el filtro
+> ≠ 'all' se traen las transacciones del período (`limit:1000`) y se recalculan resumen/categorías/timeline/
+> evolución en cliente vía `utils/statsAggregation.ts` (suma en monto nativo, sin conversión multi-moneda); con
+> 'all' se usan los datos agregados del servidor.
 
 **AccountsScreen:** card total consolidado con `LinearGradient` (gradiente `cardHighlight`); cuentas como
 cards con borde izquierdo (4px) del color de la cuenta; "+" en el header.

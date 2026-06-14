@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, RefreshControl, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -9,12 +9,17 @@ import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, SectionTitle } from '../components/common';
 import { DonutChart, BarChart, LineChart } from '../components/StatChart';
 import { DateRangePicker } from '../components/DateRangePicker';
+import { AccountTypeFilter, type AccountTypeValue } from '../components/AccountTypeFilter';
 import { Icon } from '../components/Icon';
 import { useStats } from '../hooks/useStats';
+import { useAccounts } from '../hooks/useAccounts';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAppStore } from '../stores/appStore';
+import { transactionsApi } from '../api/client';
+import { aggregateStats } from '../utils/statsAggregation';
 import { periodRange, formatShortDate } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
-import type { StatsPeriod } from '../types';
+import type { StatsPeriod, Transaction } from '../types';
 
 const PERIODS: { key: StatsPeriod; label: string }[] = [
   { key: 'today', label: 'Hoy' },
@@ -36,6 +41,7 @@ export function StatsScreen() {
   const [period, setPeriod] = useState<StatsPeriod>('month');
   const [custom, setCustom] = useState<{ from: string; to: string } | null>(null);
   const [showDate, setShowDate] = useState(false);
+  const [accountType, setAccountType] = useState<AccountTypeValue>('all');
 
   const { from, to } = useMemo(() => {
     if (period === 'custom' && custom) return custom;
@@ -43,12 +49,57 @@ export function StatsScreen() {
   }, [period, custom]);
 
   const mainCurrency = useSettingsStore((s) => s.mainCurrency);
-  const { summary, byCategory, timeline, balanceEvolution, refreshing, refetch } = useStats(
-    from,
-    to,
-    groupFor(period),
-    mainCurrency,
+  const refreshKey = useAppStore((s) => s.refreshKey);
+  const { accounts } = useAccounts();
+  const {
+    summary: srvSummary,
+    byCategory: srvByCategory,
+    timeline: srvTimeline,
+    balanceEvolution: srvBalanceEvolution,
+    refreshing,
+    refetch,
+  } = useStats(from, to, groupFor(period), mainCurrency);
+
+  // Filtro débito/crédito: el endpoint de stats no acepta tipo de cuenta, así que
+  // cuando hay filtro activo recalculamos los datasets en cliente a partir de las
+  // transacciones del período (ver utils/statsAggregation).
+  const creditIds = useMemo(
+    () => new Set(accounts.filter((a) => a.type === 'credit_card').map((a) => a.id)),
+    [accounts],
   );
+  const [periodTxs, setPeriodTxs] = useState<Transaction[]>([]);
+
+  const loadPeriodTxs = useCallback(async () => {
+    if (accountType === 'all') return;
+    try {
+      const res = await transactionsApi.list({ from_date: from, to_date: to, limit: 1000 });
+      setPeriodTxs(res.data);
+    } catch {
+      setPeriodTxs([]);
+    }
+  }, [accountType, from, to]);
+
+  useEffect(() => {
+    loadPeriodTxs();
+  }, [loadPeriodTxs, refreshKey]);
+
+  const filtered = useMemo(() => {
+    if (accountType === 'all') return null;
+    const txs = periodTxs.filter((t) =>
+      accountType === 'credit' ? creditIds.has(t.accountId) : !creditIds.has(t.accountId),
+    );
+    return aggregateStats(txs, groupFor(period));
+  }, [accountType, periodTxs, creditIds, period]);
+
+  const summary = filtered ? filtered.summary : srvSummary;
+  const byCategory = filtered ? filtered.byCategory : srvByCategory;
+  const timeline = filtered ? filtered.timeline : srvTimeline;
+  const balanceEvolution = filtered ? filtered.balanceEvolution : srvBalanceEvolution;
+
+  const onRefresh = useCallback(() => {
+    refetch(true);
+    loadPeriodTxs();
+  }, [refetch, loadPeriodTxs]);
 
   // Donut: top 5 + Otros. Colores de la paleta del tema (rosa/azul/morado primero).
   const donutData = useMemo(() => {
@@ -103,7 +154,7 @@ export function StatsScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refetch(true)} tintColor={theme.colors.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
         {/* Selector de período */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.periods}>
@@ -127,6 +178,11 @@ export function StatsScreen() {
             {formatShortDate(custom.from)} → {formatShortDate(custom.to)}
           </Text>
         )}
+
+        {/* Filtro por tipo de cuenta: Todas | Débito | Crédito */}
+        <View style={styles.typeFilterWrap}>
+          <AccountTypeFilter value={accountType} onChange={setAccountType} />
+        </View>
 
         {/* Resumen: Ingresos / Gastos / Balance */}
         <View style={styles.summaryRow}>
@@ -251,6 +307,9 @@ const createStyles = (theme: Theme) =>
   periodText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
   periodTextActive: { color: '#FFFFFF', fontWeight: theme.fontWeight.bold },
   rangeLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: theme.spacing.xs },
+  // El AccountTypeFilter trae su propio padding horizontal (lg); lo cancelamos
+  // contra el padding del content para alinear los chips al resto de la pantalla.
+  typeFilterWrap: { marginHorizontal: -theme.spacing.lg, marginTop: theme.spacing.xs },
   summaryRow: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.md },
   summaryCard: { flex: 1, backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.cardBorder },
   summaryIcon: { width: 32, height: 32, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },

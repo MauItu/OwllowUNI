@@ -11,6 +11,8 @@ export type RootStackParamList = {
     | undefined;
   AddAccount: { accountId?: number } | undefined;
   CreditCardDetail: { accountId: number };
+  // Cuentas dejó de ser un tab: ahora se accede como screen del stack desde el Sidebar/Home.
+  Accounts: { selectAccountId?: number } | undefined;
   Categories: undefined;
   Templates: undefined;
   Tags: undefined;
@@ -28,8 +30,6 @@ export type RootStackParamList = {
   // Transactions ya no es un tab: se accede como screen del stack desde Home.
   Transactions: { accountId?: number; search?: string } | undefined;
   Search: undefined;
-  // Estadísticas ya no es un tab: se accede como screen del stack desde el Sidebar.
-  Stats: undefined;
   SettingsNotifications: undefined;
   ImportExport: undefined;
   Insights: undefined;
@@ -49,5 +49,5 @@ export type AuthStackParamList = {
 export type TabParamList = {
   Home: undefined;
   AddTab: undefined;
-  Accounts: { selectAccountId?: number } | undefined;
+  Stats: undefined;
 };

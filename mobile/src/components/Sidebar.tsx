@@ -34,6 +34,7 @@ interface NavItem {
 
 // Opciones de navegación (las que estaban en MoreScreen), agrupadas por sección.
 const FINANZAS: NavItem[] = [
+  { label: 'Cuentas', icon: 'wallet', route: 'Accounts', color: (t) => t.colors.primary },
   { label: 'Categorías', icon: 'shapes', route: 'Categories', color: (t) => t.colors.accentLight },
   { label: 'Plantillas', icon: 'zap', route: 'Templates', color: (t) => t.colors.income },
   { label: 'Etiquetas', icon: 'tag', route: 'Tags', color: (t) => t.colors.secondary },
@@ -44,7 +45,7 @@ const FINANZAS: NavItem[] = [
 ];
 
 const ANALISIS: NavItem[] = [
-  { label: 'Estadísticas', icon: 'bar-chart-3', route: 'Stats', color: (t) => t.colors.secondary },
+  // Estadísticas vive ahora en la barra inferior (tab principal), no en el Sidebar.
   { label: 'Insights', icon: 'lightbulb', route: 'Insights', color: (t) => t.colors.accentLight },
   { label: 'Tasas de cambio', icon: 'arrow-right-left', route: 'Rates', color: (t) => t.colors.income },
   { label: 'Importar / Exportar', icon: 'arrow-down-up', route: 'ImportExport', color: (t) => t.colors.secondary },

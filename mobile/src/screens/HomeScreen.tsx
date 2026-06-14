@@ -128,6 +128,9 @@ export function HomeScreen() {
           income={summary.income}
           expense={summary.expense}
           currency={mainCurrency}
+          debitTotal={acctSummary?.debitTotal ?? totalBalance}
+          creditUsed={acctSummary?.creditUsed ?? 0}
+          showCredit={creditCards.length > 0}
         />
 
         {creditCards.length > 0 && (

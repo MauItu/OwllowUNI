@@ -93,7 +93,7 @@ export function AccountsScreen() {
   if (loading && accounts.length === 0) {
     return (
       <Screen>
-        <ScreenHeader title="Cuentas" />
+        <ScreenHeader title="Cuentas" onBack={() => navigation.goBack()} />
         <Loading />
       </Screen>
     );
@@ -103,6 +103,7 @@ export function AccountsScreen() {
     <Screen>
       <ScreenHeader
         title="Cuentas"
+        onBack={() => navigation.goBack()}
         right={
           <Pressable onPress={() => navigation.navigate('AddAccount')} hitSlop={10}>
             <Icon name="plus" size={24} color="#FFFFFF" />

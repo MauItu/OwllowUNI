@@ -86,7 +86,7 @@ const Tab = createBottomTabNavigator<TabParamList>();
 const TAB_META: Record<keyof TabParamList, { icon: string; label: string }> = {
   Home: { icon: 'house', label: 'Inicio' },
   AddTab: { icon: 'plus', label: '' },
-  Accounts: { icon: 'wallet', label: 'Cuentas' },
+  Stats: { icon: 'bar-chart-3', label: 'Estadísticas' },
 };
 
 /**
@@ -157,7 +157,7 @@ function Tabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="AddTab" component={Noop} />
-      <Tab.Screen name="Accounts" component={AccountsScreen} />
+      <Tab.Screen name="Stats" component={StatsScreen} />
     </Tab.Navigator>
   );
 }
@@ -210,6 +210,7 @@ export function AppNavigator() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <RootStack.Screen name="AddAccount" component={AddAccountScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="Accounts" component={AccountsScreen} />
         <RootStack.Screen name="CreditCardDetail" component={CreditCardDetailScreen} />
         <RootStack.Screen name="Categories" component={CategoriesScreen} />
         <RootStack.Screen name="Templates" component={TemplatesScreen} />
@@ -228,7 +229,6 @@ export function AppNavigator() {
         <RootStack.Screen name="AddSplitExpense" component={AddSplitExpenseScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="SettingsNotifications" component={SettingsNotificationsScreen} />
         <RootStack.Screen name="ImportExport" component={ImportExportScreen} />
-        <RootStack.Screen name="Stats" component={StatsScreen} />
         <RootStack.Screen name="Insights" component={InsightsScreen} />
         <RootStack.Screen name="Rates" component={RatesScreen} />
         <RootStack.Screen name="Security" component={SecurityScreen} />
