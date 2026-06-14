@@ -15,6 +15,7 @@ import type {
   AccountInput,
   CreditCardStatement,
   PayStatementInput,
+  GenerateStatementResult,
   Category,
   CategoryInput,
   Transaction,
@@ -166,6 +167,9 @@ export const accountsApi = {
     api
       .post<{ success: boolean; statement: CreditCardStatement }>(`/accounts/${id}/statements/${statementId}/pay`, data)
       .then((r) => r.data),
+  // Genera el corte del periodo actual (manual) + deuda automática asociada.
+  generateStatement: (id: number) =>
+    api.post<GenerateStatementResult>(`/accounts/${id}/generate-statement`).then((r) => r.data),
 };
 
 // ──────────────────────── Multi-moneda (tasas) ──────────────────────

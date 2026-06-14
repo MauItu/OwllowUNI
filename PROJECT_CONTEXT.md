@@ -949,12 +949,13 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
       porcentaje centrado debajo del arco. Debajo, grilla con `Límite`, `Usado`, `Disponible` (`creditLimit`/
       `creditUsed`/`creditAvailable`), `Día de corte` y `Día de pago`. Botón "Editar límite" → navega a
       `AddAccount { accountId }` (mismo formulario de edición de Prompt 7A).
-    - **"Estado de cuenta actual"**: trae el corte más reciente vía `accountsApi.statements(id, {limit:12})`
-      (orden `period_end desc`, el primero es el actual) y muestra periodo/total/pagado/pendiente. Si no hay
-      ningún corte generado, `EmptyState`. Si el corte no está pagado, botón "Pagar" abre un `BottomSheet`
-      con el monto pre-llenado (= pendiente, `TextField` numérico editable) y un `SelectRow` que abre
-      `AccountPicker` filtrado a cuentas no-tarjeta (`type !== 'credit_card'`) para elegir la cuenta de
-      origen; confirmar llama a `accountsApi.payStatement(id, statementId, {amount, paymentAccountId})`.
+    - **"Estado de cuenta actual"**: trae el corte más reciente vía el hook `useCreditCard(accountId)` (ver
+      ítem 26; orden `period_end desc`, el primero es el actual) y muestra periodo/total/pagado/pendiente. Si
+      no hay ningún corte generado, `EmptyState` + botón "Generar estado de cuenta" (→ `generateStatement()`
+      del hook). Si el corte no está pagado, botón "Pagar" abre un `BottomSheet` con el monto pre-llenado
+      (= pendiente, `TextField` numérico editable) y un `SelectRow` que abre `AccountPicker` filtrado a
+      cuentas no-tarjeta (`type !== 'credit_card'`) para elegir la cuenta de origen; confirmar llama a
+      `payStatement(statementId, amount, paymentAccountId)` del hook.
     - **"Historial"**: los hasta 12 cortes devueltos, cada fila con periodo (`periodStart`–`periodEnd`),
       monto total y badge de estado — `Pagado` (verde, `isPaid`), `Vencido` (rojo, `paymentDueDate < hoy` y
       no pagado) o `Pendiente` (amarillo).
@@ -974,6 +975,19 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     "⚠️ [nombre] al X% del límite" (las de mayor % primero) vía `extra`. El tipo `AccountsSummary` en
     `types/index.ts` se extendió con `debitTotal`, `creditTotal`, `creditLimit`, `creditUsed` y
     `creditAvailable` (ya devueltos por `GET /api/accounts/summary`, faltaban en el tipo mobile).
+
+26. **Hook `useCreditCard` (mobile):** `mobile/src/hooks/useCreditCard.ts`, mismo patrón que `useDebts`
+    (refetch en cambios de `refreshKey` del `appStore`). `useCreditCard(accountId, limit = 12)` expone
+    `statements` (vía `GET /accounts/:id/statements?limit&offset=0`), `loading`, `refreshing`, `error`,
+    `refetch`, y dos acciones: `payStatement(statementId, amount, paymentAccountId)` (→
+    `accountsApi.payStatement`, refetch automático de `statements` al terminar) y `generateStatement()` (→
+    nuevo `accountsApi.generateStatement` / `POST /accounts/:id/generate-statement`, refetch automático).
+    Tipo nuevo `GenerateStatementResult` (`CreditCardStatement & { debt: Debt }`) en `types/index.ts`.
+    `CreditCardDetailScreen` consume el hook en vez de hacer `accountsApi.statements`/`payStatement`
+    directos: "Estado de cuenta actual"/"Historial" usan `statements`/`loading`/`error` del hook (con
+    `ErrorState` + retry si falla), el pull-to-refresh dispara `load(true)` (cuenta + transacciones) y
+    `refetchStatements(true)` en paralelo, y se agregó el botón "Generar estado de cuenta" (visible solo si
+    no hay ningún corte) que llama a `generateStatement()`.
 
 ---
 

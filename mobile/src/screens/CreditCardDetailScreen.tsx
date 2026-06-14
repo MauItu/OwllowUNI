@@ -20,6 +20,7 @@ import { AccountPicker } from '../components/AccountPicker';
 import { TransactionCard } from '../components/TransactionCard';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
+import { useCreditCard } from '../hooks/useCreditCard';
 import { useAppStore } from '../stores/appStore';
 import { accountsApi, transactionsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
@@ -104,9 +105,17 @@ export function CreditCardDetailScreen() {
   const styles = useThemedStyles(createStyles);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const { accounts } = useAccounts();
+  const {
+    statements,
+    loading: loadingStatements,
+    refreshing: refreshingStatements,
+    error: statementsError,
+    refetch: refetchStatements,
+    payStatement,
+    generateStatement,
+  } = useCreditCard(accountId);
 
   const [account, setAccount] = useState<Account | null>(null);
-  const [statements, setStatements] = useState<CreditCardStatement[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -117,6 +126,7 @@ export function CreditCardDetailScreen() {
   const [payAccountId, setPayAccountId] = useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -124,13 +134,11 @@ export function CreditCardDetailScreen() {
         if (isRefresh) setRefreshing(true);
         else setLoading(true);
         setError(null);
-        const [acc, stmts, txs] = await Promise.all([
+        const [acc, txs] = await Promise.all([
           accountsApi.get(accountId),
-          accountsApi.statements(accountId, { limit: 12 }),
           transactionsApi.list({ account_id: accountId, limit: 10 }),
         ]);
         setAccount(acc);
-        setStatements(stmts);
         setTransactions(txs.data);
       } catch (err) {
         setError(getErrorMessage(err));
@@ -145,6 +153,11 @@ export function CreditCardDetailScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const onRefresh = useCallback(() => {
+    load(true);
+    refetchStatements(true);
+  }, [load, refetchStatements]);
 
   // Cuentas de débito (no tarjetas de crédito) para pagar el estado de cuenta.
   const debitAccounts = useMemo(() => accounts.filter((a) => a.type !== 'credit_card'), [accounts]);
@@ -173,7 +186,7 @@ export function CreditCardDetailScreen() {
     }
     try {
       setPaying(true);
-      await accountsApi.payStatement(accountId, latestStatement.id, { amount, paymentAccountId: payAccountId });
+      await payStatement(latestStatement.id, amount, payAccountId);
       setPayOpen(false);
       showSuccess('Pago registrado');
       triggerRefresh();
@@ -185,7 +198,21 @@ export function CreditCardDetailScreen() {
     }
   };
 
-  if (loading && !account) {
+  const handleGenerateStatement = async () => {
+    try {
+      setGenerating(true);
+      await generateStatement();
+      showSuccess('Estado de cuenta generado');
+      triggerRefresh();
+      load(true);
+    } catch (err) {
+      showError(getErrorMessage(err));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  if ((loading || loadingStatements) && !account) {
     return (
       <Screen>
         <ScreenHeader title="Tarjeta" onBack={() => navigation.goBack()} />
@@ -213,7 +240,7 @@ export function CreditCardDetailScreen() {
       <ScreenHeader title={account.name} onBack={() => navigation.goBack()} />
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.colors.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing || refreshingStatements} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
         <UtilizationGauge pct={pct} color={gaugeColor} />
 
@@ -267,11 +294,19 @@ export function CreditCardDetailScreen() {
             )}
           </View>
         ) : (
-          <EmptyState icon="receipt" text="Todavía no hay estados de cuenta generados." />
+          <>
+            <EmptyState icon="receipt" text="Todavía no hay estados de cuenta generados." />
+            <Pressable style={styles.editBtn} onPress={handleGenerateStatement} disabled={generating}>
+              <Icon name="file-plus-2" size={16} color={theme.colors.primary} />
+              <Text style={styles.editBtnText}>{generating ? 'Generando…' : 'Generar estado de cuenta'}</Text>
+            </Pressable>
+          </>
         )}
 
         <SectionTitle title="Historial" />
-        {statements.length === 0 ? (
+        {statementsError ? (
+          <ErrorState message={statementsError} onRetry={() => refetchStatements()} />
+        ) : statements.length === 0 ? (
           <EmptyState icon="history" text="Sin estados de cuenta anteriores." />
         ) : (
           statements.map((s) => {

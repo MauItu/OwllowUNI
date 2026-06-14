@@ -246,6 +246,11 @@ export interface PayStatementInput {
   paymentAccountId: number;
 }
 
+/** Respuesta de POST /api/accounts/:id/generate-statement (corte + deuda automática asociada). */
+export interface GenerateStatementResult extends CreditCardStatement {
+  debt: Debt;
+}
+
 export interface AccountInput {
   name: string;
   type: AccountType;
