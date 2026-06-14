@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Platform, TextInput, Image, ActivityIndicator } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -85,6 +85,15 @@ export function AddTransactionScreen() {
   const [calcKey, setCalcKey] = useState(0);
   const [selectedTags, setSelectedTags] = useState<Pick<Tag, 'id' | 'name' | 'color' | 'icon'>[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Compra a cuotas (solo gasto con tarjeta de crédito). `liveAmount` rastrea el
+  // valor de la calculadora para mostrar la cuota mensual al teclear.
+  const [installmentsOn, setInstallmentsOn] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState('12');
+  const [liveAmount, setLiveAmount] = useState<number>(
+    params.template?.amount ? parseFloat(params.template.amount) : 0,
+  );
+  const handleAmountChange = useCallback((v: number) => setLiveAmount(v), []);
   // toAmount cargado al editar una transferencia multi-moneda existente
   const [loadedToAmount, setLoadedToAmount] = useState<number | null>(null);
 
@@ -112,6 +121,14 @@ export function AddTransactionScreen() {
   const [showTime, setShowTime] = useState(false);
   const [showTags, setShowTags] = useState(false);
 
+  // Gasto con tarjeta de crédito → habilita la opción de cuotas.
+  const isCardExpense = type === 'expense' && account?.type === 'credit_card';
+  const installmentCountNum = Math.min(60, Math.max(0, parseInt(installmentCount || '0', 10) || 0));
+  const cuotaMensual =
+    isCardExpense && installmentsOn && installmentCountNum >= 2 && liveAmount > 0
+      ? liveAmount / installmentCountNum
+      : null;
+
   const toggleTag = (tag: Pick<Tag, 'id' | 'name' | 'color' | 'icon'>) => {
     setSelectedTags((prev) =>
       prev.some((t) => t.id === tag.id) ? prev.filter((t) => t.id !== tag.id) : [...prev, tag],
@@ -137,6 +154,11 @@ export function AddTransactionScreen() {
         setTime(tx.time);
         setDescription(tx.description ?? '');
         setInitialAmount(parseFloat(tx.amount));
+        setLiveAmount(parseFloat(tx.amount));
+        if (tx.installments && tx.installments > 1) {
+          setInstallmentsOn(true);
+          setInstallmentCount(String(tx.installments));
+        }
         setCalcKey((k) => k + 1);
         if (tx.toAmount != null) setLoadedToAmount(parseFloat(tx.toAmount));
         setReceiptFilename(tx.receiptFilename ?? null);
@@ -223,6 +245,10 @@ export function AddTransactionScreen() {
 
   const doSave = async (amount: number, toAmount: number | null) => {
     if (!account) return;
+    // Cuotas: solo gasto con tarjeta de crédito y toggle activo (2–60 cuotas).
+    const cardExpense = type === 'expense' && account.type === 'credit_card';
+    const installments =
+      cardExpense && installmentsOn && installmentCountNum >= 2 ? installmentCountNum : null;
     const payload = {
       type,
       amount,
@@ -236,6 +262,7 @@ export function AddTransactionScreen() {
       notes: null,
       receiptFilename,
       tagIds: selectedTags.map((t) => t.id),
+      installments,
     };
 
     try {
@@ -448,6 +475,42 @@ export function AddTransactionScreen() {
           ))}
         </ScrollView>
 
+        {/* Cuotas: solo gasto con tarjeta de crédito */}
+        {isCardExpense && (
+          <View style={styles.installmentsBox}>
+            <Pressable
+              style={({ pressed }) => [styles.installmentsToggle, pressed && { opacity: 0.7 }]}
+              onPress={() => setInstallmentsOn((v) => !v)}
+            >
+              <Icon name="credit-card" size={16} color={theme.colors.primary} />
+              <Text style={styles.installmentsTitle}>¿Compra a cuotas?</Text>
+              <View style={[styles.switchTrack, installmentsOn && { backgroundColor: theme.colors.primary }]}>
+                <View style={[styles.switchKnob, installmentsOn && styles.switchKnobOn]} />
+              </View>
+            </Pressable>
+            {installmentsOn && (
+              <View style={styles.installmentsBody}>
+                <View style={styles.countRow}>
+                  <Text style={styles.countLabel}>Número de cuotas</Text>
+                  <TextInput
+                    value={installmentCount}
+                    onChangeText={(t) => setInstallmentCount(t.replace(/[^0-9]/g, '').slice(0, 2))}
+                    keyboardType="number-pad"
+                    placeholder="12"
+                    placeholderTextColor={theme.colors.textMuted}
+                    style={styles.countInput}
+                  />
+                </View>
+                <Text style={styles.cuotaHint}>
+                  {cuotaMensual != null
+                    ? `Cuota mensual: ${formatCurrency(cuotaMensual, account?.currency ?? 'COP')}`
+                    : 'Ingresa el monto y un número de cuotas entre 2 y 60.'}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={{ flex: 1 }} />
 
         {/* Calculadora (parte inferior). El inset se aplica como padding del
@@ -460,6 +523,7 @@ export function AddTransactionScreen() {
             initialValue={initialAmount}
             currency={account?.currency ?? 'COP'}
             onConfirm={submit}
+            onChange={handleAmountChange}
           />
         </View>
       </KeyboardAvoidingView>
@@ -671,6 +735,54 @@ const createStyles = (theme: Theme) =>
     borderStyle: 'dashed',
   },
   tagsBtnText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+  installmentsBox: {
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    overflow: 'hidden',
+  },
+  installmentsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm + 2,
+  },
+  installmentsTitle: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+  switchTrack: {
+    width: 42,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.colors.border,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF' },
+  switchKnobOn: { alignSelf: 'flex-end' },
+  installmentsBody: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm },
+  countLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
+  countInput: {
+    minWidth: 64,
+    textAlign: 'center',
+    color: theme.colors.text,
+    fontSize: theme.fontSize.md,
+    fontWeight: theme.fontWeight.bold,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    paddingVertical: 4,
+    paddingHorizontal: theme.spacing.sm,
+  },
+  cuotaHint: { color: theme.colors.primaryLight, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
   convRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm },
   convSide: { flex: 1, backgroundColor: theme.colors.surfaceLight, borderRadius: theme.borderRadius.md, padding: theme.spacing.md, gap: 2 },
   convLabel: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs },

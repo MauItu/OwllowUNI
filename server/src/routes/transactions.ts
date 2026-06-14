@@ -3,12 +3,25 @@ import { and, asc, eq, gte, lte, desc, ilike, sql, count, inArray, type SQL } fr
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
-import { transactions, accounts, categories, tags, transactionTags, type Transaction } from '../db/schema.js';
+import { transactions, accounts, categories, tags, transactionTags, debts, type Transaction } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { PAGINATION_DEFAULT_LIMIT, PAGINATION_MAX_LIMIT, IMPORT_BATCH_SIZE } from '../utils/constants.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
+
+/** yyyy-MM-dd de una fecha local. */
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Primera fecha con día-del-mes === `day` (1-28) que sea >= `from` (próximo pago). */
+function nextDateOnDay(day: number, from: Date): Date {
+  const candidate = new Date(from.getFullYear(), from.getMonth(), day);
+  if (from.getDate() > day) candidate.setMonth(candidate.getMonth() + 1);
+  return candidate;
+}
 
 export const transactionsRouter = Router();
 
@@ -78,6 +91,10 @@ const txSchema = z.object({
   // Nombre del archivo de la foto del recibo (imagen local en el dispositivo).
   receiptFilename: z.string().max(255).optional().nullable(),
   tagIds: z.array(z.number().int()).optional(),
+  // Compra a cuotas (solo gasto con tarjeta de crédito). El backend deriva
+  // currentInstallment (=1) e installmentAmount (=amount/installments); el cliente
+  // solo manda el nº total de cuotas (2–60). null/ausente = compra de contado.
+  installments: z.coerce.number().int().min(2).max(60).optional().nullable(),
 });
 
 /** Busca las etiquetas de un conjunto de transacciones y las agrupa por id. */
@@ -228,6 +245,10 @@ transactionsRouter.get(
           categoryId: transactions.categoryId,
           notes: transactions.notes,
           receiptFilename: transactions.receiptFilename,
+          installments: transactions.installments,
+          currentInstallment: transactions.currentInstallment,
+          installmentAmount: transactions.installmentAmount,
+          debtId: transactions.debtId,
           createdAt: transactions.createdAt,
           accountName: accounts.name,
           accountColor: accounts.color,
@@ -525,28 +546,47 @@ transactionsRouter.post(
     await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
     await assertTagsOwned(uid, data.tagIds);
 
-    // Gasto con tarjeta de crédito: no exceder el crédito disponible (salvo que
-    // la tarjeta permita sobregiro). No se genera deuda por compra; eso ocurre al
-    // corte (statement). El saldo se mueve normal (current_balance -= amount).
-    if (data.type === 'expense') {
-      const [acc] = await db
-        .select({
-          type: accounts.type,
-          creditLimit: accounts.creditLimit,
-          currentBalance: accounts.currentBalance,
-          allowOverdraft: accounts.allowOverdraft,
-        })
-        .from(accounts)
-        .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, uid)));
-      if (acc?.type === 'credit_card' && !acc.allowOverdraft && acc.creditLimit != null) {
-        const available = Number(acc.creditLimit) + Number(acc.currentBalance);
-        if (available < data.amount) {
-          throw new ApiError(400, 'Excede el crédito disponible de la tarjeta');
-        }
+    // Datos de las cuentas involucradas (origen y, si transfer, destino).
+    const involvedIds = [data.accountId, data.toAccountId].filter((x): x is number => x != null);
+    const accs = await db
+      .select({
+        id: accounts.id,
+        type: accounts.type,
+        name: accounts.name,
+        color: accounts.color,
+        paymentDueDay: accounts.paymentDueDay,
+        currentBalance: accounts.currentBalance,
+        allowOverdraft: accounts.allowOverdraft,
+      })
+      .from(accounts)
+      .where(and(eq(accounts.userId, uid), inArray(accounts.id, involvedIds)));
+    const srcAcc = accs.find((a) => a.id === data.accountId);
+    const dstAcc = data.toAccountId != null ? accs.find((a) => a.id === data.toAccountId) : undefined;
+
+    // ¿Gasto con tarjeta de crédito? Reduce el crédito disponible y genera una deuda
+    // (1 por compra). NO afecta el saldo de débito del usuario.
+    const isCardExpense = data.type === 'expense' && srcAcc?.type === 'credit_card';
+    if (isCardExpense && !srcAcc!.allowOverdraft) {
+      // current_balance ES el crédito disponible: no se puede gastar más que eso.
+      if (Number(srcAcc!.currentBalance) < data.amount) {
+        throw new ApiError(400, 'Excede el crédito disponible de la tarjeta');
       }
     }
 
+    // Cuotas: solo aplican a gasto con tarjeta. El backend deriva los valores.
+    const installments = isCardExpense && data.installments && data.installments > 1 ? data.installments : null;
+    const installmentAmount = installments ? data.amount / installments : null;
+
     const toAmount = data.type === 'transfer' ? data.toAmount ?? null : null;
+
+    // Pago de tarjeta: transferencia hacia una tarjeta de crédito → libera crédito
+    // (la lógica de transfer ya hace current_balance += monto) y abona FIFO a las
+    // deudas automáticas de esa tarjeta (las más antiguas primero), en el mismo batch.
+    const transferFifo =
+      data.type === 'transfer' && dstAcc?.type === 'credit_card'
+        ? await buildFifoCardDebtPayment(uid, dstAcc.id, toAmount != null ? toAmount : data.amount)
+        : { apply: [] as unknown[], revert: [] as unknown[] };
+
     const insertStmt = db
       .insert(transactions)
       .values({
@@ -562,50 +602,76 @@ transactionsRouter.post(
         categoryId: data.categoryId ?? null,
         notes: data.notes ?? null,
         receiptFilename: data.receiptFilename ?? null,
+        installments,
+        currentInstallment: installments ? 1 : null,
+        installmentAmount: installmentAmount != null ? installmentAmount.toFixed(2) : null,
       })
       .returning();
 
     const balance = balanceStatements(uid, data.type, data.amount, data.accountId, data.toAccountId, 1, toAmount);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const results = await db.batch([insertStmt, ...balance] as any);
+    const results = await db.batch([insertStmt, ...balance, ...transferFifo.apply] as any);
     const created = (results[0] as Transaction[])[0];
 
-    // El enlace de etiquetas va fuera del batch: depende del id serial recién
-    // generado (no referenciable dentro de db.batch). Los tagIds ya se validaron
-    // como propios del usuario y se deduplican para no violar el UNIQUE.
-    if (data.tagIds && data.tagIds.length > 0) {
-      const uniqueTagIds = [...new Set(data.tagIds)];
-      try {
+    // Post-batch (depende del id serial recién generado): deuda automática de la
+    // compra con tarjeta y enlace de etiquetas. Cualquier fallo aquí compensa TODO
+    // lo ya aplicado (saldo, FIFO de la transfer, deuda, transacción).
+    let createdDebt: { id: number } | null = null;
+    try {
+      if (isCardExpense) {
+        const dueDate = ymd(nextDateOnDay(srcAcc!.paymentDueDay ?? 20, new Date(`${data.date}T00:00:00`)));
+        const baseName = data.description?.trim() || `Compra tarjeta ${srcAcc!.name}`;
+        const name = installments ? `${baseName} (Cuota 1/${installments})` : baseName;
+        const notes = installments
+          ? `Compra a ${installments} cuotas de ${installmentAmount!.toFixed(2)} c/u`
+          : null;
+        const [debt] = await db
+          .insert(debts)
+          .values({
+            userId: uid,
+            name,
+            type: 'debt',
+            totalAmount: data.amount.toFixed(2),
+            remainingAmount: data.amount.toFixed(2),
+            startDate: data.date,
+            dueDate,
+            accountId: srcAcc!.id,
+            icon: 'credit-card',
+            color: srcAcc!.color,
+            notes,
+          })
+          .returning({ id: debts.id });
+        createdDebt = debt;
+        await db
+          .update(transactions)
+          .set({ debtId: debt.id })
+          .where(and(eq(transactions.id, created.id), eq(transactions.userId, uid)));
+        created.debtId = debt.id;
+      }
+
+      // Etiquetas (ya validadas como propias; se deduplican para no violar el UNIQUE).
+      if (data.tagIds && data.tagIds.length > 0) {
+        const uniqueTagIds = [...new Set(data.tagIds)];
         await db
           .insert(transactionTags)
           .values(uniqueTagIds.map((tagId) => ({ transactionId: created.id, tagId })));
-      } catch (err) {
-        // El batch tx+balance ya se commiteó; una etiqueta sin enlazar deja la
-        // transacción con datos incorrectos. Saga: compensar revirtiendo el balance
-        // y borrando la transacción (su CASCADE limpia cualquier transaction_tag que
-        // sí entrara) y propagar el error para que el cliente NO la dé por guardada.
-        const revert = balanceStatements(
-          uid,
-          data.type,
-          data.amount,
-          data.accountId,
-          data.toAccountId,
-          -1,
-          toAmount,
-        );
-        await safeCompensate(
-          [...revert, db.delete(transactions).where(eq(transactions.id, created.id))],
-          {
-            endpoint: 'POST /api/transactions',
-            operation: 'create+tags',
-            userId: uid,
-            entityId: created.id,
-            txId: created.id,
-          },
-        );
-        throw err;
       }
+    } catch (err) {
+      const revert = balanceStatements(uid, data.type, data.amount, data.accountId, data.toAccountId, -1, toAmount);
+      const undo: unknown[] = [...revert, ...transferFifo.revert];
+      if (createdDebt) undo.push(db.delete(debts).where(eq(debts.id, createdDebt.id)));
+      // Borrar la transacción al final (su CASCADE limpia transaction_tags; ya sin
+      // referencia a la deuda recién borrada).
+      undo.push(db.delete(transactions).where(eq(transactions.id, created.id)));
+      await safeCompensate(undo, {
+        endpoint: 'POST /api/transactions',
+        operation: 'create+debt+tags',
+        userId: uid,
+        entityId: created.id,
+        txId: created.id,
+      });
+      throw err;
     }
     res.status(201).json(created);
   }),
@@ -630,6 +696,26 @@ transactionsRouter.put(
     await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
     await assertTagsOwned(uid, data.tagIds);
 
+    // ¿La transacción editada sigue siendo un gasto con tarjeta de crédito?
+    const [srcAcc] = await db
+      .select({ type: accounts.type })
+      .from(accounts)
+      .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, uid)));
+    const newCardExpense = data.type === 'expense' && srcAcc?.type === 'credit_card';
+    const installments = newCardExpense && data.installments && data.installments > 1 ? data.installments : null;
+    const installmentAmount = installments ? data.amount / installments : null;
+
+    // Deuda automática enlazada (si la había). Se actualiza/borra junto con la tx.
+    const oldDebt =
+      old.debtId != null
+        ? (
+            await db
+              .select()
+              .from(debts)
+              .where(and(eq(debts.id, old.debtId), eq(debts.userId, uid)))
+          )[0] ?? null
+        : null;
+
     // Revierte el efecto anterior y aplica el nuevo.
     const revert = balanceStatements(
       uid,
@@ -651,6 +737,13 @@ transactionsRouter.put(
       newToAmount,
     );
 
+    // Estado de la deuda enlazada tras la edición:
+    //  - sigue siendo gasto con tarjeta y ya tenía deuda → conservar y actualizarla.
+    //  - ya NO es gasto con tarjeta y tenía deuda → borrarla y limpiar el enlace.
+    //  - antes no tenía deuda → no se crea aquí (caso poco común; sin saga en PUT).
+    const keepDebt = newCardExpense && oldDebt != null;
+    const dropDebt = !newCardExpense && oldDebt != null;
+
     const updateStmt = db
       .update(transactions)
       .set({
@@ -665,12 +758,40 @@ transactionsRouter.put(
         categoryId: data.categoryId ?? null,
         notes: data.notes ?? null,
         receiptFilename: data.receiptFilename ?? null,
+        installments,
+        currentInstallment: installments ? old.currentInstallment ?? 1 : null,
+        installmentAmount: installmentAmount != null ? installmentAmount.toFixed(2) : null,
+        debtId: keepDebt ? old.debtId : null,
         updatedAt: new Date(),
       })
       .where(and(eq(transactions.id, id), eq(transactions.userId, uid)))
       .returning();
 
     const stmts: unknown[] = [...revert, ...apply, updateStmt];
+    // Actualizar/borrar la deuda enlazada (tras el updateStmt: si se borra, la tx ya
+    // dejó de referenciarla; respeta el FK no-action).
+    if (keepDebt && oldDebt) {
+      const paid = Number(oldDebt.totalAmount) - Number(oldDebt.remainingAmount);
+      const newRemaining = Math.max(0, data.amount - paid);
+      const paidOff = newRemaining <= 0;
+      const baseName = data.description?.trim() || oldDebt.name.replace(/ \(Cuota .*\)$/, '');
+      stmts.push(
+        db
+          .update(debts)
+          .set({
+            name: installments ? `${baseName} (Cuota 1/${installments})` : baseName,
+            totalAmount: data.amount.toFixed(2),
+            remainingAmount: newRemaining.toFixed(2),
+            notes: installments ? `Compra a ${installments} cuotas de ${installmentAmount!.toFixed(2)} c/u` : null,
+            isPaidOff: paidOff,
+            paidOffAt: paidOff ? oldDebt.paidOffAt ?? new Date() : null,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(debts.id, oldDebt.id), eq(debts.userId, uid))),
+      );
+    } else if (dropDebt && oldDebt) {
+      stmts.push(db.delete(debts).where(and(eq(debts.id, oldDebt.id), eq(debts.userId, uid))));
+    }
     if (data.tagIds) {
       stmts.push(db.delete(transactionTags).where(eq(transactionTags.transactionId, id)));
       if (data.tagIds.length > 0) {
@@ -710,7 +831,11 @@ transactionsRouter.delete(
     );
     const deleteStmt = db.delete(transactions).where(and(eq(transactions.id, id), eq(transactions.userId, uid)));
 
-    const stmts = [...revert, deleteStmt];
+    // Primero borra la transacción (libera el FK debt_id) y luego su deuda automática.
+    const stmts: unknown[] = [...revert, deleteStmt];
+    if (old.debtId != null) {
+      stmts.push(db.delete(debts).where(and(eq(debts.id, old.debtId), eq(debts.userId, uid))));
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await db.batch(stmts as any);
     res.json({ success: true });

@@ -50,10 +50,19 @@ function DebtCardComponent({ debt, onPress }: Props) {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.name} numberOfLines={1}>{debt.name}</Text>
-          {!!debt.creditorDebtor && (
-            <Text style={styles.person} numberOfLines={1}>
-              {isDebt ? `Le debes a ${debt.creditorDebtor}` : `Te debe ${debt.creditorDebtor}`}
-            </Text>
+          {debt.accountType === 'credit_card' ? (
+            <View style={styles.autoBadge}>
+              <Icon name="credit-card" size={10} color={theme.colors.primary} />
+              <Text style={styles.autoText} numberOfLines={1}>
+                Auto · {debt.accountName ?? 'Tarjeta'}
+              </Text>
+            </View>
+          ) : (
+            !!debt.creditorDebtor && (
+              <Text style={styles.person} numberOfLines={1}>
+                {isDebt ? `Le debes a ${debt.creditorDebtor}` : `Te debe ${debt.creditorDebtor}`}
+              </Text>
+            )
           )}
         </View>
         {debt.isPaidOff ? (
@@ -100,6 +109,18 @@ const createStyles = (theme: Theme) =>
     iconWrap: { width: 42, height: 42, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
     name: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
     person: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs, marginTop: 2 },
+    autoBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 3,
+      marginTop: 3,
+      backgroundColor: `${theme.colors.primary}1A`,
+      borderRadius: theme.borderRadius.full,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+    },
+    autoText: { color: theme.colors.primary, fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.medium, maxWidth: 160 },
     due: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs },
     paidBadge: {
       flexDirection: 'row',

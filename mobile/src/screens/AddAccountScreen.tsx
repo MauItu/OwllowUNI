@@ -56,10 +56,16 @@ export function AddAccountScreen() {
         const a = await accountsApi.get(editingId);
         setName(a.name);
         setType(a.type);
-        // En tarjetas de crédito el saldo inicial se guarda negado (deuda = saldo
-        // negativo); se muestra como número positivo en "Saldo adeudado".
+        // En tarjetas el saldo guardado ES el crédito DISPONIBLE (= límite − deuda);
+        // se muestra como "Saldo adeudado" = límite − disponible.
         const initBal = parseFloat(a.initialBalance);
-        setBalance(String(a.type === 'credit_card' ? Math.abs(initBal) : initBal));
+        setBalance(
+          String(
+            a.type === 'credit_card'
+              ? Math.max(0, (a.creditLimit ?? 0) - initBal)
+              : initBal,
+          ),
+        );
         setCurrency(a.currency);
         setColor(a.color);
         setIcon(a.icon);
@@ -89,9 +95,11 @@ export function AddAccountScreen() {
       name: name.trim(),
       type,
       currency: currency.trim().toUpperCase().slice(0, 3) || 'COP',
-      // Al editar una tarjeta, el initialBalance guardado ya está negado; al
-      // crearla, el backend niega el valor positivo que envía el usuario.
-      initialBalance: type === 'credit_card' && editingId ? -balanceNum : balanceNum,
+      // Tarjeta: el usuario ingresa el "Saldo adeudado" (deuda). Al CREAR, el backend
+      // interpreta initialBalance como esa deuda y guarda disponible = límite − deuda.
+      // Al EDITAR, el backend ajusta el saldo por la diferencia de initialBalance, así
+      // que se envía el disponible (= límite − deuda) directamente.
+      initialBalance: type === 'credit_card' && editingId ? creditLimit - balanceNum : balanceNum,
       color,
       icon,
       ...(type === 'credit_card' && {

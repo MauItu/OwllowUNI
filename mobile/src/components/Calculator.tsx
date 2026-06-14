@@ -1,4 +1,4 @@
-import React, { useMemo, useReducer } from 'react';
+import React, { useEffect, useMemo, useReducer } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 
 import { type Theme } from '../theme';
@@ -19,13 +19,15 @@ interface CalculatorProps {
   initialValue?: number;
   currency?: string;
   onConfirm: (value: number) => void;
+  /** Notifica el valor en vivo (p.ej. para calcular la cuota mensual al teclear). */
+  onChange?: (value: number) => void;
 }
 
 function reducer(state: CalcState, key: CalcKey): CalcState {
   return reduce(state, key);
 }
 
-export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm }: CalculatorProps) {
+export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm, onChange }: CalculatorProps) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const [state, dispatch] = useReducer(
@@ -36,6 +38,11 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
   const accentColor = type === 'income' ? theme.colors.income : type === 'transfer' ? theme.colors.transfer : theme.colors.expense;
   const value = useMemo(() => currentValue(state), [state]);
   const expr = expressionString(state);
+
+  // Notifica el valor en vivo al padre (cuota mensual, etc.) sin romper onConfirm.
+  useEffect(() => {
+    onChange?.(value);
+  }, [value, onChange]);
 
   const tap = (key: CalcKey) => {
     // expo-haptics removido (incompatible con Node 22): sin feedback háptico.

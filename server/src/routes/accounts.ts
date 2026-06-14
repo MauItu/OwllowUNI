@@ -3,11 +3,12 @@ import { and, eq, gte, lte, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { format, addDays, subMonths } from 'date-fns';
 import { db } from '../db/connection.js';
-import { accounts, creditCardStatements, debts, transactions, type Account } from '../db/schema.js';
+import { accounts, creditCardStatements, transactions, type Account } from '../db/schema.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
 import { getConversionMap } from '../services/exchangeRates.js';
 import { cacheResponse, ACCOUNTS_SUMMARY_TTL_MS } from '../services/cache.js';
 
@@ -62,11 +63,11 @@ function shapeAccount(row: Account) {
   if (row.type !== 'credit_card') return base;
 
   const limit = creditLimit != null ? Number(creditLimit) : 0;
+  // Nuevo modelo: current_balance ES el crédito DISPONIBLE (positivo), no la deuda.
   const balance = Number(row.currentBalance);
-  const creditUsed = Math.abs(Math.min(balance, 0));
-  // Disponible = límite + saldo (saldo negativo = deuda). Si pagó de más (saldo
-  // positivo), se topa al límite.
-  const creditAvailable = Math.min(limit, limit + balance);
+  const creditAvailable = Math.max(0, Math.min(limit, balance));
+  // Usado/adeudado = límite − disponible (lo consumido). Topado a [0, límite].
+  const creditUsed = Math.max(0, limit - balance);
   const cycleDay = billingCycleDay ?? 1;
   const payDay = paymentDueDay ?? 20;
   const today = new Date();
@@ -134,21 +135,26 @@ accountsRouter.get(
     const r2 = (n: number) => Math.round(n * 100) / 100;
 
     let debitTotal = 0;
-    let creditTotal = 0;
+    let creditAvailable = 0;
     let creditLimit = 0;
     let creditUsed = 0;
-    const byCur = new Map<string, number>(); // saldo crudo por moneda
+    // Contribución NETA al patrimonio por moneda (débito = saldo; tarjeta = −deuda).
+    const byCur = new Map<string, number>();
     for (const a of accts) {
       const bal = Number(a.currentBalance);
       const rate = rateOf(a.currency);
-      const converted = bal * rate;
-      byCur.set(a.currency, (byCur.get(a.currency) ?? 0) + bal);
       if (a.type === 'credit_card') {
-        creditTotal += converted;
-        if (a.creditLimit != null) creditLimit += Number(a.creditLimit) * rate;
-        creditUsed += Math.abs(Math.min(bal, 0)) * rate;
+        const limit = a.creditLimit != null ? Number(a.creditLimit) : 0;
+        const available = Math.max(0, Math.min(limit, bal));
+        const used = Math.max(0, limit - bal);
+        creditAvailable += available * rate;
+        creditLimit += limit * rate;
+        creditUsed += used * rate;
+        // La tarjeta resta del patrimonio por lo adeudado (−used), no por su saldo.
+        byCur.set(a.currency, (byCur.get(a.currency) ?? 0) - used);
       } else {
-        debitTotal += converted;
+        debitTotal += bal * rate;
+        byCur.set(a.currency, (byCur.get(a.currency) ?? 0) + bal);
       }
     }
 
@@ -160,13 +166,17 @@ accountsRouter.get(
 
     res.json({
       displayCurrency,
-      total: r2(debitTotal + creditTotal),
+      // Patrimonio neto líquido = lo que tengo (débito) − lo que debo (crédito usado).
+      total: r2(debitTotal - creditUsed),
       debitTotal: r2(debitTotal),
-      creditTotal: r2(creditTotal),
+      // Contribución neta de las tarjetas al patrimonio (deuda en negativo).
+      creditTotal: r2(-creditUsed),
       creditLimit: r2(creditLimit),
       creditUsed: r2(creditUsed),
-      // Disponible agregado = límite − usado (equivale a topar cada tarjeta a su límite).
-      creditAvailable: r2(creditLimit - creditUsed),
+      // Crédito disponible agregado = suma de saldos (disponibles) de las tarjetas.
+      creditAvailable: r2(creditAvailable),
+      // "Dinero posible" = saldo de débito + crédito disponible.
+      possibleMoney: r2(debitTotal + creditAvailable),
       byCurrency,
       stale,
       ratesUpdatedAt: oldestFetchedAt,
@@ -200,8 +210,9 @@ accountsRouter.post(
     }
 
     // En una tarjeta de crédito, el initialBalance que envía el usuario es la
-    // DEUDA preexistente: se guarda como saldo NEGATIVO (-deuda). 0 = no debe nada.
-    const startBalance = isCredit ? -data.initialBalance : data.initialBalance;
+    // DEUDA preexistente. El saldo guardado es el CRÉDITO DISPONIBLE = límite − deuda
+    // (0 deuda → disponible = límite; deuda 1M con límite 5.5M → disponible 4.5M).
+    const startBalance = isCredit ? data.creditLimit! - data.initialBalance : data.initialBalance;
 
     const [row] = await db
       .insert(accounts)
@@ -368,25 +379,9 @@ accountsRouter.post(
     const totalAmount = Number(total);
     const settled = totalAmount <= 0; // sin gasto en el periodo → ya "pagado"
 
-    // Deuda automática (NO mueve saldo: el saldo de la tarjeta ya refleja el gasto).
-    // Saga: insert deuda → insert statement con debt_id; si el statement falla
-    // (carrera del UNIQUE) se compensa borrando la deuda.
-    const [debt] = await db
-      .insert(debts)
-      .values({
-        userId: uid,
-        name: `Estado de cuenta ${card.name} - ${format(periodEnd, 'MM/yyyy')}`,
-        type: 'debt',
-        totalAmount: totalAmount.toFixed(2),
-        remainingAmount: totalAmount.toFixed(2),
-        startDate: ymd(periodEnd),
-        dueDate: ymd(paymentDue),
-        accountId: id,
-        isPaidOff: settled,
-        paidOffAt: settled ? new Date() : null,
-      })
-      .returning();
-
+    // El corte es solo INFORMATIVO: NO genera deuda. La deuda ya se crea por cada
+    // compra con tarjeta en POST /api/transactions (1 deuda por compra), así que
+    // generar deuda también al corte la contaría doble.
     try {
       const [stmt] = await db
         .insert(creditCardStatements)
@@ -399,17 +394,11 @@ accountsRouter.post(
           totalAmount: totalAmount.toFixed(2),
           paidAmount: '0',
           isPaid: settled,
-          debtId: debt.id,
+          debtId: null,
         })
         .returning();
-      res.status(201).json({ ...stmt, debt });
+      res.status(201).json(stmt);
     } catch (err) {
-      await safeCompensate([db.delete(debts).where(eq(debts.id, debt.id))], {
-        endpoint: 'POST /api/accounts/:id/generate-statement',
-        operation: 'generateStatement',
-        userId: uid,
-        entityId: id,
-      });
       if (isUniqueViolation(err)) {
         throw new ApiError(409, 'Ya existe un estado de cuenta para este periodo');
       }
@@ -483,24 +472,15 @@ accountsRouter.post(
       accountId: data.paymentAccountId,
       toAccountId: id,
     });
+    // Libera crédito en la tarjeta (saldo += pago) y abona a las deudas automáticas
+    // de la tarjeta por orden FIFO (las más antiguas primero), todo en el mismo batch.
+    const fifo = await buildFifoCardDebtPayment(uid, id, data.amount);
     const stmts: unknown[] = [
       insertTx,
       balanceUpdate(uid, data.paymentAccountId, -data.amount), // sale de la cuenta de pago
-      balanceUpdate(uid, id, data.amount), // entra a la tarjeta (reduce la deuda)
+      balanceUpdate(uid, id, data.amount), // entra a la tarjeta (libera crédito)
+      ...fifo.apply,
     ];
-    if (stmt.debtId != null) {
-      stmts.push(
-        db
-          .update(debts)
-          .set({
-            remainingAmount: sql`GREATEST(0, ${debts.remainingAmount} - ${amountStr}::numeric)`,
-            isPaidOff: sql`${debts.remainingAmount} - ${amountStr}::numeric <= 0`,
-            paidOffAt: sql`CASE WHEN ${debts.remainingAmount} - ${amountStr}::numeric <= 0 THEN COALESCE(${debts.paidOffAt}, now()) ELSE ${debts.paidOffAt} END`,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(debts.id, stmt.debtId), eq(debts.userId, uid))),
-      );
-    }
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

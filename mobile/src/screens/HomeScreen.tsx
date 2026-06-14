@@ -129,27 +129,27 @@ export function HomeScreen() {
           expense={summary.expense}
           currency={mainCurrency}
           debitTotal={acctSummary?.debitTotal ?? totalBalance}
-          creditUsed={acctSummary?.creditUsed ?? 0}
+          creditAvailable={acctSummary?.creditAvailable ?? 0}
+          possibleMoney={acctSummary?.possibleMoney ?? (acctSummary?.debitTotal ?? totalBalance)}
           showCredit={creditCards.length > 0}
         />
 
-        {creditCards.length > 0 && (
+        {/* El crédito disponible ya se muestra en el balance; aquí solo alertas de utilización. */}
+        {creditAlerts.length > 0 && (
           <HomeSummaryCard
             icon="credit-card"
-            color={theme.colors.primary}
-            title="Crédito disponible"
+            color={theme.colors.expense}
+            title="Alertas de crédito"
             value={formatCurrency(acctSummary?.creditAvailable ?? 0, mainCurrency)}
             onPress={() => navigation.navigate('Accounts')}
             extra={
-              creditAlerts.length > 0 ? (
-                <View style={styles.creditAlerts}>
-                  {creditAlerts.map((a) => (
-                    <Text key={a.id} style={styles.creditAlertText} numberOfLines={1}>
-                      ⚠️ {a.name} al {Math.round(a.utilizationPercentage ?? 0)}% del límite
-                    </Text>
-                  ))}
-                </View>
-              ) : undefined
+              <View style={styles.creditAlerts}>
+                {creditAlerts.map((a) => (
+                  <Text key={a.id} style={styles.creditAlertText} numberOfLines={1}>
+                    ⚠️ {a.name} al {Math.round(a.utilizationPercentage ?? 0)}% del límite
+                  </Text>
+                ))}
+              </View>
             }
           />
         )}

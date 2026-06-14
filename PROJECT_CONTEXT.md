@@ -244,9 +244,14 @@ mobile/
 · **Solo tarjetas de crédito** (nullable en el resto; migración `0013_unique_thor.sql`, aditiva):
   `credit_limit` decimal(15,2) nullable (tope; null = no es tarjeta) · `billing_cycle_day` int nullable (día de corte 1-28)
   · `payment_due_day` int nullable (día de pago 1-28) · `allow_overdraft` bool def false (permitir gastar por encima del cupo).
-> **Tarjeta de crédito:** el `current_balance` es **negativo** cuando hay deuda (saldo a favor = positivo). En el alta,
-> el `initial_balance` que envía el usuario se interpreta como **deuda preexistente** y se guarda negado (input 500000 →
-> `current_balance = -500000`; 0 = sin deuda). Crédito disponible = `credit_limit + current_balance`.
+> **Tarjeta de crédito (modelo NUEVO — migración `0014`):** el `current_balance` representa el **CRÉDITO DISPONIBLE
+> (positivo)**, NO la deuda. Empieza igual al `credit_limit` y BAJA al gastar (`current_balance -= amount`). En el alta,
+> el `initial_balance` que envía el usuario se interpreta como **deuda preexistente** y el saldo guardado es el
+> **disponible = `credit_limit − deuda`** (límite 5.500.000 con deuda 1.000.000 → `current_balance = 4.500.000`; deuda 0 →
+> disponible = límite). Crédito disponible = `current_balance`; crédito usado/adeudado = `credit_limit − current_balance`.
+> La migración `0014` convierte las tarjetas existentes del modelo viejo (saldo negativo = deuda) al nuevo
+> (`current_balance = credit_limit + current_balance`). Gastar con tarjeta **no** toca el saldo de débito: solo baja el
+> disponible y **genera una deuda automática** (ver `transactions.debt_id` y POST /api/transactions).
 
 ### categories
 `id` serial PK · `name` varchar(80) NN · `type` varchar(10) NN (`income|expense`)
@@ -263,6 +268,10 @@ mobile/
 · `category_id` int FK→categories
 · `notes` text · `receipt_filename` varchar(255) (nullable; nombre del archivo de la foto del recibo —
   la imagen vive LOCAL en el dispositivo, NO en la DB; migración `0007_hard_red_shift.sql`)
+· **Cuotas + deuda automática (migración `0014`, aditiva):** `installments` int nullable (nº total de cuotas, ej: 36) ·
+  `current_installment` int nullable (cuota actual, al crear = 1) · `installment_amount` decimal(15,2) nullable
+  (= `amount / installments`) · `debt_id` int FK→debts nullable (deuda generada al gastar con tarjeta; 1 por compra).
+  Los 4 campos solo aplican a **gasto con tarjeta de crédito**; null en débito y en compras de contado.
 · `created_at` / `updated_at` timestamp def now()
 > **Multi-moneda:** cada transacción se guarda SIEMPRE en la moneda de su cuenta. En transferencias entre
 > cuentas de distinta moneda, la cuenta origen se mueve por `amount` (su moneda) y la destino por `to_amount`
@@ -318,12 +327,14 @@ mobile/
 `id` serial PK · `account_id` int FK→accounts ON DELETE CASCADE NN · `user_id` int FK→users NN
 · `period_start` date NN · `period_end` date NN (fecha de corte) · `payment_due_date` date NN
 · `total_amount` decimal(15,2) NN · `paid_amount` decimal(15,2) def 0 · `is_paid` bool def false · `is_overdue` bool def false
-· `debt_id` int FK→debts (nullable; deuda generada al corte) · `created_at` / `updated_at` timestamp def now()
+· `debt_id` int FK→debts (nullable; **desde `0014` siempre null** — los cortes ya no generan deuda) · `created_at` / `updated_at` timestamp def now()
 · UNIQUE(`account_id`,`period_end`) (un corte por periodo por tarjeta) + index(`user_id`,`account_id`,`is_paid`).
   Migración `0013_unique_thor.sql` (aditiva: columnas de tarjeta en accounts + esta tabla).
-> Estados de cuenta (cortes) de una tarjeta. Cada corte agrega el gasto del periodo y genera una **deuda automática**
-> (`debts`, type=`debt`, sin movimiento de saldo) con `due_date = payment_due_date`, enlazada por `debt_id`. Pagar el
-> estado de cuenta hace una **transferencia** (cuenta de pago → tarjeta) que reduce a la vez el saldo de la tarjeta y la deuda.
+> Estados de cuenta (cortes) de una tarjeta — **solo INFORMATIVOS desde `0014`**. Cada corte agrega el gasto del periodo
+> (`total_amount`) para visualizar el periodo, pero **NO genera deuda**: la deuda ya se crea **por cada compra** en
+> POST /api/transactions (1 deuda por compra), así que generar deuda también al corte la contaría doble. Pagar el corte
+> (`/statements/:id/pay`) hace una **transferencia** (cuenta de pago → tarjeta) que libera crédito y abona **FIFO** a las
+> deudas automáticas de la tarjeta (las más antiguas primero), igual que un pago normal de tarjeta.
 
 ### split_groups
 `id` serial PK · `name` varchar(100) NN · `description` varchar(255) · `icon` varchar(50) def `users`
@@ -375,6 +386,9 @@ mobile/
 - `expense` → `account.current_balance -= amount`
 - `transfer`→ `account.current_balance -= amount` y `to_account.current_balance += amount`
 - Editar/eliminar: revertir el efecto anterior y aplicar el nuevo.
+> **Tarjetas (modelo `0014`):** las mismas reglas aplican, pero como `current_balance` es el crédito DISPONIBLE, un
+> `expense` con tarjeta lo baja (consume crédito) y un `transfer` hacia la tarjeta lo sube (libera crédito). Además el
+> `expense` con tarjeta genera una **deuda automática** y el `transfer` hacia la tarjeta **abona FIFO** a esas deudas.
 
 > **Atomicidad (restricción dura del driver).** La conexión usa **`drizzle-orm/neon-http`**:
 > `db.batch([...])` ejecuta todos los statements en **una transacción atómica** (rollback
@@ -419,35 +433,39 @@ mobile/
 - `GET    /api/accounts` — cuentas activas. Para `credit_card` agrega campos calculados (ver Tarjetas de crédito);
   para el resto OMITE las columnas de tarjeta (no contamina la respuesta).
 - `GET    /api/accounts/summary?displayCurrency=COP[&refresh=true]` — balance consolidado convertido a
-  `displayCurrency`, **separando débito y crédito**: `{ displayCurrency, total (=debitTotal+creditTotal, patrimonio
-  neto líquido), debitTotal (cuentas no-tarjeta), creditTotal (tarjetas, negativo), creditLimit, creditUsed,
-  creditAvailable (=creditLimit−creditUsed), byCurrency[{currency,total,converted}], stale, ratesUpdatedAt }`
+  `displayCurrency`, **separando débito y crédito**: `{ displayCurrency, total (=debitTotal−creditUsed, patrimonio
+  neto líquido), debitTotal (cuentas no-tarjeta = el "Saldo"), creditTotal (=−creditUsed, contribución neta de tarjetas),
+  creditLimit, creditUsed (adeudado), creditAvailable (= suma de saldos disponibles de tarjetas), possibleMoney
+  (=debitTotal+creditAvailable, "dinero posible"), byCurrency[{currency,total,converted}], stale, ratesUpdatedAt }`
   (registrada antes de `/:id`)
 - `GET    /api/accounts/:id` — para `credit_card` incluye los campos calculados de tarjeta.
 - `POST   /api/accounts` — si `type='credit_card'` exige `creditLimit > 0` (400 si falta), `billingCycleDay`/
-  `paymentDueDay` opcionales (default 1 y 20, rango 1-28) y el `initialBalance` se guarda negado (deuda preexistente).
+  `paymentDueDay` opcionales (default 1 y 20, rango 1-28) y el `initialBalance` (deuda preexistente) se guarda como
+  **disponible = `creditLimit − initialBalance`**.
 - `PUT    /api/accounts/:id` — permite editar `creditLimit` (>0), `billingCycleDay`/`paymentDueDay` (1-28) y
   `allowOverdraft`. El cambio de límite es inmediato (no afecta cortes pasados).
 - `DELETE /api/accounts/:id` — soft delete (`is_active=false`)
 
 ### Tarjetas de crédito (estados de cuenta)
-> Campos calculados que `GET /api/accounts` y `/:id` agregan para `credit_card`: `creditLimit`, `creditUsed`
-> (`abs(min(current_balance,0))`), `creditAvailable` (`min(creditLimit, creditLimit+current_balance)`),
-> `utilizationPercentage`, `billingCycleDay`, `paymentDueDay`, `nextBillingDate`, `nextPaymentDueDate`.
+> Campos calculados que `GET /api/accounts` y `/:id` agregan para `credit_card` (modelo `0014`: `current_balance` ES el
+> disponible): `creditLimit`, `creditAvailable` (`clamp(current_balance, 0, creditLimit)`), `creditUsed`
+> (`max(0, creditLimit − current_balance)`), `utilizationPercentage`, `billingCycleDay`, `paymentDueDay`,
+> `nextBillingDate`, `nextPaymentDueDate`.
 - `GET    /api/accounts/:id/statements?limit=12&offset=0` — historial de cortes (orden `period_end` desc). 400 si la cuenta no es tarjeta.
 - `POST   /api/accounts/:id/generate-statement` — genera el corte del periodo actual (manual; en prod sería un cron):
   calcula `period_start`/`period_end` por `billing_cycle_day`, suma los `expense` de la tarjeta en el periodo →
-  `total_amount`, calcula `payment_due_date` por `payment_due_day`, crea el statement y una **deuda automática**
-  (`debts`, type `debt`, `remaining = total − paid`, `due_date`, sin mover saldo) enlazada por `debt_id`. **Saga:**
-  insert deuda → insert statement con `debt_id`; si el statement falla (carrera del UNIQUE) compensa borrando la deuda.
-  409 si ya existe un corte para ese periodo.
+  `total_amount`, calcula `payment_due_date` por `payment_due_day` y crea el statement (`debt_id=null`). **Desde `0014`
+  el corte es solo informativo: NO genera deuda** (la deuda ya existe por cada compra). 409 si ya existe un corte para ese periodo.
 - `POST   /api/accounts/:id/statements/:statementId/pay` — `{ amount, paymentAccountId }`. Valida `0 < amount <= remaining`
   (decremento **condicional anti-TOCTOU** sobre `paid_amount`, 0 filas → 400). Crea una **transferencia**
-  `paymentAccountId → tarjeta` (sube el saldo de la tarjeta = reduce deuda) y reduce `remaining_amount` de la deuda;
-  marca `is_paid`/`is_paid_off` al saldar. **Saga con safeCompensate** (revierte el `paid_amount` si el batch falla).
-- **Gasto con tarjeta (`POST /api/transactions`, type='expense'):** NO genera deuda por compra (eso es al corte); el saldo
-  se mueve normal y se valida que no exceda el crédito disponible (`creditLimit+currentBalance < amount` → 400), salvo
-  que la tarjeta tenga `allow_overdraft=true`.
+  `paymentAccountId → tarjeta` (libera crédito) y abona **FIFO** a las deudas automáticas de la tarjeta
+  (`buildFifoCardDebtPayment`, las más antiguas primero). **Saga con safeCompensate** (revierte el `paid_amount` si el batch falla).
+- **Gasto con tarjeta (`POST /api/transactions`, type='expense'):** baja el crédito disponible (`current_balance -= amount`,
+  valida `current_balance < amount → 400` salvo `allow_overdraft`) y **genera una deuda automática por la compra**
+  (`debts`, type `debt`, `total=remaining=amount`, `due_date` por `payment_due_day`, icono `credit-card`, enlazada por
+  `transactions.debt_id`). Con `installments>1` la deuda guarda "Cuota 1/N" en el nombre. **NO** afecta el saldo de débito.
+  **Pago de tarjeta:** una `transfer` cuya cuenta destino es la tarjeta libera crédito y abona **FIFO** a sus deudas
+  automáticas (mismo `buildFifoCardDebtPayment`). Editar/borrar un gasto con tarjeta actualiza/borra su deuda enlazada.
 
 ### Categories
 - `GET    /api/categories` — todas, subcategorías anidadas (`children[]`)
@@ -459,9 +477,12 @@ mobile/
 ### Transactions
 - `GET    /api/transactions` — query: `account_id, category_id, type, from_date, to_date, search, page, limit`
 - `GET    /api/transactions/:id`
-- `POST   /api/transactions` — crea y actualiza balance
-- `PUT    /api/transactions/:id` — recalcula balances
-- `DELETE /api/transactions/:id` — recalcula balance
+- `POST   /api/transactions` — crea y actualiza balance. Acepta `installments` (2–60, solo gasto con tarjeta; el backend
+  deriva `current_installment=1` e `installment_amount`). Gasto con tarjeta → genera deuda automática (saga: tx+saldo en
+  batch; luego deuda + enlace `debt_id` + tags, con compensación que revierte todo). Transfer hacia tarjeta → abona FIFO.
+- `PUT    /api/transactions/:id` — recalcula balances; actualiza/borra la deuda automática enlazada según el nuevo estado
+  (sigue siendo gasto con tarjeta → actualiza total/restante conservando lo pagado; ya no lo es → borra la deuda).
+- `DELETE /api/transactions/:id` — recalcula balance y borra la deuda automática enlazada (`debt_id`) si existe.
 > POST/PUT aceptan `receiptFilename` y GET (lista + `/:id`) lo devuelven. Es solo el **nombre** del archivo;
 > la imagen del recibo se guarda LOCAL en el dispositivo (ver feature "Recibos"). El backend no recibe ni
 > almacena la imagen. Borrar la transacción NO borra el archivo (eso lo hace el cliente).
@@ -812,13 +833,12 @@ vía `lazyScreen`); su `ScreenHeader` no lleva botón "atrás".
 
 **HomeScreen:** header con **botón hamburguesa** (abre el Sidebar) a la izquierda, saludo por hora
 ("Buenos días/tardes/noches") + fecha al centro y atajo a Cuentas (wallet) a la derecha; `BalanceSummary`
-con **saldo separado débito/crédito**: "Balance total · $Y" en pequeño (subtítulo, = `debitTotal+creditTotal`
-del endpoint `/api/accounts/summary`) y debajo dos líneas prominentes — **Débito** (verde, = `debitTotal`,
-cuentas bank/cash/digital_wallet) y **Crédito usado** (naranja, = `creditUsed` en positivo; solo si el usuario
-tiene tarjetas de crédito) — más las dos pills de ingresos/gastos del mes. Si no hay tarjetas, la línea de
-crédito se omite. (Si no se pasa `debitTotal`, el card cae al layout antiguo de saldo único en `fontSize.hero`.)
-Las **alertas ⚠️ de utilización >80%** siguen en la card "Crédito disponible" (`HomeSummaryCard`) debajo del
-balance. Pull-to-refresh. **Sección "Últimas
+con **tres líneas de saldo** (modelo `0014`, de `/api/accounts/summary`): **"Saldo"** grande (= `debitTotal`, solo
+cuentas de débito) y, si el usuario tiene tarjetas, **"Crédito disponible"** (verde, = `creditAvailable`) y **"Dinero
+posible (saldo + crédito)"** (sutil, = `possibleMoney = debitTotal + creditAvailable`) — más las dos pills de
+ingresos/gastos del mes. Si no hay tarjetas, solo se muestra "Saldo". Las **alertas de utilización >80%** se muestran
+en una card "Alertas de crédito" (`HomeSummaryCard`) **solo cuando hay alertas** (el disponible ya está en el balance,
+sin duplicar). Pull-to-refresh. **Sección "Últimas
 transacciones"** (debajo del resumen/cards): renderiza las **últimas 5** del usuario
 (`GET /api/transactions?limit=5&page=1`) con `TransactionCard` y, **debajo de la lista**, un botón de
 texto centrado (color primary, padding vertical 12px) "Ver todas las transacciones →" que navega a

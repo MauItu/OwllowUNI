@@ -11,23 +11,24 @@ interface Props {
   income: number;
   expense: number;
   currency?: string;
-  /** Suma de cuentas no-tarjeta (bank, cash, digital_wallet). Si se pasa, el card muestra el desglose débito/crédito. */
+  /** Suma de cuentas no-tarjeta (bank, cash, digital_wallet) = el "Saldo". */
   debitTotal?: number;
-  /** Crédito usado (deuda) de las tarjetas, en positivo. */
-  creditUsed?: number;
-  /** Mostrar la línea de crédito (solo si el usuario tiene tarjetas de crédito). */
+  /** Crédito disponible agregado de las tarjetas. */
+  creditAvailable?: number;
+  /** Dinero posible = saldo de débito + crédito disponible. */
+  possibleMoney?: number;
+  /** Mostrar las líneas de crédito (solo si el usuario tiene tarjetas de crédito). */
   showCredit?: boolean;
 }
 
 /** Card de balance total con gradiente rosa↔morado y texto blanco. */
-export function BalanceSummary({ totalBalance, income, expense, currency = 'COP', debitTotal, creditUsed = 0, showCredit = false }: Props) {
+export function BalanceSummary({ totalBalance, income, expense, currency = 'COP', debitTotal, creditAvailable = 0, possibleMoney = 0, showCredit = false }: Props) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const symbol = currencySymbol(currency);
-  const amount = formatCurrency(totalBalance, currency, { showSymbol: false });
-  // Verde para débito (saldo propio), naranja para crédito (deuda).
-  const debitColor = '#7BE0A8';
-  const creditColor = '#F9A66C';
+  // "Saldo" = débito si está disponible; si no, el balance total (compat).
+  const saldo = debitTotal ?? totalBalance;
+  const amount = formatCurrency(saldo, currency, { showSymbol: false });
 
   return (
     <LinearGradient
@@ -36,42 +37,30 @@ export function BalanceSummary({ totalBalance, income, expense, currency = 'COP'
       end={{ x: 1, y: 1 }}
       style={styles.wrap}
     >
-      {debitTotal === undefined ? (
-        <>
-          <Text style={styles.label}>Balance total</Text>
-          <View style={styles.heroRow}>
-            <Text style={styles.heroSymbol}>{symbol}</Text>
-            <Text style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>
-              {amount}
+      {/* Línea principal: Saldo (solo débito) grande. */}
+      <Text style={styles.label}>Saldo</Text>
+      <View style={styles.heroRow}>
+        <Text style={styles.heroSymbol}>{symbol}</Text>
+        <Text style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>
+          {amount}
+        </Text>
+      </View>
+
+      {showCredit && (
+        <View style={styles.creditLines}>
+          <View style={styles.creditRow}>
+            <Text style={styles.creditLabel}>Crédito disponible</Text>
+            <Text style={styles.creditAvailable} numberOfLines={1} adjustsFontSizeToFit>
+              {formatCurrency(creditAvailable, currency)}
             </Text>
           </View>
-        </>
-      ) : (
-        <>
-          {/* Balance total en pequeño como subtítulo; debajo el desglose débito/crédito. */}
-          <Text style={styles.label}>
-            Balance total · {symbol}
-            {amount}
-          </Text>
-          <View style={styles.breakdown}>
-            <View style={styles.breakdownRow}>
-              <View style={[styles.breakdownDot, { backgroundColor: debitColor }]} />
-              <Text style={styles.breakdownLabel}>Débito</Text>
-              <Text style={[styles.breakdownValue, { color: debitColor }]} numberOfLines={1} adjustsFontSizeToFit>
-                {formatCurrency(debitTotal, currency)}
-              </Text>
-            </View>
-            {showCredit && (
-              <View style={styles.breakdownRow}>
-                <View style={[styles.breakdownDot, { backgroundColor: creditColor }]} />
-                <Text style={styles.breakdownLabel}>Crédito usado</Text>
-                <Text style={[styles.breakdownValue, { color: creditColor }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {formatCurrency(creditUsed, currency)}
-                </Text>
-              </View>
-            )}
+          <View style={styles.creditRow}>
+            <Text style={styles.possibleLabel}>Dinero posible (saldo + crédito)</Text>
+            <Text style={styles.possibleValue} numberOfLines={1} adjustsFontSizeToFit>
+              {formatCurrency(possibleMoney, currency)}
+            </Text>
           </View>
-        </>
+        </View>
       )}
 
       <View style={styles.pills}>
@@ -114,11 +103,12 @@ const createStyles = (theme: Theme) =>
     heroRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: theme.spacing.xs },
     heroSymbol: { color: 'rgba(255,255,255,0.9)', fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.semibold, marginTop: 4, marginRight: 2 },
     hero: { color: '#FFFFFF', fontSize: theme.fontSize.hero, fontWeight: theme.fontWeight.bold, letterSpacing: -1 },
-    breakdown: { marginTop: theme.spacing.md, gap: theme.spacing.sm },
-    breakdownRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
-    breakdownDot: { width: 10, height: 10, borderRadius: 5 },
-    breakdownLabel: { flex: 1, color: 'rgba(255,255,255,0.9)', fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.medium },
-    breakdownValue: { fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold, maxWidth: '55%' },
+    creditLines: { marginTop: theme.spacing.md, gap: theme.spacing.xs },
+    creditRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm },
+    creditLabel: { color: 'rgba(255,255,255,0.9)', fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+    creditAvailable: { color: '#7BE0A8', fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold, maxWidth: '55%' },
+    possibleLabel: { color: 'rgba(255,255,255,0.7)', fontSize: theme.fontSize.xs },
+    possibleValue: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold, maxWidth: '50%' },
     pills: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.lg },
     pill: {
       flex: 1,

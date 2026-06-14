@@ -99,6 +99,13 @@
       "when": 1781415177901,
       "tag": "0013_unique_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781474702972,
+      "tag": "0014_credito_cuotas_deuda",
+      "breakpoints": true
     }
   ]
 }

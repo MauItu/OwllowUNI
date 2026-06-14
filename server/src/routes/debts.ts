@@ -101,6 +101,7 @@ debtsRouter.get(
         createdAt: debts.createdAt,
         updatedAt: debts.updatedAt,
         accountName: accounts.name,
+        accountType: accounts.type,
       })
       .from(debts)
       .leftJoin(accounts, eq(debts.accountId, accounts.id))

@@ -123,6 +123,12 @@ export interface Transaction {
   notes: string | null;
   /** Nombre del archivo de la foto del recibo (imagen local en el dispositivo). */
   receiptFilename: string | null;
+  /** Compra a cuotas (solo gasto con tarjeta de crédito; null = contado). */
+  installments?: number | null;
+  currentInstallment?: number | null;
+  installmentAmount?: string | null;
+  /** Deuda generada automáticamente al gastar con tarjeta (1 por compra). */
+  debtId?: number | null;
   createdAt: string;
   // Campos enriquecidos por el join del backend
   accountName?: string | null;
@@ -216,6 +222,8 @@ export interface TransactionInput {
   /** Nombre del archivo de la foto del recibo (imagen local en el dispositivo). */
   receiptFilename?: string | null;
   tagIds?: number[];
+  /** Compra a cuotas (solo gasto con tarjeta de crédito): nº total de cuotas (2–60). */
+  installments?: number | null;
 }
 
 export interface TagInput {
@@ -366,6 +374,8 @@ export interface Debt {
   createdAt: string;
   updatedAt: string;
   accountName?: string | null;
+  /** Tipo de la cuenta enlazada; 'credit_card' marca deudas automáticas de tarjeta. */
+  accountType?: string | null;
   /** Solo en GET /api/debts/:id */
   payments?: DebtPayment[];
 }
@@ -615,18 +625,20 @@ export interface RatesResponse {
 
 export interface AccountsSummary {
   displayCurrency: string;
-  /** Patrimonio neto líquido = debitTotal + creditTotal. */
+  /** Patrimonio neto líquido = debitTotal − creditUsed (lo que tengo menos lo que debo). */
   total: number;
-  /** Suma de cuentas no-tarjeta (bank, cash, digital_wallet), convertida. */
+  /** Suma de cuentas no-tarjeta (bank, cash, digital_wallet), convertida. El "Saldo". */
   debitTotal: number;
-  /** Suma de saldos de tarjetas de crédito (negativo), convertida. */
+  /** Contribución neta de las tarjetas al patrimonio (deuda en negativo = −creditUsed). */
   creditTotal: number;
   /** Suma de límites de todas las tarjetas, convertida. */
   creditLimit: number;
-  /** Suma de crédito usado de todas las tarjetas, convertida. */
+  /** Suma de crédito usado (adeudado) de todas las tarjetas, convertida. */
   creditUsed: number;
-  /** creditLimit − creditUsed, convertida. */
+  /** Crédito disponible agregado = suma de saldos disponibles de las tarjetas, convertida. */
   creditAvailable: number;
+  /** "Dinero posible" = debitTotal + creditAvailable. */
+  possibleMoney: number;
   byCurrency: { currency: string; total: number; converted: number }[];
   stale: boolean;
   ratesUpdatedAt: string | null;

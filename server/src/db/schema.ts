@@ -128,6 +128,15 @@ export const transactions = pgTable('transactions', {
   // Nombre del archivo de la foto del recibo (la imagen vive LOCAL en el
   // dispositivo: documentDirectory/receipts/<filename>; en DB solo el nombre).
   receiptFilename: varchar('receipt_filename', { length: 255 }),
+  // ── Compras a cuotas (solo gastos con tarjeta de crédito; null en el resto) ──
+  // Nº total de cuotas (ej: 36). null = compra de contado.
+  installments: integer('installments'),
+  // Nº de cuota actual (al crear siempre 1).
+  currentInstallment: integer('current_installment'),
+  // Valor de cada cuota (= amount / installments).
+  installmentAmount: decimal('installment_amount', { precision: 15, scale: 2 }),
+  // Deuda generada automáticamente al gastar con tarjeta de crédito (1 por compra).
+  debtId: integer('debt_id').references((): AnyPgColumn => debts.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => ({
@@ -139,6 +148,7 @@ export const transactions = pgTable('transactions', {
   accountIdx: index('transactions_account_id_idx').on(t.accountId),
   toAccountIdx: index('transactions_to_account_id_idx').on(t.toAccountId),
   categoryIdx: index('transactions_category_id_idx').on(t.categoryId),
+  debtIdx: index('transactions_debt_id_idx').on(t.debtId),
 }));
 
 // ──────────────────────────── exchange_rates ────────────────────────
@@ -578,6 +588,10 @@ export const transactionsRelations = relations(transactions, ({ one, many }) => 
   category: one(categories, {
     fields: [transactions.categoryId],
     references: [categories.id],
+  }),
+  debt: one(debts, {
+    fields: [transactions.debtId],
+    references: [debts.id],
   }),
 }));
 
