@@ -159,6 +159,7 @@ server/
 │   │   ├── tags.ts
 │   │   ├── savings.ts
 │   │   ├── debts.ts
+│   │   ├── budgets.ts
 │   │   ├── splits.ts
 │   │   ├── insights.ts        ← insights financieros (agregación SQL determinística)
 │   │   └── rates.ts           ← tasas de cambio (GET /, PUT/DELETE /manual)
@@ -192,7 +193,7 @@ mobile/
     │                              reprogramar por entidad con identifiers determinísticos, sync global)
     ├── services/security.ts    ← Bloqueo con PIN (hash SHA-256+salt en SecureStore) + biometría + lockout
     ├── hooks/                  ← useAccounts, useTransactions, useCategories, useTemplates,
-    │                              useStats, useTags, useSavings, useDebts, useSplits,
+    │                              useStats, useTags, useSavings, useDebts, useBudgets, useSplits,
     │                              useNotificationSettings, useInsights, useAccountsSummary,
     │                              useAppLock (provider de bloqueo + AppState)
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
@@ -200,7 +201,7 @@ mobile/
     ├── stores/sidebarStore.ts  ← Zustand (estado abierto/cerrado del Sidebar: isOpen/open/close/toggle)
     ├── screens/                ← Home, Transactions, AddTransaction, Accounts, AddAccount,
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
-    │                              SavingsDetail, Debts, AddDebt, DebtDetail, Splits,
+    │                              SavingsDetail, Debts, AddDebt, DebtDetail, Budgets, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense,
     │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen, SetupPin
     │                              (More.tsx queda huérfano: el Sidebar lo reemplaza)
@@ -284,6 +285,16 @@ mobile/
 `id` serial PK · `debt_id` int FK→debts ON DELETE CASCADE NN · `amount` decimal(15,2) NN · `date` date NN
 · `description` varchar(255) · `account_id` int FK→accounts (nullable; cuenta del abono) · `transaction_id` int FK→transactions · `created_at` timestamp def now()
 > Un abono con `account_id` genera una transacción `income` (loan) / `expense` (debt) en esa cuenta y enlaza `transaction_id`.
+
+### budgets
+`id` serial PK · `user_id` int FK→users NN · `category_id` int FK→categories (**nullable**; NULL = presupuesto GLOBAL)
+· `amount` decimal(15,2) NN (límite mensual) · `is_active` bool def true · `created_at` / `updated_at` timestamp def now()
+· UNIQUE(`user_id`,`category_id`) (un presupuesto por categoría) + **índice único PARCIAL** `budgets_one_global_per_user` =
+  `(user_id) WHERE category_id IS NULL` (un solo global por usuario; Postgres trata los NULL como distintos en UNIQUE,
+  así que el parcial es necesario) + index(`user_id`). Migración `0012_dear_legion.sql` (aditiva: tabla nueva + índices).
+> Presupuestos mensuales. El **gasto del mes NO se persiste**: se calcula on-the-fly sumando `transactions` (type='expense')
+> del usuario en el mes en curso (todas las categorías si es global; la categoría exacta si no). El historial de cumplimiento
+> compara el `amount` ACTUAL del presupuesto contra el gasto de cada mes pasado (no hay snapshot histórico del monto).
 
 ### split_groups
 `id` serial PK · `name` varchar(100) NN · `description` varchar(255) · `icon` varchar(50) def `users`
@@ -452,6 +463,19 @@ mobile/
 - `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado
 - `DELETE /api/debts/:id` — CASCADE en pagos + revierte balances y borra las transacciones de los abonos vinculados (db.batch)
 - `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante (UPDATE condicional `remaining_amount >= amount`, 0 filas → 400, anti-TOCTOU) y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch); compensa el decremento + la tx si falla el registro del pago
+
+### Budgets (presupuestos mensuales)
+> Router `routes/budgets.ts`, montado en `index.ts` con `authenticate` + `invalidateOnMutation`; los **GET están cacheados**
+> con `cacheResponse(SUMMARY_TTL_MS)` (5 min) e invalidados por sello de versión ante cualquier mutación del usuario. El
+> gasto del mes se calcula con una **subquery correlacionada** sobre `transactions` (type='expense', rango del mes en curso).
+- `GET    /api/budgets` — presupuestos del usuario con el gasto del mes ya calculado:
+  `{ id, categoryId, categoryName, categoryIcon, categoryColor, amount, spent, remaining, percentage, isActive }`
+  (`remaining = amount - spent`, `percentage = spent/amount*100`). Global (categoryId null) suma TODOS los gastos del mes.
+- `GET    /api/budgets/summary` — `{ totalBudgeted, totalSpent, totalRemaining, overBudgetCount, onTrackCount }` (solo activos; `overBudget = spent > amount`).
+- `GET    /api/budgets/history?months=6` — (default 6, max 12) por mes y por presupuesto activo `{ month:'YYYY-MM', budgets:[{categoryId, categoryName, amount, spent, met}], summary:{month, totalMet, totalBudgets, complianceRate} }`, ordenado del mes más reciente al más antiguo. Compara el `amount` actual contra el gasto de cada mes.
+- `POST   /api/budgets` — `{ categoryId?, amount }` (categoryId null = global). Valida `amount > 0` y, si trae categoría, que exista, sea del usuario y de tipo `expense`. Si ya existe (UNIQUE / parcial del global) → **409** `{ error: 'Ya tienes un presupuesto para esta categoría' }` (vía `isUniqueViolation`).
+- `PUT    /api/budgets/:id` — `{ amount?, isActive? }`, solo el dueño.
+- `DELETE /api/budgets/:id` — hard delete, solo el dueño.
 
 ### Splits (gastos compartidos)
 - `GET    /api/splits` — grupos activos con `members[]` y `myBalance`
@@ -831,6 +855,19 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     (cleanup en unmount vía `tempFilesRef`/`savedFileRef`) y al borrar la transacción (incluido swipe-to-delete en
     `TransactionsScreen` y el trash de la edición); el archivo persistido solo se borra al confirmar el cambio al
     guardar. `TransactionCard` muestra un ícono `paperclip` si la transacción tiene recibo.
+
+21. **Presupuestos mensuales:** pantalla `BudgetsScreen` (accesible desde el **Sidebar** → "Presupuestos",
+    ícono `pie-chart`; registrada en `RootStack`, carga diferida) + hook `useBudgets` (mismo patrón que
+    `useDebts`/`useSavings`: `{ budgets, summary, history, loading, refreshing, error, refetch }`) + `budgetsApi`
+    en `api/client.ts`. La pantalla tiene **2 tabs**: "Presupuestos" (tarjeta de resumen con restante/presupuestado/
+    gastado + nº de excedidos; lista de presupuestos activos como cards con **barra de progreso** verde `<80%`,
+    amarillo `80–100%` (`#F59E0B`), rojo `>100%`, texto `$gastado / $monto` + `%`) y "Historial" (últimos 6 meses,
+    cada mes con barra "X de Y cumplidos" + %, expandible al detalle por categoría con check/cruz verde/rojo).
+    El alta/edición es un `BottomSheet`: toggle "Presupuesto global" o `CategoryPicker` (tipo expense) + monto vía
+    `CalculatorSheet`; editar permite cambiar el monto y eliminar; 409 → toast "Ya tienes un presupuesto para esta
+    categoría". En el **Home** se muestran hasta **2 mini-alertas** (`⚠️ <categoría> al X% del presupuesto`) para los
+    presupuestos activos por encima del 80% (las de mayor %), que enlazan a `BudgetsScreen`. Montos con
+    `formatCurrency(.., mainCurrency)`. Budgets cacheados (5 min) + invalidados en el backend.
 
 ---
 

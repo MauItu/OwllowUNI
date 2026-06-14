@@ -292,6 +292,38 @@ export const debtPayments = pgTable('debt_payments', {
   debtIdx: index('debt_payments_debt_id_idx').on(t.debtId),
 }));
 
+// ─────────────────────────────── budgets ────────────────────────────
+// Presupuestos mensuales. Un presupuesto por categoría por usuario; además un
+// único presupuesto GLOBAL (category_id IS NULL) por usuario. Postgres trata los
+// NULL como distintos en UNIQUE, así que el UNIQUE(user_id, category_id) NO impide
+// dos globales: para eso va el índice único PARCIAL sobre (user_id) WHERE
+// category_id IS NULL. El gasto del mes NO se persiste; se calcula on-the-fly
+// sumando transactions (type='expense') del mes en curso.
+export const budgets = pgTable(
+  'budgets',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .references(() => users.id)
+      .notNull(),
+    // null = presupuesto global (límite de gasto total del mes).
+    categoryId: integer('category_id').references(() => categories.id),
+    amount: decimal('amount', { precision: 15, scale: 2 }).notNull(),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    // Un presupuesto por categoría por usuario (los globales escapan al NULL).
+    uniqueUserCategory: unique().on(t.userId, t.categoryId),
+    // Un único presupuesto global por usuario.
+    oneGlobalPerUser: uniqueIndex('budgets_one_global_per_user')
+      .on(t.userId)
+      .where(sql`${t.categoryId} IS NULL`),
+    userIdx: index('budgets_user_id_idx').on(t.userId),
+  }),
+);
+
 // ─────────────────────────── split_groups ───────────────────────────
 export const splitGroups = pgTable('split_groups', {
   id: serial('id').primaryKey(),
@@ -456,6 +488,13 @@ export const debtPaymentsRelations = relations(debtPayments, ({ one }) => ({
   }),
 }));
 
+export const budgetsRelations = relations(budgets, ({ one }) => ({
+  category: one(categories, {
+    fields: [budgets.categoryId],
+    references: [categories.id],
+  }),
+}));
+
 export const tagsRelations = relations(tags, ({ many }) => ({
   transactionTags: many(transactionTags),
 }));
@@ -598,3 +637,5 @@ export type SplitSettlement = typeof splitSettlements.$inferSelect;
 export type NewSplitSettlement = typeof splitSettlements.$inferInsert;
 export type ExchangeRate = typeof exchangeRates.$inferSelect;
 export type NewExchangeRate = typeof exchangeRates.$inferInsert;
+export type Budget = typeof budgets.$inferSelect;
+export type NewBudget = typeof budgets.$inferInsert;

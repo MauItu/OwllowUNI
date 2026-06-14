@@ -372,6 +372,55 @@ export interface DebtsSummary {
   activeLoans: number;
 }
 
+// ──────────────────────── Presupuestos mensuales ───────────────────────
+
+export interface Budget {
+  id: number;
+  /** null = presupuesto global (límite de gasto total del mes). */
+  categoryId: number | null;
+  categoryName: string | null;
+  categoryIcon: string | null;
+  categoryColor: string | null;
+  amount: number;
+  spent: number;
+  remaining: number;
+  percentage: number;
+  isActive: boolean;
+}
+
+export interface BudgetsSummary {
+  totalBudgeted: number;
+  totalSpent: number;
+  totalRemaining: number;
+  overBudgetCount: number;
+  onTrackCount: number;
+}
+
+export interface BudgetHistoryItem {
+  categoryId: number | null;
+  categoryName: string | null;
+  amount: number;
+  spent: number;
+  met: boolean;
+}
+
+export interface BudgetHistoryMonth {
+  month: string; // 'YYYY-MM'
+  budgets: BudgetHistoryItem[];
+  summary: {
+    month: string;
+    totalMet: number;
+    totalBudgets: number;
+    complianceRate: number;
+  };
+}
+
+export interface BudgetInput {
+  /** null/omitido = presupuesto global. */
+  categoryId?: number | null;
+  amount: number;
+}
+
 // ──────────────────────── Gastos compartidos ───────────────────────
 export interface SplitMember {
   id: number;

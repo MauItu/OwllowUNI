@@ -23,6 +23,7 @@ import { useTemplates } from '../hooks/useTemplates';
 import { useSavings } from '../hooks/useSavings';
 import { useDebts } from '../hooks/useDebts';
 import { useSplits } from '../hooks/useSplits';
+import { useBudgets } from '../hooks/useBudgets';
 import { useAppStore } from '../stores/appStore';
 import { useSidebarStore } from '../stores/sidebarStore';
 import { currentMonthRange } from '../utils/formatDate';
@@ -54,6 +55,7 @@ export function HomeScreen() {
   const { summary: savingsSummary, refetch: refetchSavings } = useSavings();
   const { summary: debtsSummary, refetch: refetchDebts } = useDebts();
   const { summary: splitsSummary, refetch: refetchSplits } = useSplits();
+  const { budgets, refetch: refetchBudgets } = useBudgets();
   const setPendingTemplate = useAppStore((s) => s.setPendingTemplate);
   const openSidebar = useSidebarStore((s) => s.open);
 
@@ -62,9 +64,9 @@ export function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchAccounts(true), refetchAcctSummary(), refetchStats(true), refetchInsights(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true), refetchSplits(true)]);
+    await Promise.all([refetchAccounts(true), refetchAcctSummary(), refetchStats(true), refetchInsights(true), refreshTx(), refetchTemplates(true), refetchSavings(true), refetchDebts(true), refetchSplits(true), refetchBudgets(true)]);
     setRefreshing(false);
-  }, [refetchAccounts, refetchAcctSummary, refetchStats, refetchInsights, refreshTx, refetchTemplates, refetchSavings, refetchDebts, refetchSplits]);
+  }, [refetchAccounts, refetchAcctSummary, refetchStats, refetchInsights, refreshTx, refetchTemplates, refetchSavings, refetchDebts, refetchSplits, refetchBudgets]);
 
   const useTemplate = (template: Template) => {
     // use_count se incrementa al CONFIRMAR la transacción en AddTransaction,
@@ -78,6 +80,11 @@ export function HomeScreen() {
   const dateLabel = today.charAt(0).toUpperCase() + today.slice(1);
   const latest = transactions.slice(0, 5);
   const homeInsights = insights.slice(0, 3); // carrusel: máximo 3
+  // Alertas de presupuesto: activos por encima del 80%, las 2 de mayor %.
+  const budgetAlerts = budgets
+    .filter((b) => b.isActive && b.percentage >= 80)
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 2);
 
   return (
     <Screen>
@@ -110,6 +117,29 @@ export function HomeScreen() {
           expense={summary.expense}
           currency={mainCurrency}
         />
+
+        {budgetAlerts.length > 0 && (
+          <View style={styles.budgetAlerts}>
+            {budgetAlerts.map((b) => {
+              const over = b.percentage > 100;
+              const color = over ? theme.colors.expense : '#F59E0B';
+              const name = b.categoryId == null ? 'Presupuesto Global' : b.categoryName ?? 'Categoría';
+              return (
+                <Pressable
+                  key={b.id}
+                  style={[styles.budgetAlert, { borderColor: color, backgroundColor: `${color}1A` }]}
+                  onPress={() => navigation.navigate('Budgets')}
+                >
+                  <Icon name="triangle-alert" size={18} color={color} />
+                  <Text style={styles.budgetAlertText} numberOfLines={1}>
+                    {name} al {Math.round(b.percentage)}% del presupuesto
+                  </Text>
+                  <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
         {homeInsights.length > 0 && (
           <View style={styles.insightsSection}>
@@ -265,6 +295,17 @@ const createStyles = (theme: Theme) =>
   content: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   section: { marginTop: theme.spacing.xl },
   insightsSection: { marginTop: theme.spacing.lg },
+  budgetAlerts: { marginTop: theme.spacing.lg, gap: theme.spacing.sm },
+  budgetAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm + 2,
+  },
+  budgetAlertText: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
   carousel: { gap: theme.spacing.sm, paddingRight: theme.spacing.lg, paddingVertical: theme.spacing.xs },
   seeAll: { color: theme.colors.primaryLight, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
   // Botón de texto (no elevado), centrado, color primario, padding vertical 12px.

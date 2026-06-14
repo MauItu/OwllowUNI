@@ -30,6 +30,10 @@ import type {
   DebtInput,
   DebtPaymentInput,
   DebtsSummary,
+  Budget,
+  BudgetsSummary,
+  BudgetHistoryMonth,
+  BudgetInput,
   SplitGroup,
   SplitGroupInput,
   SplitMember,
@@ -252,6 +256,18 @@ export const debtsApi = {
   pay: (id: number, data: DebtPaymentInput) =>
     api.post<Debt>(`/debts/${id}/pay`, data).then((r) => r.data),
   summary: () => api.get<DebtsSummary>('/debts/summary').then((r) => r.data),
+};
+
+// ────────────────────── Presupuestos mensuales ──────────────
+export const budgetsApi = {
+  list: () => api.get<Budget[]>('/budgets').then((r) => r.data),
+  summary: () => api.get<BudgetsSummary>('/budgets/summary').then((r) => r.data),
+  history: (months = 6) =>
+    api.get<BudgetHistoryMonth[]>('/budgets/history', { params: { months } }).then((r) => r.data),
+  create: (data: BudgetInput) => api.post<Budget>('/budgets', data).then((r) => r.data),
+  update: (id: number, data: Partial<BudgetInput> & { isActive?: boolean }) =>
+    api.put<Budget>(`/budgets/${id}`, data).then((r) => r.data),
+  remove: (id: number) => api.delete(`/budgets/${id}`).then((r) => r.data),
 };
 
 // ─────────────────────── Gastos compartidos ─────────────────

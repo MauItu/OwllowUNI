@@ -72,6 +72,7 @@ const SplitsScreen = lazyScreen(() => import('../screens/SplitsScreen').then((m)
 const AddSplitGroupScreen = lazyScreen(() => import('../screens/AddSplitGroupScreen').then((m) => ({ default: m.AddSplitGroupScreen })));
 const SplitGroupDetailScreen = lazyScreen(() => import('../screens/SplitGroupDetailScreen').then((m) => ({ default: m.SplitGroupDetailScreen })));
 const AddSplitExpenseScreen = lazyScreen(() => import('../screens/AddSplitExpenseScreen').then((m) => ({ default: m.AddSplitExpenseScreen })));
+const BudgetsScreen = lazyScreen(() => import('../screens/BudgetsScreen').then((m) => ({ default: m.BudgetsScreen })));
 const SettingsNotificationsScreen = lazyScreen(() => import('../screens/SettingsNotificationsScreen').then((m) => ({ default: m.SettingsNotificationsScreen })));
 const SecurityScreen = lazyScreen(() => import('../screens/SecurityScreen').then((m) => ({ default: m.SecurityScreen })));
 const AppearanceScreen = lazyScreen(() => import('../screens/AppearanceScreen').then((m) => ({ default: m.AppearanceScreen })));
@@ -216,6 +217,7 @@ export function AppNavigator() {
         <RootStack.Screen name="Debts" component={DebtsScreen} />
         <RootStack.Screen name="AddDebt" component={AddDebtScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="DebtDetail" component={DebtDetailScreen} />
+        <RootStack.Screen name="Budgets" component={BudgetsScreen} />
         <RootStack.Screen name="Splits" component={SplitsScreen} />
         <RootStack.Screen name="AddSplitGroup" component={AddSplitGroupScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="SplitGroupDetail" component={SplitGroupDetailScreen} />
