@@ -209,7 +209,7 @@ mobile/
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
     │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, Sidebar, GlobalSearchBar,
-    │                              PinDots, PinKeypad, PinModal, ReceiptViewer, BottomSheet, Icon, common
+    │                              PinDots, PinKeypad, PinModal, ReceiptViewer, BottomSheet, DayPickerSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks (NavigationContainer con navigationRef)
     ├── navigation/navigationRef.ts  ← createNavigationContainerRef: navegar desde fuera del árbol (Sidebar)
     ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
@@ -923,6 +923,22 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     ícono+color, Metas `SavingsGoalCard`, Deudas `DebtCard`, Etiquetas `TagChip`), con estado inicial
     (sugerencia) y vacío ("No se encontraron resultados para …"). `Transactions` ahora acepta `search?` en
     sus params para pre-aplicar el filtro.
+
+23. **Tarjetas de crédito (UI mobile):** en `AddAccountScreen`, al elegir tipo "Tarjeta de crédito" aparecen
+    campos exclusivos (ocultos para el resto de tipos y no se envían al guardar): "Límite de crédito"
+    (obligatorio >0, vía `CalculatorSheet`), "Día de corte" y "Día de pago" (1-28, default 1/20, vía
+    `DayPickerSheet` — grilla de 28 días en `BottomSheet`) y "Permitir sobregiro" (`Switch`, default off);
+    el campo de saldo se relabela "Saldo adeudado" (default 0 = sin deuda). Al editar una tarjeta existente
+    se precargan estos valores y el saldo se muestra en positivo (el backend lo guarda negado; al guardar la
+    edición se vuelve a negar para mantener la convención). `AccountCard` para `type==='credit_card'` cambia
+    a un layout vertical: barra de utilización con 4 tramos de color (verde `<50%`, amarillo `50-80%`, naranja
+    `80-100%`, rojo `>100%`, según `utilizationPercentage`), "Disponible: $X" en grande (`creditAvailable`),
+    "Usado: $Y de $Z" (`creditUsed`/`creditLimit`) y "Próximo corte: DD/MM" (`nextBillingDate`); las cuentas
+    de débito mantienen el layout original sin cambios. `Account`/`AccountInput` en `types/index.ts`
+    extendidos con los campos calculados (`creditLimit`, `creditUsed`, `creditAvailable`,
+    `utilizationPercentage`, `billingCycleDay`, `paymentDueDay`, `allowOverdraft`, `nextBillingDate`,
+    `nextPaymentDueDate`) y de alta/edición (`creditLimit`, `billingCycleDay`, `paymentDueDay`,
+    `allowOverdraft`) que ya devuelve/acepta el backend (Prompt 7A).
 
 ---
 

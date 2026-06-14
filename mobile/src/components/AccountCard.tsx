@@ -4,6 +4,7 @@ import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 import { formatCurrency } from '../utils/formatCurrency';
+import { format, parseISOSafe } from '../utils/formatDate';
 import type { Account } from '../types';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -13,9 +14,56 @@ const TYPE_LABEL: Record<string, string> = {
   digital_wallet: 'Billetera digital',
 };
 
+// Colores fijos (no tokens del tema) para que los 4 tramos de utilización se
+// distingan entre sí en las 4 paletas, en claro y oscuro.
+function utilizationColor(theme: Theme, pct: number) {
+  if (pct > 100) return theme.colors.danger;
+  if (pct > 80) return '#F97316'; // naranja
+  if (pct > 50) return '#FACC15'; // amarillo
+  return theme.colors.income; // verde
+}
+
 function AccountCardComponent({ account, onPress }: { account: Account; onPress?: (a: Account) => void }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
+
+  if (account.type === 'credit_card') {
+    const pct = account.utilizationPercentage ?? 0;
+    const barColor = utilizationColor(theme, pct);
+    return (
+      <Pressable
+        onPress={() => onPress?.(account)}
+        style={({ pressed }) => [styles.card, styles.creditCard, { borderLeftColor: account.color }, pressed && { backgroundColor: theme.colors.surfaceLight }]}
+      >
+        <View style={styles.creditHeader}>
+          <View style={[styles.iconWrap, { backgroundColor: `${account.color}26` }]}>
+            <Icon name="credit-card" size={22} color={account.color} />
+          </View>
+          <View style={styles.info}>
+            <Text style={styles.name} numberOfLines={1}>
+              {account.name}
+            </Text>
+            <Text style={styles.type}>{TYPE_LABEL.credit_card}</Text>
+          </View>
+        </View>
+
+        <View style={styles.utilBarBg}>
+          <View style={[styles.utilBarFill, { width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }]} />
+        </View>
+
+        <Text style={styles.available} numberOfLines={1}>
+          Disponible: {formatCurrency(account.creditAvailable ?? 0, account.currency)}
+        </Text>
+        <Text style={styles.usedOf} numberOfLines={1}>
+          Usado: {formatCurrency(account.creditUsed ?? 0, account.currency)} de {formatCurrency(account.creditLimit ?? 0, account.currency)}
+        </Text>
+        {account.nextBillingDate && (
+          <Text style={styles.nextBilling}>Próximo corte: {format(parseISOSafe(account.nextBillingDate), 'dd/MM')}</Text>
+        )}
+      </Pressable>
+    );
+  }
+
   const balance = parseFloat(account.currentBalance);
   return (
     <Pressable
@@ -57,6 +105,14 @@ const createStyles = (theme: Theme) =>
   name: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
   type: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, marginTop: 2 },
   balance: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },
+  // Tarjeta de crédito: layout vertical (header + barra + montos).
+  creditCard: { flexDirection: 'column', alignItems: 'stretch', gap: theme.spacing.sm },
+  creditHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
+  utilBarBg: { height: 8, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.surfaceLight, overflow: 'hidden' },
+  utilBarFill: { height: '100%', borderRadius: theme.borderRadius.full },
+  available: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold },
+  usedOf: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
+  nextBilling: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs },
 });
 
 // Memoizado: se renderiza por fila en listas; con props estables evita re-render.

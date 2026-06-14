@@ -67,6 +67,16 @@ export interface Account {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  // Solo presentes cuando type === 'credit_card' (GET /api/accounts los calcula)
+  allowOverdraft?: boolean;
+  creditLimit?: number;
+  creditUsed?: number;
+  creditAvailable?: number;
+  utilizationPercentage?: number;
+  billingCycleDay?: number;
+  paymentDueDay?: number;
+  nextBillingDate?: string;
+  nextPaymentDueDate?: string;
 }
 
 export interface Category {
@@ -221,6 +231,11 @@ export interface AccountInput {
   initialBalance?: number;
   color?: string;
   icon?: string;
+  // Solo aplican cuando type === 'credit_card'
+  creditLimit?: number;
+  billingCycleDay?: number;
+  paymentDueDay?: number;
+  allowOverdraft?: boolean;
 }
 
 export interface CategoryInput {

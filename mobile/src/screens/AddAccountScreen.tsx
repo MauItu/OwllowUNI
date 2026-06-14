@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Switch, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { PALETTE, type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, TextField, PrimaryButton, SelectRow, FormScrollView } from '../components/common';
 import { Icon, ACCOUNT_ICONS } from '../components/Icon';
 import { CurrencyPicker } from '../components/CurrencyPicker';
+import { CalculatorSheet } from '../components/CalculatorSheet';
+import { DayPickerSheet } from '../components/DayPickerSheet';
 import { currencyInfo } from '../utils/currencies';
+import { formatCurrency } from '../utils/formatCurrency';
 import { accountsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { useAppStore } from '../stores/appStore';
@@ -37,6 +40,15 @@ export function AddAccountScreen() {
   const [showCurrency, setShowCurrency] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Solo aplican cuando type === 'credit_card'
+  const [creditLimit, setCreditLimit] = useState(0);
+  const [billingCycleDay, setBillingCycleDay] = useState(1);
+  const [paymentDueDay, setPaymentDueDay] = useState(20);
+  const [allowOverdraft, setAllowOverdraft] = useState(false);
+  const [showCreditLimit, setShowCreditLimit] = useState(false);
+  const [showBillingDay, setShowBillingDay] = useState(false);
+  const [showPaymentDay, setShowPaymentDay] = useState(false);
+
   useEffect(() => {
     if (!editingId) return;
     (async () => {
@@ -44,10 +56,19 @@ export function AddAccountScreen() {
         const a = await accountsApi.get(editingId);
         setName(a.name);
         setType(a.type);
-        setBalance(String(parseFloat(a.initialBalance)));
+        // En tarjetas de crédito el saldo inicial se guarda negado (deuda = saldo
+        // negativo); se muestra como número positivo en "Saldo adeudado".
+        const initBal = parseFloat(a.initialBalance);
+        setBalance(String(a.type === 'credit_card' ? Math.abs(initBal) : initBal));
         setCurrency(a.currency);
         setColor(a.color);
         setIcon(a.icon);
+        if (a.type === 'credit_card') {
+          setCreditLimit(a.creditLimit ?? 0);
+          setBillingCycleDay(a.billingCycleDay ?? 1);
+          setPaymentDueDay(a.paymentDueDay ?? 20);
+          setAllowOverdraft(a.allowOverdraft ?? false);
+        }
       } catch (err) {
         showError(getErrorMessage(err));
       }
@@ -59,13 +80,26 @@ export function AddAccountScreen() {
       showError('El nombre es obligatorio');
       return;
     }
+    if (type === 'credit_card' && creditLimit <= 0) {
+      showError('Ingresa un límite de crédito mayor a 0');
+      return;
+    }
+    const balanceNum = parseFloat(balance) || 0;
     const payload = {
       name: name.trim(),
       type,
       currency: currency.trim().toUpperCase().slice(0, 3) || 'COP',
-      initialBalance: parseFloat(balance) || 0,
+      // Al editar una tarjeta, el initialBalance guardado ya está negado; al
+      // crearla, el backend niega el valor positivo que envía el usuario.
+      initialBalance: type === 'credit_card' && editingId ? -balanceNum : balanceNum,
       color,
       icon,
+      ...(type === 'credit_card' && {
+        creditLimit,
+        billingCycleDay,
+        paymentDueDay,
+        allowOverdraft,
+      }),
     };
     try {
       setSaving(true);
@@ -139,7 +173,45 @@ export function AddAccountScreen() {
           ))}
         </View>
 
-        <TextField label="Saldo inicial" value={balance} onChangeText={setBalance} keyboardType="numeric" placeholder="0" />
+        {type !== 'credit_card' && (
+          <TextField label="Saldo inicial" value={balance} onChangeText={setBalance} keyboardType="numeric" placeholder="0" />
+        )}
+
+        {type === 'credit_card' && (
+          <>
+            <SelectRow
+              label="Límite de crédito"
+              value={creditLimit > 0 ? formatCurrency(creditLimit, currency) : null}
+              placeholder="Toca para ingresar el límite"
+              icon="calculator"
+              onPress={() => setShowCreditLimit(true)}
+            />
+
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <SelectRow label="Día de corte" value={String(billingCycleDay)} icon="calendar" onPress={() => setShowBillingDay(true)} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <SelectRow label="Día de pago" value={String(paymentDueDay)} icon="calendar-clock" onPress={() => setShowPaymentDay(true)} />
+              </View>
+            </View>
+
+            <TextField label="Saldo adeudado" value={balance} onChangeText={setBalance} keyboardType="numeric" placeholder="0" />
+
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
+                <Text style={styles.switchTitle}>Permitir sobregiro</Text>
+                <Text style={styles.switchHint}>Podrás registrar gastos que superen el límite de crédito.</Text>
+              </View>
+              <Switch
+                value={allowOverdraft}
+                onValueChange={setAllowOverdraft}
+                trackColor={{ true: color, false: theme.colors.border }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+          </>
+        )}
 
         <SelectRow
           label="Moneda"
@@ -181,6 +253,33 @@ export function AddAccountScreen() {
         onSelect={setCurrency}
         onClose={() => setShowCurrency(false)}
       />
+
+      <CalculatorSheet
+        visible={showCreditLimit}
+        title="Límite de crédito"
+        type="expense"
+        initialValue={creditLimit}
+        currency={currency}
+        onConfirm={(v) => {
+          if (v > 0) setCreditLimit(v);
+          setShowCreditLimit(false);
+        }}
+        onClose={() => setShowCreditLimit(false)}
+      />
+      <DayPickerSheet
+        visible={showBillingDay}
+        title="Día de corte"
+        value={billingCycleDay}
+        onConfirm={setBillingCycleDay}
+        onClose={() => setShowBillingDay(false)}
+      />
+      <DayPickerSheet
+        visible={showPaymentDay}
+        title="Día de pago"
+        value={paymentDueDay}
+        onConfirm={setPaymentDueDay}
+        onClose={() => setShowPaymentDay(false)}
+      />
     </Screen>
   );
 }
@@ -221,4 +320,16 @@ const createStyles = (theme: Theme) =>
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+  },
+  switchTitle: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
+  switchHint: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginTop: 2 },
 });
