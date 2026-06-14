@@ -151,7 +151,7 @@ server/
 │   │   ├── migrate.ts          ← Aplica migraciones de ./drizzle
 │   │   └── seed.ts             ← Inserta categorías default + cuenta "Efectivo"
 │   ├── routes/
-│   │   ├── accounts.ts          ← incluye GET /summary (balance consolidado convertido)
+│   │   ├── accounts.ts          ← incluye GET /summary (débito vs crédito) + tarjetas de crédito (estados de cuenta)
 │   │   ├── categories.ts
 │   │   ├── transactions.ts
 │   │   ├── templates.ts
@@ -229,6 +229,12 @@ mobile/
 · `currency` varchar(3) def `COP` · `initial_balance` decimal(15,2) def 0 · `current_balance` decimal(15,2) def 0
 · `color` varchar(7) def `#4F46E5` · `icon` varchar(50) def `wallet` · `is_active` bool def true
 · `created_at` / `updated_at` timestamp def now()
+· **Solo tarjetas de crédito** (nullable en el resto; migración `0013_unique_thor.sql`, aditiva):
+  `credit_limit` decimal(15,2) nullable (tope; null = no es tarjeta) · `billing_cycle_day` int nullable (día de corte 1-28)
+  · `payment_due_day` int nullable (día de pago 1-28) · `allow_overdraft` bool def false (permitir gastar por encima del cupo).
+> **Tarjeta de crédito:** el `current_balance` es **negativo** cuando hay deuda (saldo a favor = positivo). En el alta,
+> el `initial_balance` que envía el usuario se interpreta como **deuda preexistente** y se guarda negado (input 500000 →
+> `current_balance = -500000`; 0 = sin deuda). Crédito disponible = `credit_limit + current_balance`.
 
 ### categories
 `id` serial PK · `name` varchar(80) NN · `type` varchar(10) NN (`income|expense`)
@@ -295,6 +301,17 @@ mobile/
 > Presupuestos mensuales. El **gasto del mes NO se persiste**: se calcula on-the-fly sumando `transactions` (type='expense')
 > del usuario en el mes en curso (todas las categorías si es global; la categoría exacta si no). El historial de cumplimiento
 > compara el `amount` ACTUAL del presupuesto contra el gasto de cada mes pasado (no hay snapshot histórico del monto).
+
+### credit_card_statements
+`id` serial PK · `account_id` int FK→accounts ON DELETE CASCADE NN · `user_id` int FK→users NN
+· `period_start` date NN · `period_end` date NN (fecha de corte) · `payment_due_date` date NN
+· `total_amount` decimal(15,2) NN · `paid_amount` decimal(15,2) def 0 · `is_paid` bool def false · `is_overdue` bool def false
+· `debt_id` int FK→debts (nullable; deuda generada al corte) · `created_at` / `updated_at` timestamp def now()
+· UNIQUE(`account_id`,`period_end`) (un corte por periodo por tarjeta) + index(`user_id`,`account_id`,`is_paid`).
+  Migración `0013_unique_thor.sql` (aditiva: columnas de tarjeta en accounts + esta tabla).
+> Estados de cuenta (cortes) de una tarjeta. Cada corte agrega el gasto del periodo y genera una **deuda automática**
+> (`debts`, type=`debt`, sin movimiento de saldo) con `due_date = payment_due_date`, enlazada por `debt_id`. Pagar el
+> estado de cuenta hace una **transferencia** (cuenta de pago → tarjeta) que reduce a la vez el saldo de la tarjeta y la deuda.
 
 ### split_groups
 `id` serial PK · `name` varchar(100) NN · `description` varchar(255) · `icon` varchar(50) def `users`
@@ -387,14 +404,38 @@ mobile/
 ## API REST
 
 ### Accounts
-- `GET    /api/accounts` — cuentas activas
+- `GET    /api/accounts` — cuentas activas. Para `credit_card` agrega campos calculados (ver Tarjetas de crédito);
+  para el resto OMITE las columnas de tarjeta (no contamina la respuesta).
 - `GET    /api/accounts/summary?displayCurrency=COP[&refresh=true]` — balance consolidado convertido a
-  `displayCurrency`: `{ displayCurrency, total, byCurrency[{currency,total,converted}], stale, ratesUpdatedAt }`
+  `displayCurrency`, **separando débito y crédito**: `{ displayCurrency, total (=debitTotal+creditTotal, patrimonio
+  neto líquido), debitTotal (cuentas no-tarjeta), creditTotal (tarjetas, negativo), creditLimit, creditUsed,
+  creditAvailable (=creditLimit−creditUsed), byCurrency[{currency,total,converted}], stale, ratesUpdatedAt }`
   (registrada antes de `/:id`)
-- `GET    /api/accounts/:id`
-- `POST   /api/accounts`
-- `PUT    /api/accounts/:id`
+- `GET    /api/accounts/:id` — para `credit_card` incluye los campos calculados de tarjeta.
+- `POST   /api/accounts` — si `type='credit_card'` exige `creditLimit > 0` (400 si falta), `billingCycleDay`/
+  `paymentDueDay` opcionales (default 1 y 20, rango 1-28) y el `initialBalance` se guarda negado (deuda preexistente).
+- `PUT    /api/accounts/:id` — permite editar `creditLimit` (>0), `billingCycleDay`/`paymentDueDay` (1-28) y
+  `allowOverdraft`. El cambio de límite es inmediato (no afecta cortes pasados).
 - `DELETE /api/accounts/:id` — soft delete (`is_active=false`)
+
+### Tarjetas de crédito (estados de cuenta)
+> Campos calculados que `GET /api/accounts` y `/:id` agregan para `credit_card`: `creditLimit`, `creditUsed`
+> (`abs(min(current_balance,0))`), `creditAvailable` (`min(creditLimit, creditLimit+current_balance)`),
+> `utilizationPercentage`, `billingCycleDay`, `paymentDueDay`, `nextBillingDate`, `nextPaymentDueDate`.
+- `GET    /api/accounts/:id/statements?limit=12&offset=0` — historial de cortes (orden `period_end` desc). 400 si la cuenta no es tarjeta.
+- `POST   /api/accounts/:id/generate-statement` — genera el corte del periodo actual (manual; en prod sería un cron):
+  calcula `period_start`/`period_end` por `billing_cycle_day`, suma los `expense` de la tarjeta en el periodo →
+  `total_amount`, calcula `payment_due_date` por `payment_due_day`, crea el statement y una **deuda automática**
+  (`debts`, type `debt`, `remaining = total − paid`, `due_date`, sin mover saldo) enlazada por `debt_id`. **Saga:**
+  insert deuda → insert statement con `debt_id`; si el statement falla (carrera del UNIQUE) compensa borrando la deuda.
+  409 si ya existe un corte para ese periodo.
+- `POST   /api/accounts/:id/statements/:statementId/pay` — `{ amount, paymentAccountId }`. Valida `0 < amount <= remaining`
+  (decremento **condicional anti-TOCTOU** sobre `paid_amount`, 0 filas → 400). Crea una **transferencia**
+  `paymentAccountId → tarjeta` (sube el saldo de la tarjeta = reduce deuda) y reduce `remaining_amount` de la deuda;
+  marca `is_paid`/`is_paid_off` al saldar. **Saga con safeCompensate** (revierte el `paid_amount` si el batch falla).
+- **Gasto con tarjeta (`POST /api/transactions`, type='expense'):** NO genera deuda por compra (eso es al corte); el saldo
+  se mueve normal y se valida que no exceda el crédito disponible (`creditLimit+currentBalance < amount` → 400), salvo
+  que la tarjeta tenga `allow_overdraft=true`.
 
 ### Categories
 - `GET    /api/categories` — todas, subcategorías anidadas (`children[]`)

@@ -525,6 +525,27 @@ transactionsRouter.post(
     await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
     await assertTagsOwned(uid, data.tagIds);
 
+    // Gasto con tarjeta de crédito: no exceder el crédito disponible (salvo que
+    // la tarjeta permita sobregiro). No se genera deuda por compra; eso ocurre al
+    // corte (statement). El saldo se mueve normal (current_balance -= amount).
+    if (data.type === 'expense') {
+      const [acc] = await db
+        .select({
+          type: accounts.type,
+          creditLimit: accounts.creditLimit,
+          currentBalance: accounts.currentBalance,
+          allowOverdraft: accounts.allowOverdraft,
+        })
+        .from(accounts)
+        .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, uid)));
+      if (acc?.type === 'credit_card' && !acc.allowOverdraft && acc.creditLimit != null) {
+        const available = Number(acc.creditLimit) + Number(acc.currentBalance);
+        if (available < data.amount) {
+          throw new ApiError(400, 'Excede el crédito disponible de la tarjeta');
+        }
+      }
+    }
+
     const toAmount = data.type === 'transfer' ? data.toAmount ?? null : null;
     const insertStmt = db
       .insert(transactions)

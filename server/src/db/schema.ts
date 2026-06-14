@@ -69,6 +69,15 @@ export const accounts = pgTable('accounts', {
   color: varchar('color', { length: 7 }).default('#4F46E5').notNull(),
   icon: varchar('icon', { length: 50 }).default('wallet').notNull(),
   isActive: boolean('is_active').default(true).notNull(),
+  // ── Solo para tarjetas de crédito (type='credit_card'); nullable en el resto ──
+  // Tope de crédito. null = no es tarjeta de crédito.
+  creditLimit: decimal('credit_limit', { precision: 15, scale: 2 }),
+  // Día del mes (1-28) en que cierra el corte. Ej: 15 = corte el 15 de cada mes.
+  billingCycleDay: integer('billing_cycle_day'),
+  // Día del mes (1-28) en que vence el pago (del mes siguiente al corte). Ej: 5.
+  paymentDueDay: integer('payment_due_day'),
+  // Si es true, se permite gastar por encima del crédito disponible (sin 400).
+  allowOverdraft: boolean('allow_overdraft').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => ({
@@ -324,6 +333,41 @@ export const budgets = pgTable(
   }),
 );
 
+// ──────────────────────── credit_card_statements ────────────────────
+// Estados de cuenta (cortes) de una tarjeta de crédito. Cada corte agrega el
+// gasto del periodo y genera una deuda automática (debt_id) con su fecha de pago.
+export const creditCardStatements = pgTable(
+  'credit_card_statements',
+  {
+    id: serial('id').primaryKey(),
+    accountId: integer('account_id')
+      .references(() => accounts.id, { onDelete: 'cascade' })
+      .notNull(),
+    userId: integer('user_id')
+      .references(() => users.id)
+      .notNull(),
+    periodStart: date('period_start').notNull(),
+    periodEnd: date('period_end').notNull(), // fecha de corte
+    paymentDueDate: date('payment_due_date').notNull(),
+    totalAmount: decimal('total_amount', { precision: 15, scale: 2 }).notNull(),
+    paidAmount: decimal('paid_amount', { precision: 15, scale: 2 }).default('0').notNull(),
+    isPaid: boolean('is_paid').default(false).notNull(),
+    isOverdue: boolean('is_overdue').default(false).notNull(),
+    debtId: integer('debt_id').references(() => debts.id),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    // Un solo estado de cuenta por corte por tarjeta.
+    uniqueAccountPeriod: unique().on(t.accountId, t.periodEnd),
+    userAccountPaidIdx: index('credit_card_statements_user_account_paid_idx').on(
+      t.userId,
+      t.accountId,
+      t.isPaid,
+    ),
+  }),
+);
+
 // ─────────────────────────── split_groups ───────────────────────────
 export const splitGroups = pgTable('split_groups', {
   id: serial('id').primaryKey(),
@@ -495,6 +539,17 @@ export const budgetsRelations = relations(budgets, ({ one }) => ({
   }),
 }));
 
+export const creditCardStatementsRelations = relations(creditCardStatements, ({ one }) => ({
+  account: one(accounts, {
+    fields: [creditCardStatements.accountId],
+    references: [accounts.id],
+  }),
+  debt: one(debts, {
+    fields: [creditCardStatements.debtId],
+    references: [debts.id],
+  }),
+}));
+
 export const tagsRelations = relations(tags, ({ many }) => ({
   transactionTags: many(transactionTags),
 }));
@@ -639,3 +694,5 @@ export type ExchangeRate = typeof exchangeRates.$inferSelect;
 export type NewExchangeRate = typeof exchangeRates.$inferInsert;
 export type Budget = typeof budgets.$inferSelect;
 export type NewBudget = typeof budgets.$inferInsert;
+export type CreditCardStatement = typeof creditCardStatements.$inferSelect;
+export type NewCreditCardStatement = typeof creditCardStatements.$inferInsert;
