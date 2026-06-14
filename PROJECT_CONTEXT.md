@@ -167,7 +167,8 @@ server/
 │   ├── middleware/
 │   │   ├── errorHandler.ts
 │   │   ├── auth.ts            ← authenticate/userId/requireAdmin + signToken (JWT)
-│   │   └── rateLimiter.ts    ← express-rate-limit: loginLimiter (5/15m), registerLimiter (3/h) por IP
+│   │   ├── rateLimiter.ts    ← express-rate-limit: loginLimiter (5/15m), registerLimiter (3/h) por IP
+│   │   └── requestLogger.ts  ← log HTTP mínimo "[HTTP] MÉTODO /path STATUS TIMEms" (prod: solo >1000ms o >=400)
 │   └── utils/
 │       ├── safeCompensate.ts ← rollback de saga tolerante a fallos (log estructurado, no pisa el error original)
 │       ├── validateEnv.ts    ← validación de env con Zod al arrancar (import PRIMERO en index.ts) + JWT_EXPIRATION
@@ -492,8 +493,9 @@ mobile/
 zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1, **bcryptjs ^3** (hash de contraseñas),
 **jsonwebtoken ^9** (JWT de sesión), **nodemailer ^8** (envío de emails de recuperación vía Gmail SMTP),
 **express-rate-limit ^8** (rate limiting por IP en `/api/auth/login` y `/register`),
-**helmet ^8** (headers HTTP de seguridad) · ambos traen sus propios tipos (sin `@types/*`) ·
-dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6, @types/bcryptjs, @types/jsonwebtoken, @types/nodemailer.
+**helmet ^8** (headers HTTP de seguridad; traen sus propios tipos), **compression ^1.8** (gzip de respuestas) ·
+dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6, @types/bcryptjs, @types/jsonwebtoken, @types/nodemailer,
+@types/compression (compression no trae tipos propios).
 Requiere **`JWT_SECRET`** en el `.env` raíz; **`GMAIL_USER`** y **`GMAIL_APP_PASSWORD`** son obligatorias solo
 para enviar emails de recuperación (si faltan, esos endpoints responden 503 con mensaje claro; el resto de la
 API funciona igual). El transporter usa `smtp.gmail.com:465` (secure) y el `from` es `GMAIL_USER`.
@@ -902,6 +904,32 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 - **Reducido** timeout de Axios de 15 s → 5 s en `api/client.ts` para fallar rápido si el backend no responde.
   (Los `console.log` de diagnóstico que dejó este fix ya se removieron.)
 
+## PRODUCCIÓN
+
+Endurecimiento del backend para correr en producción (Render). Todo en `server/src/index.ts`
+salvo el middleware de logging. El orden del pipeline es: `helmet` → `requestLogger` →
+`compression` → `cors` → `express.json` → rutas → `notFoundHandler` → `errorHandler`.
+
+- **Compresión gzip (`compression ^1.8`):** `app.use(compression())` montado **después de helmet, antes
+  de las rutas**. Threshold por defecto (1 kb): comprime los payloads grandes (export, listas largas,
+  insights) sin tocar los chicos. Añade `Vary: Accept-Encoding` a las respuestas.
+- **Health check `GET /api/health` (sin auth):** hace `SELECT 1` contra Neon. Si la DB responde →
+  `200 { status: 'ok', timestamp }`; si falla → `503 { status: 'degraded', error: 'Database unreachable' }`.
+  Pensado para los health checks de Render/monitoreo. (Existe además `GET /health` liviano de liveness.)
+- **Graceful shutdown (SIGTERM/SIGINT):** `app.listen()` se guarda en `server`; al recibir la señal se hace
+  `server.close()` (deja de aceptar conexiones nuevas) y se drenan las requests en vuelo hasta **10 s**; al
+  terminar loguea `"Servidor cerrado limpiamente"` y `process.exit(0)`. Si no terminan a tiempo, salida
+  forzada `exit(1)`. Evita cortar una saga a la mitad durante un deploy. Es idempotente (flag `shuttingDown`).
+- **Request logging mínimo (`middleware/requestLogger.ts`, sin morgan/winston):** mide cada request con
+  `Date.now()` y loguea `"[HTTP] MÉTODO /path STATUS TIMEms"` en `res.on('finish')`. En **producción**
+  (`NODE_ENV=production`) solo loguea lo relevante (>1000 ms o status ≥400) para no inundar logs; en
+  desarrollo loguea todo.
+- **Build de producción (sin `tsx` en runtime):** `tsconfig.json` usa `module`/`moduleResolution: NodeNext`,
+  `target: ES2022`, `outDir: dist`. `pnpm build` (= `tsc`) compila `src/` → `dist/` (ESM ejecutable por Node,
+  los imports ya usan extensión `.js`); `pnpm start` corre `node dist/index.js`. `dist/` está gitignoreado.
+  Los handlers de proceso (`unhandledRejection`/`uncaughtException`) y la validación de env al arrancar
+  (`utils/validateEnv.ts`) completan el arranque seguro.
+
 ## COMANDOS
 
 ```bash
@@ -911,7 +939,10 @@ pnpm install
 pnpm db:generate    # genera migraciones desde schema.ts
 pnpm db:migrate     # aplica migraciones
 pnpm db:seed        # inserta categorías default + cuenta Efectivo
-pnpm dev            # arranca API en :3000
+pnpm dev            # arranca API en :3000 (tsx watch, desarrollo)
+pnpm typecheck      # tsc --noEmit
+pnpm build          # tsc → compila src/ a dist/ (producción, sin tsx)
+pnpm start          # node dist/index.js (producción; requiere pnpm build antes)
 
 # Mobile  (Node 22: exportar el flag para evitar el type stripping nativo)
 cd mobile

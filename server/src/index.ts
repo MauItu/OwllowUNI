@@ -3,7 +3,11 @@
 import './utils/validateEnv.js';
 import express from 'express';
 import helmet from 'helmet';
+import compression from 'compression';
 import cors from 'cors';
+import { sql } from 'drizzle-orm';
+import { db } from './db/connection.js';
+import { requestLogger } from './middleware/requestLogger.js';
 import { accountsRouter } from './routes/accounts.js';
 import { categoriesRouter } from './routes/categories.js';
 import { transactionsRouter } from './routes/transactions.js';
@@ -38,6 +42,13 @@ app.set('trust proxy', 1);
 // Va ANTES de CORS para que aplique a todas las respuestas.
 app.use(helmet());
 
+// Logging HTTP mínimo (mide el tiempo de cada request). En prod solo lo lento/errores.
+app.use(requestLogger);
+
+// Compresión gzip de las respuestas (threshold 1kb por defecto): aligera mucho los
+// payloads grandes (export, listas largas, insights). Después de helmet, antes de rutas.
+app.use(compression());
+
 // CORS: si `CORS_ORIGINS` (lista separada por comas) está definida, se restringe
 // a esos orígenes; si no, se permite cualquiera (default de dev). Las apps nativas
 // no envían header Origin, así que el móvil no se ve afectado en ningún caso.
@@ -51,6 +62,18 @@ app.get('/', (_req, res) => {
   res.json({ name: 'Wallet Clone API', status: 'ok', version: '1.0.0' });
 });
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+// Health check con verificación de DB (sin auth): para monitoreo y health checks
+// de deploy (Render). Un SELECT 1 confirma la conectividad con Neon.
+app.get('/api/health', async (_req, res) => {
+  try {
+    await db.execute(sql`SELECT 1`);
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error('[health] verificación de DB falló:', err);
+    res.status(503).json({ status: 'degraded', error: 'Database unreachable' });
+  }
+});
 
 // Autenticación (público).
 app.use('/api/auth', authRouter);
@@ -75,9 +98,30 @@ app.use('/api/rates', authenticate, invalidateOnMutation, ratesRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 API escuchando en http://localhost:${PORT}`);
 });
+
+// ── Graceful shutdown ──
+// Ante SIGTERM/SIGINT (deploy en Render, Ctrl-C): dejar de aceptar conexiones
+// nuevas y esperar hasta 10s a que terminen las requests en vuelo (no cortar una
+// saga a la mitad). Si no terminan a tiempo, salida forzada.
+let shuttingDown = false;
+function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Recibido ${signal}: cerrando servidor (drenando requests en vuelo)…`);
+  server.close(() => {
+    console.log('Servidor cerrado limpiamente');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.error('Cierre forzado: requests en vuelo no terminaron en 10s');
+    process.exit(1);
+  }, 10_000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 // ── Handlers de último recurso a nivel de proceso ──
 // Una promesa rechazada sin catch o una excepción no atrapada matarían el proceso
