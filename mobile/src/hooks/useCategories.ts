@@ -3,6 +3,7 @@ import { categoriesApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Category } from '../types';
 
+/** Hook de categorías (opcionalmente por tipo): fetch con loading/refetch. */
 export function useCategories(type?: 'income' | 'expense') {
   const [data, setData] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);

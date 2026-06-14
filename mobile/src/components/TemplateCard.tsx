@@ -12,7 +12,7 @@ interface Props {
   compact?: boolean;
 }
 
-export function TemplateCard({ template, onPress, compact }: Props) {
+function TemplateCardComponent({ template, onPress, compact }: Props) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const color = template.categoryColor ?? theme.colors.primary;
@@ -60,6 +60,8 @@ export function TemplateCard({ template, onPress, compact }: Props) {
     </Pressable>
   );
 }
+
+export const TemplateCard = React.memo(TemplateCardComponent);
 
 const createStyles = (theme: Theme) =>
   StyleSheet.create({

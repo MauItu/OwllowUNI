@@ -95,7 +95,9 @@ accountsRouter.get(
     const rows = await db
       .select()
       .from(accounts)
-      .where(and(eq(accounts.userId, userId(req)), eq(accounts.isActive, true)));
+      .where(and(eq(accounts.userId, userId(req)), eq(accounts.isActive, true)))
+      // TODO: paginar con load-more en mobile
+      .limit(200);
     res.json(rows.map(shapeAccount));
   }),
 );

@@ -126,6 +126,8 @@ export function DebtDetailScreen() {
           <FlatList
             data={payments}
             keyExtractor={(p) => String(p.id)}
+            removeClippedSubviews
+            maxToRenderPerBatch={15}
             contentContainerStyle={styles.list}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.colors.primary} />

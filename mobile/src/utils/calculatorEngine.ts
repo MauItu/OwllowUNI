@@ -36,7 +36,7 @@ function isOperator(t: string): t is Operator {
 }
 
 /** Evalúa una lista de tokens respetando precedencia. null = error. */
-export function evaluateTokens(input: string[]): number | null {
+function evaluateTokens(input: string[]): number | null {
   const tokens = input.filter((t) => t !== '');
   if (tokens.length === 0) return null;
   // Si termina en operador, ignóralo para poder evaluar parcialmente.

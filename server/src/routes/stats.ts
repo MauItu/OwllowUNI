@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { and, gte, lte, eq, sql, desc } from 'drizzle-orm';
+import { and, gte, lte, eq, sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
 import { transactions, categories, accounts } from '../db/schema.js';
 import { asyncHandler } from '../middleware/errorHandler.js';

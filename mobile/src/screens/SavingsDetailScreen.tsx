@@ -124,6 +124,8 @@ export function SavingsDetailScreen() {
           <FlatList
             data={contributions}
             keyExtractor={(c) => String(c.id)}
+            removeClippedSubviews
+            maxToRenderPerBatch={15}
             contentContainerStyle={styles.list}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.colors.primary} />

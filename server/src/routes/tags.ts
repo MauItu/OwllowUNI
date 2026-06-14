@@ -35,7 +35,9 @@ tagsRouter.get(
       .leftJoin(transactionTags, eq(transactionTags.tagId, tags.id))
       .where(eq(tags.userId, userId(req)))
       .groupBy(tags.id)
-      .orderBy(asc(tags.name));
+      .orderBy(asc(tags.name))
+      // TODO: paginar con load-more en mobile
+      .limit(200);
     res.json(rows.map((r) => ({ ...r, transactionCount: Number(r.transactionCount) })));
   }),
 );

@@ -3,6 +3,7 @@ import { templatesApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Template } from '../types';
 
+/** Hook de plantillas: fetch (orden por uso) con loading/refetch. */
 export function useTemplates() {
   const [data, setData] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);

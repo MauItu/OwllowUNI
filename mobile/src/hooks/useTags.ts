@@ -3,6 +3,7 @@ import { tagsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Tag } from '../types';
 
+/** Hook de etiquetas: fetch (con conteo de transacciones) y loading/refetch. */
 export function useTags() {
   const [data, setData] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);

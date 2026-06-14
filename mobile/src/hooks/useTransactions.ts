@@ -3,6 +3,7 @@ import { transactionsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Transaction, TransactionFilters } from '../types';
 
+/** Hook de transacciones: lista paginada con filtros, refresh y loadMore. */
 export function useTransactions(filters: TransactionFilters = {}, limit = 30) {
   const [data, setData] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);

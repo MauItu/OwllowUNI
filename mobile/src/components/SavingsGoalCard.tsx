@@ -15,7 +15,7 @@ interface Props {
 }
 
 /** Etiqueta de fecha límite: "X días restantes" o "Vencida". */
-export function deadlineLabel(deadline: string): { text: string; overdue: boolean } {
+function deadlineLabel(deadline: string): { text: string; overdue: boolean } {
   const days = differenceInCalendarDays(parseISOSafe(deadline), new Date());
   if (days < 0) return { text: 'Vencida', overdue: true };
   if (days === 0) return { text: 'Vence hoy', overdue: false };

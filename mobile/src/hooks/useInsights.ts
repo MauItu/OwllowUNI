@@ -3,6 +3,7 @@ import { insightsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Insight } from '../types';
 
+/** Hook de insights del mes: fetch con loading/refetch. */
 export function useInsights() {
   const [data, setData] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, KeyboardAvoidingView, Platform } from 'react-na
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import { type Theme } from '../theme';
-import { useTheme, useThemedStyles } from '../theme/ThemeContext';
+import { useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, PrimaryButton, TextField, FormScrollView } from '../components/common';
 import { authApi, getErrorMessage } from '../api/client';
 import type { AuthStackParamList } from '../navigation/types';

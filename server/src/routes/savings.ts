@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { and, eq, desc, asc, sql, count } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
-import { savingsGoals, savingsContributions, accounts, type SavingsGoal } from '../db/schema.js';
+import { savingsGoals, savingsContributions, accounts } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
@@ -59,7 +59,9 @@ savingsRouter.get(
       .from(savingsGoals)
       .leftJoin(accounts, eq(savingsGoals.accountId, accounts.id))
       .where(eq(savingsGoals.userId, userId(req)))
-      .orderBy(asc(savingsGoals.isCompleted), desc(savingsGoals.createdAt));
+      .orderBy(asc(savingsGoals.isCompleted), desc(savingsGoals.createdAt))
+      // TODO: paginar con load-more en mobile
+      .limit(200);
     res.json(rows);
   }),
 );

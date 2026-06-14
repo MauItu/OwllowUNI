@@ -3,6 +3,7 @@ import { splitsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { SplitGroup, SplitsSummary } from '../types';
 
+/** Hook de gastos compartidos: fetch de grupos + summary, con loading/refetch. */
 export function useSplits() {
   const [groups, setGroups] = useState<SplitGroup[]>([]);
   const [summary, setSummary] = useState<SplitsSummary | null>(null);

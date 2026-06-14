@@ -78,7 +78,9 @@ async function fetchBudgets(uid: number, start: string, end: string): Promise<Bu
     .from(budgets)
     .leftJoin(categories, eq(budgets.categoryId, categories.id))
     .where(eq(budgets.userId, uid))
-    .orderBy(desc(budgets.isActive), desc(budgets.createdAt));
+    .orderBy(desc(budgets.isActive), desc(budgets.createdAt))
+    // TODO: paginar con load-more en mobile
+    .limit(200);
 }
 
 const budgetSchema = z.object({
@@ -135,39 +137,41 @@ budgetsRouter.get(
     const uid = userId(req);
     const months = Math.min(12, Math.max(1, Number(req.query.months) || 6));
 
-    // Presupuestos activos (su amount actual se compara contra cada mes).
-    const activeBudgets = await db
-      .select({
-        id: budgets.id,
-        categoryId: budgets.categoryId,
-        categoryName: categories.name,
-        amount: budgets.amount,
-      })
-      .from(budgets)
-      .leftJoin(categories, eq(budgets.categoryId, categories.id))
-      .where(and(eq(budgets.userId, uid), eq(budgets.isActive, true)));
-
     // Rango: desde el primer día del mes más antiguo hasta hoy.
     const now = new Date();
     const rangeStart = format(startOfMonth(subMonths(now, months - 1)), 'yyyy-MM-dd');
-
-    // Gasto por (mes, categoría) y gasto total por mes (para los globales).
     const monthExpr = sql<string>`TO_CHAR(${transactions.date}, 'YYYY-MM')`;
-    const byCatRows = await db
-      .select({
-        month: monthExpr,
-        categoryId: transactions.categoryId,
-        spent: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
-      })
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.userId, uid),
-          eq(transactions.type, 'expense'),
-          sql`${transactions.date} >= ${rangeStart}`,
-        ),
-      )
-      .groupBy(monthExpr, transactions.categoryId);
+
+    // Dos lecturas independientes (presupuestos activos + gasto por mes/categoría) en paralelo.
+    const [activeBudgets, byCatRows] = await Promise.all([
+      // Presupuestos activos (su amount actual se compara contra cada mes).
+      db
+        .select({
+          id: budgets.id,
+          categoryId: budgets.categoryId,
+          categoryName: categories.name,
+          amount: budgets.amount,
+        })
+        .from(budgets)
+        .leftJoin(categories, eq(budgets.categoryId, categories.id))
+        .where(and(eq(budgets.userId, uid), eq(budgets.isActive, true))),
+      // Gasto por (mes, categoría) y gasto total por mes (para los globales).
+      db
+        .select({
+          month: monthExpr,
+          categoryId: transactions.categoryId,
+          spent: sql<string>`COALESCE(SUM(${transactions.amount}), 0)`,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, uid),
+            eq(transactions.type, 'expense'),
+            sql`${transactions.date} >= ${rangeStart}`,
+          ),
+        )
+        .groupBy(monthExpr, transactions.categoryId),
+    ]);
 
     // Mapas: total del mes y total por (mes|categoría).
     const monthTotal = new Map<string, number>();

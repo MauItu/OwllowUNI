@@ -69,7 +69,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.get('/api/health', async (_req, res) => {
   try {
     await db.execute(sql`SELECT 1`);
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() });
   } catch (err) {
     console.error('[health] verificación de DB falló:', err);
     res.status(503).json({ status: 'degraded', error: 'Database unreachable' });

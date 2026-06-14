@@ -17,6 +17,7 @@ const EMPTY: StatsData = {
   balanceEvolution: [],
 };
 
+/** Hook de estadísticas: fetch de summary, por categoría y series según rango/moneda. */
 export function useStats(
   from: string,
   to: string,

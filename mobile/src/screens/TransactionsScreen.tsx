@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, SectionList, Pressable, TextInput, RefreshControl, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, SectionList, Pressable, TextInput, RefreshControl, StyleSheet, ActivityIndicator } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -18,7 +18,7 @@ import { useTags } from '../hooks/useTags';
 import { useAppStore } from '../stores/appStore';
 import { transactionsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
-import { groupLabel, formatShortDate } from '../utils/formatDate';
+import { groupLabel } from '../utils/formatDate';
 import { deleteReceipt } from '../utils/receiptStorage';
 import type { RootStackParamList } from '../navigation/types';
 import type { Transaction, TxType } from '../types';

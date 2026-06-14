@@ -47,6 +47,7 @@ function sweep(): void {
   for (const [k, e] of store) if (e.expires <= now) store.delete(k);
 }
 
+/** Lee una entrada viva de la caché; descarta y devuelve undefined si expiró. */
 export function cacheGet<T>(key: string): T | undefined {
   const e = store.get(key);
   if (!e) return undefined;
@@ -57,6 +58,7 @@ export function cacheGet<T>(key: string): T | undefined {
   return e.value as T;
 }
 
+/** Guarda un valor con TTL; al llegar al tope barre expirados (o limpia todo). */
 export function cacheSet(key: string, value: unknown, ttlMs: number): void {
   if (store.size >= MAX_ENTRIES) {
     sweep();

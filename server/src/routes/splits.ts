@@ -232,7 +232,9 @@ splitsRouter.get(
       .select()
       .from(splitGroups)
       .where(and(eq(splitGroups.userId, userId(req)), eq(splitGroups.isActive, true)))
-      .orderBy(desc(splitGroups.createdAt));
+      .orderBy(desc(splitGroups.createdAt))
+      // TODO: paginar con load-more en mobile
+      .limit(200);
 
     const balancesByGroup = await computeBalancesForGroups(groups.map((g) => g.id));
     const result = groups.map((g) => {

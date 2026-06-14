@@ -5,7 +5,7 @@ import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 
 /** Mínimo de caracteres para disparar la búsqueda. */
-export const MIN_QUERY_LENGTH = 2;
+const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 400;
 
 interface Props {

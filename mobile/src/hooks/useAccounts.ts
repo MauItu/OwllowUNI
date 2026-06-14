@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { accountsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Account } from '../types';
 
+/** Hook de cuentas: fetch de cuentas activas + balance total, con loading/refetch. */
 export function useAccounts() {
   const [data, setData] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +30,10 @@ export function useAccounts() {
     fetch();
   }, [fetch, refreshKey]);
 
-  const totalBalance = data.reduce((acc, a) => acc + parseFloat(a.currentBalance), 0);
+  const totalBalance = useMemo(
+    () => data.reduce((acc, a) => acc + parseFloat(a.currentBalance), 0),
+    [data],
+  );
 
   return { accounts: data, loading, refreshing, error, refetch: fetch, totalBalance };
 }

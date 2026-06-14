@@ -3,6 +3,7 @@ import { savingsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { SavingsGoal, SavingsSummary } from '../types';
 
+/** Hook de metas de ahorro: fetch de metas + summary, con loading/refetch. */
 export function useSavings() {
   const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [summary, setSummary] = useState<SavingsSummary | null>(null);

@@ -124,6 +124,16 @@ wallet/                         ← raíz del repo
   peor caso con `.limit(200)` silencioso (los más recientes, sin cambiar el contrato de respuesta):
   `GET /api/debts/:id` (`payments`), `GET /api/savings/:id` (`contributions`),
   `GET /api/splits/:groupId/expenses` y `/settlements`. TODO pendiente: load-more en mobile.
+- **Cap defensivo en las LISTAS de nivel superior:** todos los GET de lista por usuario llevan `.limit(200)`
+  (cap silencioso, sin cambiar la forma de la respuesta): `GET /api/accounts`, `/api/categories` (y `/:type`),
+  `/api/tags`, `/api/templates`, `/api/savings`, `/api/debts`, `/api/budgets` (vía `fetchBudgets`) y
+  `/api/splits`. Son colecciones acotadas por uso (un usuario no tiene 200 cuentas/categorías), pero el cap
+  evita lecturas no acotadas en el peor caso. **Excepción intencional:** `GET /api/transactions/export` NO
+  lleva cap (debe exportar TODO el rango; la lista `GET /api/transactions` ya está paginada con `page/limit`).
+- **Paralelización en `GET /api/budgets/history`:** las dos lecturas independientes (presupuestos activos +
+  gasto por mes/categoría) van en `Promise.all` (no dependen entre sí). Los GET de **detalle** (`/:id` con
+  hijos) se mantienen **seriales a propósito**: verifican propiedad del padre ANTES de traer los hijos, para
+  no leer colecciones de otro usuario aunque el 404 final no las exponga.
 - **Selects acotados en los DELETE con reversión de balance:** `DELETE /api/debts/:id` y `/api/splits/:id`
   traen de `transactions` solo las columnas usadas para revertir (`id,type,amount,accountId,toAccountId,toAmount`),
   no la fila completa.
@@ -204,7 +214,7 @@ mobile/
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Budgets, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense,
     │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen, SetupPin, Search
-    │                              (More.tsx queda huérfano: el Sidebar lo reemplaza)
+    │                              (More.tsx fue eliminado: el Sidebar lo reemplaza)
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
@@ -739,15 +749,21 @@ global en `App.tsx` captura crashes y muestra un fallback en lugar de congelar l
   `lazyScreen()`, fallback = `ActivityIndicator` centrado con color del tema). Metro soporta `import()`
   dinámico desde RN 0.72. Las de la ruta caliente (Home/Transactions/Accounts/AddTransaction) siguen estáticas.
 - **`React.memo` en componentes de fila:** `TransactionCard`, `AccountCard`, `SavingsGoalCard`, `DebtCard`,
-  `InsightCard`, `TagChip` (export memoizado; otros named exports como `deadlineLabel`/`severityColor` intactos).
+  `InsightCard`, `TagChip`, `TemplateCard` (export memoizado; helpers internos como `deadlineLabel`/
+  `severityColor` quedaron sin `export` tras la auditoría de código muerto, intactos en lógica).
 - **FlatList/SectionList optimizadas:** las listas principales (Transactions, Accounts, Debts, Savings, Splits)
   usan `removeClippedSubviews`, `maxToRenderPerBatch={15}`, `windowSize={10}`, y `keyExtractor`/`renderItem`
-  en `useCallback` (los `onPress` que dependen del closure del item se quedan inline, a propósito). **Sin
+  en `useCallback` (los `onPress` que dependen del closure del item se quedan inline, a propósito). Las listas
+  secundarias y de detalle (Tags, Templates, DebtDetail/`payments`, SavingsDetail/`contributions`,
+  SplitGroupDetail/`expenses`) llevan al menos `keyExtractor` por id + `removeClippedSubviews` +
+  `maxToRenderPerBatch={15}` (su `renderItem` inline es aceptable: listas cortas, acotadas a 200). **Sin
   `getItemLayout`**: las cards tienen altura variable (filas opcionales de tags/progreso/fechas, y la lista de
   Transactions es `SectionList` con headers) → poner `getItemLayout` causaría bugs de scroll.
-- **Hooks de datos** (`useTransactions`/`useAccounts`/`useStats`/`useDebts`/`useSavings`/`useSplits`): ya
-  usan `useState` con el setter solo dentro del fetch (en `useEffect`/acción) y devuelven referencias de
-  estado estables; no construyen arrays/objetos nuevos en el `return`, así que no necesitan `useMemo`.
+- **Hooks de datos** (`useTransactions`/`useAccounts`/`useStats`/`useDebts`/`useSavings`/`useSplits`): usan
+  `useState` con el setter solo dentro del fetch y devuelven referencias de estado estables. Los pocos
+  derivados sí se memoizan: `useAccounts.totalBalance` (`useMemo` sobre `data`) y `useGlobalSearch`
+  (`allCategories` + `results` en `useMemo`). Los selectores de Zustand siempre usan campo
+  (`useAppStore(s => s.refreshKey)`, `useSettingsStore(s => s.mainCurrency)`), nunca el store entero.
 
 **SafeArea (fix barra de navegación Android):** `app.json` tiene `edgeToEdgeEnabled:true`, así que
 la app dibuja bajo las barras del sistema. El fix:
@@ -1095,7 +1111,9 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
   Biometría: `isBiometricAvailable` (`hasHardwareAsync && isEnrolledAsync`), `isBiometricEnabled` (flag en
   SecureStore), `authenticateBiometric` (`authenticateAsync` con `disableDeviceFallback:true` → fallback a NUESTRO
   PIN, no el del sistema). Lockout: `recordFailedAttempt`/`getLockState`/`resetAttempts` persisten
-  `wallet_pin_attempts` y `wallet_pin_lock_until` en SecureStore (5 fallos → 30s). Constantes: `PIN_LENGTH=4`,
+  `wallet_pin_attempts` y `wallet_pin_lock_until` en SecureStore (5 fallos → 30s). **Van en SecureStore (no
+  AsyncStorage) a propósito**: aunque no son secretos, son estado anti-fuerza-bruta; en AsyncStorage un
+  atacante podría resetear el contador y burlar el bloqueo. Constantes: `PIN_LENGTH=4`,
   `MAX_ATTEMPTS=5`, `LOCKOUT_MS=30000`, `AUTO_LOCK_MS=60000`.
 - **Robustez (no brickear):** todos los accesos a SecureStore van en try/catch; **lecturas** devuelven valores
   seguros (p. ej. `isPinEnabled()→false` ante error → app sin bloqueo) y **escrituras** propagan el error para
@@ -1136,12 +1154,19 @@ Endurecimiento del backend para correr en producción (Render). Todo en `server/
 salvo el middleware de logging. El orden del pipeline es: `helmet` → `requestLogger` →
 `compression` → `cors` → `express.json` → rutas → `notFoundHandler` → `errorHandler`.
 
+- **Helmet (`helmet ^8`):** `app.use(helmet())` (sin config custom) montado **ANTES de CORS** para que sus
+  headers de seguridad (X-Content-Type-Options, X-Frame-Options, HSTS, etc.) apliquen a todas las respuestas.
+  Ver detalle en "Hardening de producción (server)" arriba.
+- **Validación de entorno (`utils/validateEnv.ts`, Zod):** `import './utils/validateEnv.js'` es lo PRIMERO de
+  `index.ts`. Valida `DATABASE_URL` (requerido), `JWT_SECRET` (≥32 chars), `PORT` (default 3000) y avisa si
+  faltan `GMAIL_USER`/`GMAIL_APP_PASSWORD` (opcionales). Si algo falla → `process.exit(1)` con mensaje claro.
 - **Compresión gzip (`compression ^1.8`):** `app.use(compression())` montado **después de helmet, antes
   de las rutas**. Threshold por defecto (1 kb): comprime los payloads grandes (export, listas largas,
   insights) sin tocar los chicos. Añade `Vary: Accept-Encoding` a las respuestas.
 - **Health check `GET /api/health` (sin auth):** hace `SELECT 1` contra Neon. Si la DB responde →
-  `200 { status: 'ok', timestamp }`; si falla → `503 { status: 'degraded', error: 'Database unreachable' }`.
-  Pensado para los health checks de Render/monitoreo. (Existe además `GET /health` liviano de liveness.)
+  `200 { status: 'ok', timestamp, uptime }` (`uptime` = `process.uptime()` en segundos); si falla →
+  `503 { status: 'degraded', error: 'Database unreachable' }`. Pensado para los health checks de
+  Render/monitoreo. (Existe además `GET /health` liviano de liveness.)
 - **Graceful shutdown (SIGTERM/SIGINT):** `app.listen()` se guarda en `server`; al recibir la señal se hace
   `server.close()` (deja de aceptar conexiones nuevas) y se drenan las requests en vuelo hasta **10 s**; al
   terminar loguea `"Servidor cerrado limpiamente"` y `process.exit(0)`. Si no terminan a tiempo, salida
@@ -1186,13 +1211,24 @@ pnpm build:apk      # eas build -p android --profile preview
 > Inventario de pendientes conocidos. No bloquean nada hoy; documentados para un refactor futuro.
 
 ### TODOs en código (`grep -rn TODO`)
-- `server/src/routes/debts.ts:169` — `// TODO: paginar con load-more en mobile` (cap `.limit(200)` en `payments` de `GET /api/debts/:id`).
-- `server/src/routes/savings.ts:111` — `// TODO: paginar con load-more en mobile` (cap `.limit(200)` en `contributions` de `GET /api/savings/:id`).
-- `server/src/routes/splits.ts:524` — `// TODO: paginar con load-more en mobile` (cap `.limit(200)` en `expenses` de `GET /api/splits/:groupId/expenses`).
-- `server/src/routes/splits.ts:856` — `// TODO: paginar con load-more en mobile` (cap `.limit(200)` en `settlements` de `GET /api/splits/:groupId/settlements`).
+Todos son el mismo marcador `// TODO: paginar con load-more en mobile`: cap defensivo `.limit(200)` que
+desaparecerá cuando el mobile implemente "cargar más". No hay FIXME ni HACK en el código.
 
-> Todos comparten la misma causa: las colecciones hijas tienen un cap defensivo de 200 filas (sin
-> paginación en el contrato) hasta que el mobile implemente "cargar más". No hay FIXME ni HACK en el código.
+**Colecciones hijas (GET de detalle):**
+- `server/src/routes/debts.ts:170` — `payments` de `GET /api/debts/:id`.
+- `server/src/routes/savings.ts:113` — `contributions` de `GET /api/savings/:id`.
+- `server/src/routes/splits.ts:526` — `expenses` de `GET /api/splits/:groupId/expenses`.
+- `server/src/routes/splits.ts:890` — `settlements` de `GET /api/splits/:groupId/settlements`.
+
+**Listas de nivel superior (cap defensivo; colecciones acotadas por uso):**
+- `server/src/routes/accounts.ts:99` — `GET /api/accounts`.
+- `server/src/routes/categories.ts:47` y `:66` — `GET /api/categories` y `/:type`.
+- `server/src/routes/tags.ts:39` — `GET /api/tags`.
+- `server/src/routes/templates.ts:47` — `GET /api/templates`.
+- `server/src/routes/savings.ts:63` — `GET /api/savings`.
+- `server/src/routes/debts.ts:109` — `GET /api/debts`.
+- `server/src/routes/budgets.ts:82` — `GET /api/budgets` (vía `fetchBudgets`, también alimenta `/summary`).
+- `server/src/routes/splits.ts:236` — `GET /api/splits`.
 
 ### Tipos duplicados server ↔ mobile (sincronización **manual**)
 El backend deriva sus tipos del esquema Drizzle (`server/src/db/schema.ts`, `typeof tabla.$inferSelect`) y el

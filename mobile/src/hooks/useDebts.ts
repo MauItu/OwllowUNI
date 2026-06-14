@@ -3,6 +3,7 @@ import { debtsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Debt, DebtsSummary } from '../types';
 
+/** Hook de deudas: fetch de deudas + summary, con loading/refetch. */
 export function useDebts() {
   const [debts, setDebts] = useState<Debt[]>([]);
   const [summary, setSummary] = useState<DebtsSummary | null>(null);

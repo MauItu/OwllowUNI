@@ -104,6 +104,8 @@ export function TagsScreen() {
         <FlatList
           data={tags}
           keyExtractor={(t) => String(t.id)}
+          removeClippedSubviews
+          maxToRenderPerBatch={15}
           contentContainerStyle={styles.list}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => refetch(true)} tintColor={theme.colors.primary} />

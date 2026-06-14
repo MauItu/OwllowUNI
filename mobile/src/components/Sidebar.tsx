@@ -18,7 +18,6 @@ import { useAuth } from '../hooks/useAuth';
 import { useSidebarStore } from '../stores/sidebarStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { navigate } from '../navigation/navigationRef';
-import { currencyInfo } from '../utils/currencies';
 import type { RootStackParamList } from '../navigation/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');

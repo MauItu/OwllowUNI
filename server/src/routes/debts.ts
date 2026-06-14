@@ -7,7 +7,6 @@ import {
   debtPayments,
   accounts,
   transactions,
-  type Debt,
   type Transaction,
 } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
@@ -106,7 +105,9 @@ debtsRouter.get(
       .from(debts)
       .leftJoin(accounts, eq(debts.accountId, accounts.id))
       .where(eq(debts.userId, userId(req)))
-      .orderBy(asc(debts.isPaidOff), desc(debts.createdAt));
+      .orderBy(asc(debts.isPaidOff), desc(debts.createdAt))
+      // TODO: paginar con load-more en mobile
+      .limit(200);
     res.json(rows);
   }),
 );

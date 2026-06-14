@@ -28,7 +28,6 @@ function pad(n: number): string {
 
 /** Selector de hora con dos columnas scrolleables (24h). Devuelve "HH:mm:00". */
 export function TimePicker({ visible, value, onConfirm, onClose }: Props) {
-  const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const initial = useMemo(() => parse(value), [value]);
   const [hour, setHour] = useState(initial.h);

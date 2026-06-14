@@ -43,7 +43,9 @@ categoriesRouter.get(
       .select()
       .from(categories)
       .where(and(eq(categories.userId, userId(req)), eq(categories.isActive, true)))
-      .orderBy(asc(categories.sortOrder), asc(categories.id));
+      .orderBy(asc(categories.sortOrder), asc(categories.id))
+      // TODO: paginar con load-more en mobile
+      .limit(200);
     res.json(nest(rows));
   }),
 );
@@ -60,7 +62,9 @@ categoriesRouter.get(
       .select()
       .from(categories)
       .where(and(eq(categories.userId, userId(req)), eq(categories.type, type)))
-      .orderBy(asc(categories.sortOrder), asc(categories.id));
+      .orderBy(asc(categories.sortOrder), asc(categories.id))
+      // TODO: paginar con load-more en mobile
+      .limit(200);
     res.json(nest(rows.filter((r) => r.isActive)));
   }),
 );

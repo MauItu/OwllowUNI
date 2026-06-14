@@ -96,6 +96,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/** Hook del bloqueo por PIN/biometría: estado locked/ready y acciones de desbloqueo. */
 export function useAppLock(): AppLockValue {
   const v = useContext(Ctx);
   if (!v) throw new Error('useAppLock debe usarse dentro de <AppLockProvider>');

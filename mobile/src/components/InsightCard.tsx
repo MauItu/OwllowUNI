@@ -17,7 +17,7 @@ const ICON_BY_TYPE: Record<InsightType, string> = {
 };
 
 /** Color semántico del tema según la severidad. */
-export function severityColor(theme: Theme, severity: InsightSeverity): string {
+function severityColor(theme: Theme, severity: InsightSeverity): string {
   if (severity === 'positive') return theme.colors.income;
   if (severity === 'warning') return theme.colors.expense;
   return theme.colors.secondary; // info

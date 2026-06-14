@@ -170,6 +170,8 @@ export function SplitGroupDetailScreen() {
           <FlatList
             data={expenses}
             keyExtractor={(e) => String(e.id)}
+            removeClippedSubviews
+            maxToRenderPerBatch={15}
             contentContainerStyle={styles.list}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.colors.primary} />

@@ -20,7 +20,7 @@ export interface ImportRow {
 }
 
 /** Convierte el texto CSV en una matriz de celdas (incluye la fila de cabecera). */
-export function parseCSV(input: string): string[][] {
+function parseCSV(input: string): string[][] {
   let text = input;
   if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // quita BOM
 

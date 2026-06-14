@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, Switch, StyleSheet } from 'react-nat
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { Screen, ScreenHeader, SectionTitle, Loading } from '../components/common';
+import { Screen, ScreenHeader, Loading } from '../components/common';
 import { Icon } from '../components/Icon';
 import { PinModal } from '../components/PinModal';
 import { useAppLock } from '../hooks/useAppLock';

@@ -148,6 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/** Hook de autenticación: sesión, login/registro/logout y onboarding de PIN. */
 export function useAuth(): AuthValue {
   const v = useContext(Ctx);
   if (!v) throw new Error('useAuth debe usarse dentro de <AuthProvider>');

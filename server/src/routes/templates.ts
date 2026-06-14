@@ -43,7 +43,9 @@ templatesRouter.get(
       .leftJoin(accounts, eq(templates.accountId, accounts.id))
       .leftJoin(categories, eq(templates.categoryId, categories.id))
       .where(and(eq(templates.userId, userId(req)), eq(templates.isActive, true)))
-      .orderBy(desc(templates.useCount), desc(templates.id));
+      .orderBy(desc(templates.useCount), desc(templates.id))
+      // TODO: paginar con load-more en mobile
+      .limit(200);
     res.json(rows);
   }),
 );
