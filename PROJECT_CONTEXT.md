@@ -193,7 +193,7 @@ mobile/
     │                              reprogramar por entidad con identifiers determinísticos, sync global)
     ├── services/security.ts    ← Bloqueo con PIN (hash SHA-256+salt en SecureStore) + biometría + lockout
     ├── hooks/                  ← useAccounts, useTransactions, useCategories, useTemplates,
-    │                              useStats, useTags, useSavings, useDebts, useBudgets, useSplits,
+    │                              useStats, useTags, useSavings, useDebts, useBudgets, useSplits, useGlobalSearch,
     │                              useNotificationSettings, useInsights, useAccountsSummary,
     │                              useAppLock (provider de bloqueo + AppState)
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
@@ -203,12 +203,12 @@ mobile/
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Budgets, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense,
-    │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen, SetupPin
+    │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen, SetupPin, Search
     │                              (More.tsx queda huérfano: el Sidebar lo reemplaza)
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
-    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, Sidebar,
+    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, Sidebar, GlobalSearchBar,
     │                              PinDots, PinKeypad, PinModal, ReceiptViewer, BottomSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks (NavigationContainer con navigationRef)
     ├── navigation/navigationRef.ts  ← createNavigationContainerRef: navegar desde fuera del árbol (Sidebar)
@@ -868,6 +868,20 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     categoría". En el **Home** se muestran hasta **2 mini-alertas** (`⚠️ <categoría> al X% del presupuesto`) para los
     presupuestos activos por encima del 80% (las de mayor %), que enlazan a `BudgetsScreen`. Montos con
     `formatCurrency(.., mainCurrency)`. Budgets cacheados (5 min) + invalidados en el backend.
+
+22. **Búsqueda global (mobile, sin cambios de servidor):** ícono de lupa en el header de `HomeScreen`
+    (arriba a la derecha) → `SearchScreen` (registrada en `RootStack`, carga diferida). Componente
+    `GlobalSearchBar` (lupa + botón limpiar, **debounce 400ms** con `useRef`+`setTimeout` —sin lodash—,
+    mínimo **2 caracteres**, `autoFocus`). Hook `useGlobalSearch(term)`: SOLO **transacciones** van al
+    servidor (`GET /api/transactions?search=&limit=5`, con **AbortController** para cancelar la búsqueda
+    anterior); el resto se filtra **client-side** sobre los datos ya cacheados por los hooks existentes
+    (`useAccounts`, `useCategories` —aplana padres+subcategorías—, `useSavings`, `useDebts` —match por nombre
+    o `creditorDebtor`—, `useTags`), case-insensitive con `.includes()`. Devuelve `{ results, loading,
+    hasResults }`. `SearchScreen` muestra secciones solo si tienen resultados (Transacciones con
+    `TransactionCard` + "Ver más" → `Transactions {search}`, Cuentas `AccountCard`, Categorías fila
+    ícono+color, Metas `SavingsGoalCard`, Deudas `DebtCard`, Etiquetas `TagChip`), con estado inicial
+    (sugerencia) y vacío ("No se encontraron resultados para …"). `Transactions` ahora acepta `search?` en
+    sus params para pre-aplicar el filtro.
 
 ---
 

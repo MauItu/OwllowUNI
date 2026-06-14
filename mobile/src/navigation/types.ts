@@ -25,7 +25,8 @@ export type RootStackParamList = {
   SplitGroupDetail: { groupId: number };
   AddSplitExpense: { groupId: number };
   // Transactions ya no es un tab: se accede como screen del stack desde Home.
-  Transactions: { accountId?: number } | undefined;
+  Transactions: { accountId?: number; search?: string } | undefined;
+  Search: undefined;
   // Estadísticas ya no es un tab: se accede como screen del stack desde el Sidebar.
   Stats: undefined;
   SettingsNotifications: undefined;

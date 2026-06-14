@@ -101,9 +101,14 @@ export function HomeScreen() {
           <Text style={styles.greeting}>{greeting()}</Text>
           <Text style={styles.date}>{dateLabel}</Text>
         </View>
-        <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Accounts')}>
-          <Icon name="wallet" size={22} color="#FFFFFF" />
-        </Pressable>
+        <View style={styles.topActions}>
+          <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Search')} hitSlop={8}>
+            <Icon name="search" size={22} color="#FFFFFF" />
+          </Pressable>
+          <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Accounts')}>
+            <Icon name="wallet" size={22} color="#FFFFFF" />
+          </Pressable>
+        </View>
       </LinearGradient>
 
       <ScrollView
@@ -291,6 +296,7 @@ const createStyles = (theme: Theme) =>
   },
   greeting: { color: '#FFFFFF', fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold },
   date: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm, marginTop: 2 },
+  topActions: { flexDirection: 'row', gap: theme.spacing.sm },
   iconBtn: { width: 44, height: 44, borderRadius: theme.borderRadius.full, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   section: { marginTop: theme.spacing.xl },

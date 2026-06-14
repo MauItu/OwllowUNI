@@ -32,7 +32,7 @@ export function TransactionsScreen() {
 
   const { tags } = useTags();
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(route.params?.search ?? '');
   const [typeFilter, setTypeFilter] = useState<TxType | 'all'>('all');
   const [accountId, setAccountId] = useState<number | undefined>(route.params?.accountId);
   const [tagId, setTagId] = useState<number | undefined>(undefined);
