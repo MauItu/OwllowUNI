@@ -6,6 +6,7 @@ import { savingsGoals, savingsContributions, accounts, type SavingsGoal } from '
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 
 export const savingsRouter = Router();
 
@@ -65,6 +66,7 @@ savingsRouter.get(
 // GET /api/savings/summary — totales y conteo de metas
 savingsRouter.get(
   '/summary',
+  cacheResponse(SUMMARY_TTL_MS),
   asyncHandler(async (req, res) => {
     const [row] = await db
       .select({
@@ -103,7 +105,10 @@ savingsRouter.get(
       .select()
       .from(savingsContributions)
       .where(eq(savingsContributions.goalId, id))
-      .orderBy(desc(savingsContributions.date), desc(savingsContributions.id));
+      .orderBy(desc(savingsContributions.date), desc(savingsContributions.id))
+      // Cap defensivo del peor caso (sin cambiar contrato): las más recientes.
+      // TODO: paginar con load-more en mobile
+      .limit(200);
 
     res.json({ ...goal, contributions });
   }),

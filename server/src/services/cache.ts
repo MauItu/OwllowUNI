@@ -16,6 +16,10 @@ import type { Request, Response, NextFunction } from 'express';
 export const INSIGHTS_TTL_MS = 10 * 60 * 1000; // 10 min
 export const STATS_TTL_MS = 5 * 60 * 1000; // 5 min
 export const ACCOUNTS_SUMMARY_TTL_MS = 5 * 60 * 1000; // 5 min
+// Summaries de debts/savings/splits: agregaciones baratas pero pedidas en cada
+// render del Home. Misma ventana que el resto (la versión por usuario las invalida
+// ante cualquier mutación, así que el TTL solo acota datos sin tocar).
+export const SUMMARY_TTL_MS = 5 * 60 * 1000; // 5 min
 
 interface Entry {
   value: unknown;

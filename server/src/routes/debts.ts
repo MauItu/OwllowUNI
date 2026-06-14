@@ -13,6 +13,7 @@ import {
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 
 export const debtsRouter = Router();
 
@@ -112,6 +113,7 @@ debtsRouter.get(
 // GET /api/debts/summary — total deudas, total préstamos, balance neto
 debtsRouter.get(
   '/summary',
+  cacheResponse(SUMMARY_TTL_MS),
   asyncHandler(async (req, res) => {
     const [row] = await db
       .select({
@@ -161,7 +163,10 @@ debtsRouter.get(
       .from(debtPayments)
       .leftJoin(accounts, eq(debtPayments.accountId, accounts.id))
       .where(eq(debtPayments.debtId, id))
-      .orderBy(desc(debtPayments.date), desc(debtPayments.id));
+      .orderBy(desc(debtPayments.date), desc(debtPayments.id))
+      // Cap defensivo del peor caso (sin cambiar contrato): los más recientes.
+      // TODO: paginar con load-more en mobile
+      .limit(200);
 
     res.json({ ...debt, payments });
   }),
@@ -286,7 +291,17 @@ debtsRouter.delete(
     const txIds = payments.map((p) => p.transactionId).filter((t): t is number => t != null);
     const txs =
       txIds.length > 0
-        ? await db.select().from(transactions).where(inArray(transactions.id, txIds))
+        ? await db
+            .select({
+              id: transactions.id,
+              type: transactions.type,
+              amount: transactions.amount,
+              accountId: transactions.accountId,
+              toAccountId: transactions.toAccountId,
+              toAmount: transactions.toAmount,
+            })
+            .from(transactions)
+            .where(inArray(transactions.id, txIds))
         : [];
 
     const stmts: unknown[] = [];

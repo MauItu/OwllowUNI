@@ -18,6 +18,7 @@ import {
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 
 export const splitsRouter = Router();
 
@@ -249,6 +250,7 @@ splitsRouter.get(
 // GET /api/splits/summary — mis balances en todos los grupos activos
 splitsRouter.get(
   '/summary',
+  cacheResponse(SUMMARY_TTL_MS),
   asyncHandler(async (req, res) => {
     const groups = await db
       .select()
@@ -380,7 +382,17 @@ splitsRouter.delete(
       .filter((t): t is number => t != null);
     const txs =
       txIds.length > 0
-        ? await db.select().from(transactions).where(inArray(transactions.id, txIds))
+        ? await db
+            .select({
+              id: transactions.id,
+              type: transactions.type,
+              amount: transactions.amount,
+              accountId: transactions.accountId,
+              toAccountId: transactions.toAccountId,
+              toAmount: transactions.toAmount,
+            })
+            .from(transactions)
+            .where(inArray(transactions.id, txIds))
         : [];
 
     const stmts: unknown[] = [];
@@ -506,7 +518,10 @@ splitsRouter.get(
       .leftJoin(categories, eq(splitExpenses.categoryId, categories.id))
       .leftJoin(accounts, eq(splitExpenses.accountId, accounts.id))
       .where(eq(splitExpenses.groupId, groupId))
-      .orderBy(desc(splitExpenses.date), desc(splitExpenses.id));
+      .orderBy(desc(splitExpenses.date), desc(splitExpenses.id))
+      // Cap defensivo del peor caso (sin cambiar contrato): los más recientes.
+      // TODO: paginar con load-more en mobile
+      .limit(200);
 
     const ids = expenses.map((e) => e.id);
     const shares =
@@ -835,7 +850,10 @@ splitsRouter.get(
       .select()
       .from(splitSettlements)
       .where(eq(splitSettlements.groupId, groupId))
-      .orderBy(desc(splitSettlements.date), desc(splitSettlements.id));
+      .orderBy(desc(splitSettlements.date), desc(splitSettlements.id))
+      // Cap defensivo del peor caso (sin cambiar contrato): las más recientes.
+      // TODO: paginar con load-more en mobile
+      .limit(200);
     res.json(rows);
   }),
 );

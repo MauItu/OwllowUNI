@@ -86,8 +86,9 @@ wallet/                         ← raíz del repo
 - **Caché en proceso (`server/src/services/cache.ts`, sin Redis).** Caché en memoria del único
   proceso Express con **invalidación por sello de versión por usuario**:
   - `cacheResponse(ttl)` cachea la respuesta JSON de GET caros por `uid+url+querystring+versión`:
-    **`/api/stats/*`** (5 min), **`/api/insights`** (10 min), **`/api/accounts/summary`** (5 min).
-    `refresh=true` siempre hace bypass; solo cachea respuestas 2xx.
+    **`/api/stats/*`** (5 min), **`/api/insights`** (10 min), **`/api/accounts/summary`** (5 min) y los
+    summaries de **`/api/debts/summary`**, **`/api/savings/summary`** y **`/api/splits/summary`** (5 min,
+    `SUMMARY_TTL_MS`). `refresh=true` siempre hace bypass; solo cachea respuestas 2xx.
   - `invalidateOnMutation` sube `dataVersion[uid]` tras CADA mutación 2xx del usuario (en `finish`,
     post-commit) → invalida toda su caché. Montado en todos los routers de datos.
 - **CORS:** `CORS_ORIGINS` (lista separada por comas) restringe orígenes; sin ella, se permite
@@ -102,6 +103,13 @@ wallet/                         ← raíz del repo
 - **Menos round-trips en transacciones:** `assertAccountsOwned` usa un único `inArray(accounts.id, …)`
   comparando conteos (en vez de una query por id, igual que `assertTagsOwned`); en `GET /api/transactions`
   las queries de `rows` y de `count` van en `Promise.all` (las tags dependen de `rows`, van después).
+- **Cap defensivo en colecciones hijas:** los GET de detalle que devuelven hijos sin paginar acotan el
+  peor caso con `.limit(200)` silencioso (los más recientes, sin cambiar el contrato de respuesta):
+  `GET /api/debts/:id` (`payments`), `GET /api/savings/:id` (`contributions`),
+  `GET /api/splits/:groupId/expenses` y `/settlements`. TODO pendiente: load-more en mobile.
+- **Selects acotados en los DELETE con reversión de balance:** `DELETE /api/debts/:id` y `/api/splits/:id`
+  traen de `transactions` solo las columnas usadas para revertir (`id,type,amount,accountId,toAccountId,toAmount`),
+  no la fila completa.
 - **Errores 500:** el `errorHandler` responde mensaje genérico (el detalle se loguea en el servidor).
 
 ---
