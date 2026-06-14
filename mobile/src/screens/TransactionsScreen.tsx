@@ -19,14 +19,14 @@ import { transactionsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { groupLabel, formatShortDate } from '../utils/formatDate';
 import { deleteReceipt } from '../utils/receiptStorage';
-import type { TabParamList } from '../navigation/types';
+import type { RootStackParamList } from '../navigation/types';
 import type { Transaction, TxType } from '../types';
 
 export function TransactionsScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const route = useRoute<RouteProp<TabParamList, 'Transactions'>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'Transactions'>>();
   const { accounts } = useAccounts();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
 

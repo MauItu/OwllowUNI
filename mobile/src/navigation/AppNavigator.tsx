@@ -8,12 +8,12 @@ import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from '../components/Icon';
 import { useAuth } from '../hooks/useAuth';
+import { navigationRef } from './navigationRef';
 import type { RootStackParamList, TabParamList, AuthStackParamList } from './types';
 
 // Pantallas críticas (tab principal + flujos calientes): import estático.
 import { HomeScreen } from '../screens/HomeScreen';
 import { TransactionsScreen } from '../screens/TransactionsScreen';
-import { MoreScreen } from '../screens/MoreScreen';
 import { AddTransactionScreen } from '../screens/AddTransactionScreen';
 import { AccountsScreen } from '../screens/AccountsScreen';
 import { AddAccountScreen } from '../screens/AddAccountScreen';
@@ -82,10 +82,8 @@ const Tab = createBottomTabNavigator<TabParamList>();
 
 const TAB_META: Record<keyof TabParamList, { icon: string; label: string }> = {
   Home: { icon: 'house', label: 'Inicio' },
-  Transactions: { icon: 'arrow-left-right', label: 'Movimientos' },
   AddTab: { icon: 'plus', label: '' },
-  Stats: { icon: 'bar-chart-3', label: 'Estadísticas' },
-  More: { icon: 'menu', label: 'Más' },
+  Accounts: { icon: 'wallet', label: 'Cuentas' },
 };
 
 /**
@@ -155,10 +153,8 @@ function Tabs() {
       tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Transactions" component={TransactionsScreen} />
       <Tab.Screen name="AddTab" component={Noop} />
-      <Tab.Screen name="Stats" component={StatsScreen} />
-      <Tab.Screen name="More" component={MoreScreen} />
+      <Tab.Screen name="Accounts" component={AccountsScreen} />
     </Tab.Navigator>
   );
 }
@@ -198,19 +194,19 @@ export function AppNavigator() {
   }
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} ref={navigationRef}>
       {!isAuthenticated ? (
         <AuthNavigator />
       ) : (
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         <RootStack.Screen name="Tabs" component={Tabs} />
+        <RootStack.Screen name="Transactions" component={TransactionsScreen} />
         <RootStack.Screen
           name="AddTransaction"
           component={AddTransactionScreen}
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <RootStack.Screen name="AddAccount" component={AddAccountScreen} options={{ presentation: 'modal' }} />
-        <RootStack.Screen name="Accounts" component={AccountsScreen} />
         <RootStack.Screen name="Categories" component={CategoriesScreen} />
         <RootStack.Screen name="Templates" component={TemplatesScreen} />
         <RootStack.Screen name="Tags" component={TagsScreen} />
@@ -226,6 +222,7 @@ export function AppNavigator() {
         <RootStack.Screen name="AddSplitExpense" component={AddSplitExpenseScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="SettingsNotifications" component={SettingsNotificationsScreen} />
         <RootStack.Screen name="ImportExport" component={ImportExportScreen} />
+        <RootStack.Screen name="Stats" component={StatsScreen} />
         <RootStack.Screen name="Insights" component={InsightsScreen} />
         <RootStack.Screen name="Rates" component={RatesScreen} />
         <RootStack.Screen name="Security" component={SecurityScreen} />

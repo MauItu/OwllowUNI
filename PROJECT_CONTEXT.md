@@ -197,17 +197,20 @@ mobile/
     │                              useAppLock (provider de bloqueo + AppState)
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
     ├── stores/settingsStore.ts ← Zustand + persist/AsyncStorage (mainCurrency)
+    ├── stores/sidebarStore.ts  ← Zustand (estado abierto/cerrado del Sidebar: isOpen/open/close/toggle)
     ├── screens/                ← Home, Transactions, AddTransaction, Accounts, AddAccount,
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Splits,
-    │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense, More,
+    │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense,
     │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen
+    │                              (More.tsx queda huérfano: el Sidebar lo reemplaza)
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
-    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker,
+    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, Sidebar,
     │                              PinDots, PinKeypad, PinModal, ReceiptViewer, BottomSheet, Icon, common
-    ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks
+    ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks (NavigationContainer con navigationRef)
+    ├── navigation/navigationRef.ts  ← createNavigationContainerRef: navegar desde fuera del árbol (Sidebar)
     ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
     ├── theme/ThemeContext.tsx  ← ThemeProvider, useTheme(), useThemedStyles()
     ├── utils/                  ← formatCurrency (Intl + fallback manual), currencies (catálogo curado),
@@ -667,7 +670,7 @@ global en `App.tsx` captura crashes y muestra un fallback en lugar de congelar l
   Splits (`Splits`/`AddSplitGroup`/`SplitGroupDetail`/`AddSplitExpense`) y las de Settings
   (`SettingsNotifications`/`Security`/`Appearance`) se cargan con `React.lazy()` + `<Suspense>` (helper
   `lazyScreen()`, fallback = `ActivityIndicator` centrado con color del tema). Metro soporta `import()`
-  dinámico desde RN 0.72. Las del tab crítico (Home/Transactions/Accounts/AddTransaction) siguen estáticas.
+  dinámico desde RN 0.72. Las de la ruta caliente (Home/Transactions/Accounts/AddTransaction) siguen estáticas.
 - **`React.memo` en componentes de fila:** `TransactionCard`, `AccountCard`, `SavingsGoalCard`, `DebtCard`,
   `InsightCard`, `TagChip` (export memoizado; otros named exports como `deadlineLabel`/`severityColor` intactos).
 - **FlatList/SectionList optimizadas:** las listas principales (Transactions, Accounts, Debts, Savings, Splits)
@@ -692,13 +695,42 @@ la app dibuja bajo las barras del sistema. El fix:
   usos dentro de `BottomSheet`/`CalculatorSheet`). Los FAB de pantallas apiladas (DebtDetail, SavingsDetail,
   SplitGroupDetail) suman `insets.bottom` a su `bottom`.
 
-**Navegación (bottom tabs, `CustomTabBar`):** Inicio (house) · Movimientos (arrow-left-right) ·
-Agregar (botón central circular elevado -24, fondo primary, borde del color background) · Estadísticas
-(bar-chart-3) · Más (menu). Tab activo en `primary`, inactivo en `textMuted`, labels `fontSize.xs`.
-El botón central abre el modal `AddTransaction` del root stack.
+**Navegación (bottom tabs, `CustomTabBar`):** SOLO 3 tabs esenciales — Inicio (house) · Agregar
+(botón central circular elevado -24, fondo primary, borde del color background) · Cuentas (wallet).
+Tab activo en `primary`, inactivo en `textMuted`, labels `fontSize.xs`; cada slot es `flex:1` con
+contenido centrado (al ser 3, el FAB "Agregar" queda perfectamente centrado). El botón central abre
+el modal `AddTransaction` del root stack. `AccountsScreen` es ahora un **tab** (antes era screen del
+stack), sin botón "atrás" en su header.
+> **Transacciones, Estadísticas y "Más" ya NO son tabs.** `TransactionsScreen` y `StatsScreen` se
+> registran como **screens del root stack** (`Transactions: { accountId? }`, `Stats`). Transacciones se
+> abre desde Home ("Últimas transacciones → Ver todas"); Estadísticas, desde el Sidebar. El tab "Más"
+> se reemplazó por el **Sidebar** (drawer lateral custom, ver abajo).
 
-**HomeScreen:** saludo por hora ("Buenos días/tardes/noches") + fecha; `BalanceSummary` con balance en
-`fontSize.hero` ($ en `accent`) y dos pills (ingresos/gastos); últimas 5 transacciones; pull-to-refresh.
+> **Sidebar (drawer lateral custom — reemplaza el tab "Más").** `components/Sidebar.tsx`, **sin
+> `@react-navigation/drawer`** (evita deps nativas). Se abre con el **botón hamburguesa** (`Icon menu`)
+> en la esquina superior-izquierda del header de Home. Estado global en `stores/sidebarStore.ts`
+> (Zustand: `{ isOpen, open, close, toggle }`), así se abre desde el header de cualquier pantalla.
+> Se renderiza como **overlay en `App.tsx`** (sibling de `AppNavigator`, igual que `LockScreen`, solo
+> si `isAuthenticated`), por lo que vive FUERA del `NavigationContainer`: navega vía
+> `navigation/navigationRef.ts` (`createNavigationContainerRef` adjunto al container con `ref=`).
+> Animación **slide** con `Animated` nativo de RN (`translateX` de `-DRAWER_WIDTH` a 0, 300 ms, native
+> driver) + overlay semitransparente (`rgba(0,0,0,0.5)`, opacidad animada) que al tocarlo cierra; se
+> desmonta al terminar el cierre (no captura toques oculto). Ancho `min(80%, 320px)`. Contenido: perfil
+> (nombre + email de `useAuth`) arriba, luego las opciones que estaban en MoreScreen agrupadas con
+> separadores sutiles — **Finanzas** (Categorías, Plantillas, Etiquetas, Metas de ahorro, Deudas,
+> Gastos compartidos), **Análisis** (Estadísticas, Insights, Tasas de cambio, Importar/Exportar, Moneda
+> principal vía `CurrencyPicker`), **Ajustes** (Notificaciones, Seguridad, Apariencia) y **Cerrar
+> sesión** (con `Alert.alert` de confirmación). Cada opción cierra el drawer y navega. Colores del theme
+> (`surface` de fondo). `MoreScreen.tsx` queda huérfano (ya no se referencia).
+
+**HomeScreen:** header con **botón hamburguesa** (abre el Sidebar) a la izquierda, saludo por hora
+("Buenos días/tardes/noches") + fecha al centro y atajo a Cuentas (wallet) a la derecha; `BalanceSummary` con balance en
+`fontSize.hero` ($ en `accent`) y dos pills (ingresos/gastos); pull-to-refresh. **Sección "Últimas
+transacciones"** (debajo del resumen/cards): renderiza las **últimas 5** del usuario
+(`GET /api/transactions?limit=5&page=1`) con `TransactionCard` y, **debajo de la lista**, un botón de
+texto centrado (color primary, padding vertical 12px) "Ver todas las transacciones →" que navega a
+`Transactions`. Si no hay ninguna, estado vacío "No hay transacciones aún" + botón "Registrar primera
+transacción" → `AddTransaction`.
 **Botón flotante (44×44, fondo `accent`, ícono `zap` blanco) abajo-derecha** abre un `BottomSheet` con las
 plantillas (cada una con botón "Usar"); enlace "Gestionar plantillas" lleva al CRUD completo.
 

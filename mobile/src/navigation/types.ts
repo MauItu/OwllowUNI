@@ -10,7 +10,6 @@ export type RootStackParamList = {
       }
     | undefined;
   AddAccount: { accountId?: number } | undefined;
-  Accounts: { selectAccountId?: number } | undefined;
   Categories: undefined;
   Templates: undefined;
   Tags: undefined;
@@ -24,6 +23,10 @@ export type RootStackParamList = {
   AddSplitGroup: undefined;
   SplitGroupDetail: { groupId: number };
   AddSplitExpense: { groupId: number };
+  // Transactions ya no es un tab: se accede como screen del stack desde Home.
+  Transactions: { accountId?: number } | undefined;
+  // Estadísticas ya no es un tab: se accede como screen del stack desde el Sidebar.
+  Stats: undefined;
   SettingsNotifications: undefined;
   ImportExport: undefined;
   Insights: undefined;
@@ -42,8 +45,6 @@ export type AuthStackParamList = {
 
 export type TabParamList = {
   Home: undefined;
-  Transactions: { accountId?: number } | undefined;
   AddTab: undefined;
-  Stats: undefined;
-  More: undefined;
+  Accounts: { selectAccountId?: number } | undefined;
 };

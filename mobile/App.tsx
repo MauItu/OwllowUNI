@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { LockScreen } from './src/screens/LockScreen';
+import { Sidebar } from './src/components/Sidebar';
 import { createToastConfig } from './src/components/toastConfig';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { AppLockProvider, useAppLock } from './src/hooks/useAppLock';
@@ -67,6 +68,8 @@ function ThemedApp() {
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={theme.colors.statusBar} translucent />
       <AppNavigator />
+      {/* Drawer lateral custom: overlay sobre el navigator (se abre desde el header de Home). */}
+      {isAuthenticated && <Sidebar />}
       {/* El bloqueo con PIN solo aplica DESPUÉS de estar autenticado. */}
       {isAuthenticated && !ready && (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.background }]} />

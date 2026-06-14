@@ -24,6 +24,7 @@ import { useSavings } from '../hooks/useSavings';
 import { useDebts } from '../hooks/useDebts';
 import { useSplits } from '../hooks/useSplits';
 import { useAppStore } from '../stores/appStore';
+import { useSidebarStore } from '../stores/sidebarStore';
 import { currentMonthRange } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
 import type { Template } from '../types';
@@ -54,6 +55,7 @@ export function HomeScreen() {
   const { summary: debtsSummary, refetch: refetchDebts } = useDebts();
   const { summary: splitsSummary, refetch: refetchSplits } = useSplits();
   const setPendingTemplate = useAppStore((s) => s.setPendingTemplate);
+  const openSidebar = useSidebarStore((s) => s.open);
 
   const [refreshing, setRefreshing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -85,7 +87,10 @@ export function HomeScreen() {
         end={{ x: 1, y: 0 }}
         style={styles.topBar}
       >
-        <View style={{ flex: 1 }}>
+        <Pressable style={styles.iconBtn} onPress={openSidebar} hitSlop={8}>
+          <Icon name="menu" size={24} color="#FFFFFF" />
+        </Pressable>
+        <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
           <Text style={styles.greeting}>{greeting()}</Text>
           <Text style={styles.date}>{dateLabel}</Text>
         </View>
@@ -177,20 +182,25 @@ export function HomeScreen() {
         )}
 
         <View style={styles.section}>
-          <SectionTitle
-            title="Últimas transacciones"
-            action={
-              <Pressable onPress={() => navigation.navigate('Transactions')}>
-                <Text style={styles.seeAll}>Ver todo</Text>
-              </Pressable>
-            }
-          />
+          <SectionTitle title="Últimas transacciones" />
           {latest.length === 0 ? (
-            <EmptyState icon="receipt" text={loadingAccounts ? 'Cargando…' : 'Aún no hay movimientos. ¡Agrega el primero!'} />
+            <>
+              <EmptyState icon="receipt" text={loadingAccounts ? 'Cargando…' : 'No hay transacciones aún'} />
+              {!loadingAccounts && (
+                <Pressable style={styles.seeAllBtn} onPress={() => navigation.navigate('AddTransaction')}>
+                  <Text style={styles.seeAllBtnText}>Registrar primera transacción</Text>
+                </Pressable>
+              )}
+            </>
           ) : (
-            latest.map((t) => (
-              <TransactionCard key={t.id} transaction={t} onPress={() => navigation.navigate('Transactions')} />
-            ))
+            <>
+              {latest.map((t) => (
+                <TransactionCard key={t.id} transaction={t} onPress={() => navigation.navigate('Transactions')} />
+              ))}
+              <Pressable style={styles.seeAllBtn} onPress={() => navigation.navigate('Transactions')}>
+                <Text style={styles.seeAllBtnText}>Ver todas las transacciones →</Text>
+              </Pressable>
+            </>
           )}
         </View>
       </ScrollView>
@@ -257,6 +267,9 @@ const createStyles = (theme: Theme) =>
   insightsSection: { marginTop: theme.spacing.lg },
   carousel: { gap: theme.spacing.sm, paddingRight: theme.spacing.lg, paddingVertical: theme.spacing.xs },
   seeAll: { color: theme.colors.primaryLight, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
+  // Botón de texto (no elevado), centrado, color primario, padding vertical 12px.
+  seeAllBtn: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12 },
+  seeAllBtnText: { color: theme.colors.primary, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
   templatesFab: {
     position: 'absolute',
     right: theme.spacing.lg,
