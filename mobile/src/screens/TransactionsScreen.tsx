@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, SectionList, Pressable, TextInput, RefreshControl, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -69,22 +69,46 @@ export function TransactionsScreen() {
   const selectedTag = tags.find((t) => t.id === tagId);
   const hasFilters = typeFilter !== 'all' || accountId != null || range.from != null || tagId != null;
 
-  const remove = async (t: Transaction) => {
-    try {
-      await transactionsApi.remove(t.id);
-      // Borra también la foto del recibo local, si la tenía.
-      if (t.receiptFilename) void deleteReceipt(t.receiptFilename);
-      showSuccess('Movimiento eliminado');
-      triggerRefresh();
-    } catch (err) {
-      showError(getErrorMessage(err));
-    }
-  };
+  const remove = useCallback(
+    async (t: Transaction) => {
+      try {
+        await transactionsApi.remove(t.id);
+        // Borra también la foto del recibo local, si la tenía.
+        if (t.receiptFilename) void deleteReceipt(t.receiptFilename);
+        showSuccess('Movimiento eliminado');
+        triggerRefresh();
+      } catch (err) {
+        showError(getErrorMessage(err));
+      }
+    },
+    [triggerRefresh],
+  );
 
-  const renderRightActions = (t: Transaction) => (
-    <Pressable style={styles.deleteAction} onPress={() => remove(t)}>
-      <Icon name="trash-2" size={22} color="#FFFFFF" />
-    </Pressable>
+  const renderRightActions = useCallback(
+    (t: Transaction) => (
+      <Pressable style={styles.deleteAction} onPress={() => remove(t)}>
+        <Icon name="trash-2" size={22} color="#FFFFFF" />
+      </Pressable>
+    ),
+    [styles, remove],
+  );
+
+  const keyExtractor = useCallback((item: Transaction) => String(item.id), []);
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: { title: string } }) => <Text style={styles.sectionHeader}>{section.title}</Text>,
+    [styles],
+  );
+  // El onPress por item necesita el closure de `item`, así que se queda inline.
+  const renderItem = useCallback(
+    ({ item }: { item: Transaction }) => (
+      <Swipeable renderRightActions={() => renderRightActions(item)} overshootRight={false}>
+        <TransactionCard
+          transaction={item}
+          onPress={() => navigation.navigate('AddTransaction', { transactionId: item.id })}
+        />
+      </Swipeable>
+    ),
+    [renderRightActions, navigation],
   );
 
   return (
@@ -135,22 +159,18 @@ export function TransactionsScreen() {
       ) : (
         <SectionList
           sections={sections}
-          keyExtractor={(item) => String(item.id)}
+          keyExtractor={keyExtractor}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews
+          maxToRenderPerBatch={15}
+          windowSize={10}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.colors.primary} />}
           onEndReachedThreshold={0.4}
           onEndReached={() => hasMore && loadMore()}
-          renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
-          renderItem={({ item }) => (
-            <Swipeable renderRightActions={() => renderRightActions(item)} overshootRight={false}>
-              <TransactionCard
-                transaction={item}
-                onPress={() => navigation.navigate('AddTransaction', { transactionId: item.id })}
-              />
-            </Swipeable>
-          )}
+          renderSectionHeader={renderSectionHeader}
+          renderItem={renderItem}
           ListEmptyComponent={
             loading ? (
               <ActivityIndicator color={theme.colors.primary} style={{ marginTop: theme.spacing.xl }} />

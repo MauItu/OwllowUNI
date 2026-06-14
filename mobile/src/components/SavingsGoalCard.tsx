@@ -22,7 +22,7 @@ export function deadlineLabel(deadline: string): { text: string; overdue: boolea
   return { text: days === 1 ? '1 día restante' : `${days} días restantes`, overdue: false };
 }
 
-export function SavingsGoalCard({ goal, onPress }: Props) {
+function SavingsGoalCardComponent({ goal, onPress }: Props) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const current = Number(goal.currentAmount);
@@ -116,3 +116,6 @@ const createStyles = (theme: Theme) =>
     current: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
     target: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
   });
+
+// Memoizado: se renderiza por fila en listas; con props estables evita re-render.
+export const SavingsGoalCard = React.memo(SavingsGoalCardComponent);

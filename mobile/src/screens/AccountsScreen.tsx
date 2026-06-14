@@ -13,6 +13,7 @@ import { useAccounts } from '../hooks/useAccounts';
 import { useAccountsSummary } from '../hooks/useAccountsSummary';
 import { useSettingsStore } from '../stores/settingsStore';
 import { formatCurrency } from '../utils/formatCurrency';
+import type { Account } from '../types';
 
 export function AccountsScreen() {
   const navigation = useNavigation<any>();
@@ -26,6 +27,18 @@ export function AccountsScreen() {
     refetch(true);
     refetchSummary();
   }, [refetch, refetchSummary]);
+
+  // Handlers estables (no dependen del closure de cada item) → la AccountCard
+  // memoizada no se re-renderiza cuando la lista se vuelve a renderizar.
+  const openAccount = useCallback(
+    (a: Account) => navigation.navigate('AddAccount', { accountId: a.id }),
+    [navigation],
+  );
+  const keyExtractor = useCallback((a: Account) => String(a.id), []);
+  const renderItem = useCallback(
+    ({ item }: { item: Account }) => <AccountCard account={item} onPress={openAccount} />,
+    [openAccount],
+  );
 
   // ¿Hay cuentas en una moneda distinta a la principal? → mostrar nota de tasas.
   const hasForeign = !!summary?.byCurrency.some((b) => b.currency.toUpperCase() !== mainCurrency.toUpperCase());
@@ -90,13 +103,14 @@ export function AccountsScreen() {
       ) : (
         <FlatList
           data={accounts}
-          keyExtractor={(a) => String(a.id)}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
-          renderItem={({ item }) => (
-            <AccountCard account={item} onPress={(a) => navigation.navigate('AddAccount', { accountId: a.id })} />
-          )}
+          renderItem={renderItem}
+          removeClippedSubviews
+          maxToRenderPerBatch={15}
+          windowSize={10}
           ListEmptyComponent={<EmptyState icon="wallet" text="No tienes cuentas. Crea la primera." />}
         />
       )}

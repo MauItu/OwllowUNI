@@ -37,7 +37,7 @@ interface Props {
   style?: ViewStyle;
 }
 
-export function InsightCard({ insight, onPress, style }: Props) {
+function InsightCardComponent({ insight, onPress, style }: Props) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const color = severityColor(theme, insight.severity);
@@ -92,3 +92,6 @@ const createStyles = (theme: Theme) =>
     badgeText: { fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.bold },
     message: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, lineHeight: 19 },
   });
+
+// Memoizado: se renderiza en el carrusel de insights; con props estables evita re-render.
+export const InsightCard = React.memo(InsightCardComponent);

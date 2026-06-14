@@ -13,7 +13,7 @@ const TYPE_LABEL: Record<string, string> = {
   digital_wallet: 'Billetera digital',
 };
 
-export function AccountCard({ account, onPress }: { account: Account; onPress?: (a: Account) => void }) {
+function AccountCardComponent({ account, onPress }: { account: Account; onPress?: (a: Account) => void }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const balance = parseFloat(account.currentBalance);
@@ -58,3 +58,6 @@ const createStyles = (theme: Theme) =>
   type: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, marginTop: 2 },
   balance: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },
 });
+
+// Memoizado: se renderiza por fila en listas; con props estables evita re-render.
+export const AccountCard = React.memo(AccountCardComponent);

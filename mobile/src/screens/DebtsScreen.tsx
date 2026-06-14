@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -12,7 +12,7 @@ import { useAppStore } from '../stores/appStore';
 import { debtsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
-import type { DebtType } from '../types';
+import type { Debt, DebtType } from '../types';
 
 export function DebtsScreen() {
   const navigation = useNavigation<any>();
@@ -38,6 +38,16 @@ export function DebtsScreen() {
     }
   };
 
+  // keyExtractor estable y renderItem estable (el onPress por item necesita el
+  // closure de `item`, así que se queda inline; ver guía de la tarea).
+  const keyExtractor = useCallback((d: Debt) => String(d.id), []);
+  const renderItem = useCallback(
+    ({ item }: { item: Debt }) => (
+      <DebtCard debt={item} onPress={() => navigation.navigate('DebtDetail', { debtId: item.id })} />
+    ),
+    [navigation],
+  );
+
   return (
     <Screen>
       <ScreenHeader
@@ -57,8 +67,11 @@ export function DebtsScreen() {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={(d) => String(d.id)}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.list}
+          removeClippedSubviews
+          maxToRenderPerBatch={15}
+          windowSize={10}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => refetch(true)} tintColor={theme.colors.primary} />
           }
@@ -115,9 +128,7 @@ export function DebtsScreen() {
               }
             />
           }
-          renderItem={({ item }) => (
-            <DebtCard debt={item} onPress={() => navigation.navigate('DebtDetail', { debtId: item.id })} />
-          )}
+          renderItem={renderItem}
           ListFooterComponent={
             history.length > 0 ? (
               <View style={styles.historySection}>

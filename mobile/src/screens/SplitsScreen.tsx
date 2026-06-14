@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -8,6 +8,7 @@ import { Screen, ScreenHeader, EmptyState, ErrorState, Loading } from '../compon
 import { Icon } from '../components/Icon';
 import { useSplits } from '../hooks/useSplits';
 import { formatCurrency } from '../utils/formatCurrency';
+import type { SplitGroup } from '../types';
 
 export function SplitsScreen() {
   const navigation = useNavigation<any>();
@@ -15,11 +16,42 @@ export function SplitsScreen() {
   const styles = useThemedStyles(createStyles);
   const { groups, summary, loading, refreshing, error, refetch } = useSplits();
 
-  const balanceLabel = (balance: number) => {
-    if (balance > 0) return { text: `Te deben ${formatCurrency(balance)}`, color: theme.colors.income };
-    if (balance < 0) return { text: `Debes ${formatCurrency(-balance)}`, color: theme.colors.expense };
-    return { text: 'Estás a mano', color: theme.colors.textMuted };
-  };
+  const balanceLabel = useCallback(
+    (balance: number) => {
+      if (balance > 0) return { text: `Te deben ${formatCurrency(balance)}`, color: theme.colors.income };
+      if (balance < 0) return { text: `Debes ${formatCurrency(-balance)}`, color: theme.colors.expense };
+      return { text: 'Estás a mano', color: theme.colors.textMuted };
+    },
+    [theme],
+  );
+
+  const keyExtractor = useCallback((g: SplitGroup) => String(g.id), []);
+  const renderItem = useCallback(
+    ({ item }: { item: SplitGroup }) => {
+      const balance = balanceLabel(item.myBalance ?? 0);
+      const memberCount = item.members?.length ?? 0;
+      return (
+        <Pressable
+          style={({ pressed }) => [styles.card, { borderLeftColor: item.color }, pressed && { opacity: 0.8 }]}
+          onPress={() => navigation.navigate('SplitGroupDetail', { groupId: item.id })}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: `${item.color}26` }]}>
+            <Icon name={item.icon} size={20} color={item.color} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.meta}>
+              {memberCount} {memberCount === 1 ? 'miembro' : 'miembros'}
+            </Text>
+          </View>
+          <Text style={[styles.balance, { color: balance.color }]} numberOfLines={1}>
+            {balance.text}
+          </Text>
+        </Pressable>
+      );
+    },
+    [navigation, styles, balanceLabel],
+  );
 
   return (
     <Screen>
@@ -40,8 +72,11 @@ export function SplitsScreen() {
       ) : (
         <FlatList
           data={groups}
-          keyExtractor={(g) => String(g.id)}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.list}
+          removeClippedSubviews
+          maxToRenderPerBatch={15}
+          windowSize={10}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => refetch(true)} tintColor={theme.colors.primary} />
           }
@@ -71,29 +106,7 @@ export function SplitsScreen() {
           ListEmptyComponent={
             <EmptyState icon="users" text="Aún no tienes grupos de gastos compartidos. Crea el primero con el botón +." />
           }
-          renderItem={({ item }) => {
-            const balance = balanceLabel(item.myBalance ?? 0);
-            const memberCount = item.members?.length ?? 0;
-            return (
-              <Pressable
-                style={({ pressed }) => [styles.card, { borderLeftColor: item.color }, pressed && { opacity: 0.8 }]}
-                onPress={() => navigation.navigate('SplitGroupDetail', { groupId: item.id })}
-              >
-                <View style={[styles.iconWrap, { backgroundColor: `${item.color}26` }]}>
-                  <Icon name={item.icon} size={20} color={item.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
-                  <Text style={styles.meta}>
-                    {memberCount} {memberCount === 1 ? 'miembro' : 'miembros'}
-                  </Text>
-                </View>
-                <Text style={[styles.balance, { color: balance.color }]} numberOfLines={1}>
-                  {balance.text}
-                </Text>
-              </Pressable>
-            );
-          }}
+          renderItem={renderItem}
         />
       )}
     </Screen>

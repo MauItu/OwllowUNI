@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -9,12 +9,21 @@ import { SavingsGoalCard } from '../components/SavingsGoalCard';
 import { Icon } from '../components/Icon';
 import { useSavings } from '../hooks/useSavings';
 import { formatCurrency } from '../utils/formatCurrency';
+import type { SavingsGoal } from '../types';
 
 export function SavingsScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { goals, summary, loading, refreshing, error, refetch } = useSavings();
+
+  const keyExtractor = useCallback((g: SavingsGoal) => String(g.id), []);
+  const renderItem = useCallback(
+    ({ item }: { item: SavingsGoal }) => (
+      <SavingsGoalCard goal={item} onPress={() => navigation.navigate('SavingsDetail', { goalId: item.id })} />
+    ),
+    [navigation],
+  );
 
   return (
     <Screen>
@@ -35,8 +44,11 @@ export function SavingsScreen() {
       ) : (
         <FlatList
           data={goals}
-          keyExtractor={(g) => String(g.id)}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.list}
+          removeClippedSubviews
+          maxToRenderPerBatch={15}
+          windowSize={10}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => refetch(true)} tintColor={theme.colors.primary} />
           }
@@ -68,9 +80,7 @@ export function SavingsScreen() {
           ListEmptyComponent={
             <EmptyState icon="piggy-bank" text="Aún no tienes metas de ahorro. Crea la primera con el botón +." />
           }
-          renderItem={({ item }) => (
-            <SavingsGoalCard goal={item} onPress={() => navigation.navigate('SavingsDetail', { goalId: item.id })} />
-          )}
+          renderItem={renderItem}
         />
       )}
     </Screen>

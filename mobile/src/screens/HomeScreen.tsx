@@ -39,7 +39,6 @@ function greeting(): string {
 }
 
 export function HomeScreen() {
-  console.log('HOME SCREEN RENDERED');
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const navigation = useNavigation<any>();

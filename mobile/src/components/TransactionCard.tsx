@@ -13,7 +13,7 @@ interface Props {
   onPress?: (t: Transaction) => void;
 }
 
-export function TransactionCard({ transaction: t, onPress }: Props) {
+function TransactionCardComponent({ transaction: t, onPress }: Props) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const isTransfer = t.type === 'transfer';
@@ -90,3 +90,6 @@ const createStyles = (theme: Theme) =>
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
   time: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs },
 });
+
+// Memoizado: se renderiza por fila en listas; con props estables evita re-render.
+export const TransactionCard = React.memo(TransactionCardComponent);

@@ -658,6 +658,23 @@ activa (antes fijos a la bandera bisexual, ahora dependen de `paletteId`).
 `useEffect`. Esto garantiza que la splash se oculta en cuanto el React tree monta. Un `ErrorBoundary`
 global en `App.tsx` captura crashes y muestra un fallback en lugar de congelar la app.
 
+**Rendimiento (listas y arranque):**
+- **Lazy loading de pantallas pesadas (`AppNavigator.tsx`):** Stats, Insights, ImportExport, las 4 de
+  Splits (`Splits`/`AddSplitGroup`/`SplitGroupDetail`/`AddSplitExpense`) y las de Settings
+  (`SettingsNotifications`/`Security`/`Appearance`) se cargan con `React.lazy()` + `<Suspense>` (helper
+  `lazyScreen()`, fallback = `ActivityIndicator` centrado con color del tema). Metro soporta `import()`
+  dinámico desde RN 0.72. Las del tab crítico (Home/Transactions/Accounts/AddTransaction) siguen estáticas.
+- **`React.memo` en componentes de fila:** `TransactionCard`, `AccountCard`, `SavingsGoalCard`, `DebtCard`,
+  `InsightCard`, `TagChip` (export memoizado; otros named exports como `deadlineLabel`/`severityColor` intactos).
+- **FlatList/SectionList optimizadas:** las listas principales (Transactions, Accounts, Debts, Savings, Splits)
+  usan `removeClippedSubviews`, `maxToRenderPerBatch={15}`, `windowSize={10}`, y `keyExtractor`/`renderItem`
+  en `useCallback` (los `onPress` que dependen del closure del item se quedan inline, a propósito). **Sin
+  `getItemLayout`**: las cards tienen altura variable (filas opcionales de tags/progreso/fechas, y la lista de
+  Transactions es `SectionList` con headers) → poner `getItemLayout` causaría bugs de scroll.
+- **Hooks de datos** (`useTransactions`/`useAccounts`/`useStats`/`useDebts`/`useSavings`/`useSplits`): ya
+  usan `useState` con el setter solo dentro del fetch (en `useEffect`/acción) y devuelven referencias de
+  estado estables; no construyen arrays/objetos nuevos en el `return`, así que no necesitan `useMemo`.
+
 **SafeArea (fix barra de navegación Android):** `app.json` tiene `edgeToEdgeEnabled:true`, así que
 la app dibuja bajo las barras del sistema. El fix:
 - `App.tsx`: `<ErrorBoundary>` + `<SafeAreaProvider>` + `<ThemeProvider>` + `<AppLockProvider>` + `<StatusBar style="light" backgroundColor={bg} translucent />`; `LockScreen` se monta como overlay cuando `locked`.
@@ -881,7 +898,7 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 - **Agregado** `ErrorBoundary` global en `App.tsx` — si un componente crashea, muestra pantalla de error
   en lugar de congelar en la splash.
 - **Reducido** timeout de Axios de 15 s → 5 s en `api/client.ts` para fallar rápido si el backend no responde.
-- **Logs de diagnóstico:** `console.log('APP MOUNTED')` en `App.tsx`, `console.log('HOME SCREEN RENDERED')` en `HomeScreen.tsx`.
+  (Los `console.log` de diagnóstico que dejó este fix ya se removieron.)
 
 ## COMANDOS
 

@@ -17,8 +17,6 @@ import { initNotifications } from './src/services/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-console.log('APP MOUNTED — root module evaluated');
-
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { error: Error | null }
@@ -82,7 +80,6 @@ function ThemedApp() {
 export default function App() {
   const onLayoutRootView = useCallback(async () => {
     await SplashScreen.hideAsync();
-    console.log('APP MOUNTED — splash hidden, UI visible');
   }, []);
 
   useEffect(() => {

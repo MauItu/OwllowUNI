@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { Suspense } from 'react';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
@@ -10,9 +10,9 @@ import { Icon } from '../components/Icon';
 import { useAuth } from '../hooks/useAuth';
 import type { RootStackParamList, TabParamList, AuthStackParamList } from './types';
 
+// Pantallas críticas (tab principal + flujos calientes): import estático.
 import { HomeScreen } from '../screens/HomeScreen';
 import { TransactionsScreen } from '../screens/TransactionsScreen';
-import { StatsScreen } from '../screens/StatsScreen';
 import { MoreScreen } from '../screens/MoreScreen';
 import { AddTransactionScreen } from '../screens/AddTransactionScreen';
 import { AccountsScreen } from '../screens/AccountsScreen';
@@ -26,21 +26,55 @@ import { SavingsDetailScreen } from '../screens/SavingsDetailScreen';
 import { DebtsScreen } from '../screens/DebtsScreen';
 import { AddDebtScreen } from '../screens/AddDebtScreen';
 import { DebtDetailScreen } from '../screens/DebtDetailScreen';
-import { SplitsScreen } from '../screens/SplitsScreen';
-import { AddSplitGroupScreen } from '../screens/AddSplitGroupScreen';
-import { SplitGroupDetailScreen } from '../screens/SplitGroupDetailScreen';
-import { AddSplitExpenseScreen } from '../screens/AddSplitExpenseScreen';
-import { SettingsNotificationsScreen } from '../screens/SettingsNotificationsScreen';
-import { ImportExportScreen } from '../screens/ImportExportScreen';
-import { InsightsScreen } from '../screens/InsightsScreen';
 import { RatesScreen } from '../screens/RatesScreen';
-import { SecurityScreen } from '../screens/SecurityScreen';
-import { AppearanceScreen } from '../screens/AppearanceScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
 import { ForgotPasswordScreen } from '../screens/ForgotPasswordScreen';
 import { VerifyResetCodeScreen } from '../screens/VerifyResetCodeScreen';
 import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
+
+/** Fallback mínimo (spinner centrado con color del tema) mientras carga una pantalla diferida. */
+function ScreenFallback() {
+  const { theme } = useTheme();
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.background }}>
+      <ActivityIndicator color={theme.colors.primary} />
+    </View>
+  );
+}
+
+/**
+ * Carga diferida de pantallas pesadas: envuelve un import() dinámico en
+ * React.lazy + Suspense y devuelve un componente estable. Metro soporta import()
+ * dinámico desde RN 0.72, así que esto aligera el bundle inicial / el arranque.
+ * Las pantallas del tab crítico (Home/Transactions/Accounts/AddTransaction)
+ * siguen siendo estáticas (ruta crítica). `any` en props es consistente con el
+ * resto de la navegación (useNavigation<any>()).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lazyScreen(loader: () => Promise<{ default: React.ComponentType<any> }>): React.ComponentType<any> {
+  const Lazy = React.lazy(loader);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return function LazyScreen(props: any) {
+    return (
+      <Suspense fallback={<ScreenFallback />}>
+        <Lazy {...props} />
+      </Suspense>
+    );
+  };
+}
+
+// Pantallas pesadas: carga diferida (Stats, Insights, ImportExport, Splits*, Settings*).
+const StatsScreen = lazyScreen(() => import('../screens/StatsScreen').then((m) => ({ default: m.StatsScreen })));
+const InsightsScreen = lazyScreen(() => import('../screens/InsightsScreen').then((m) => ({ default: m.InsightsScreen })));
+const ImportExportScreen = lazyScreen(() => import('../screens/ImportExportScreen').then((m) => ({ default: m.ImportExportScreen })));
+const SplitsScreen = lazyScreen(() => import('../screens/SplitsScreen').then((m) => ({ default: m.SplitsScreen })));
+const AddSplitGroupScreen = lazyScreen(() => import('../screens/AddSplitGroupScreen').then((m) => ({ default: m.AddSplitGroupScreen })));
+const SplitGroupDetailScreen = lazyScreen(() => import('../screens/SplitGroupDetailScreen').then((m) => ({ default: m.SplitGroupDetailScreen })));
+const AddSplitExpenseScreen = lazyScreen(() => import('../screens/AddSplitExpenseScreen').then((m) => ({ default: m.AddSplitExpenseScreen })));
+const SettingsNotificationsScreen = lazyScreen(() => import('../screens/SettingsNotificationsScreen').then((m) => ({ default: m.SettingsNotificationsScreen })));
+const SecurityScreen = lazyScreen(() => import('../screens/SecurityScreen').then((m) => ({ default: m.SecurityScreen })));
+const AppearanceScreen = lazyScreen(() => import('../screens/AppearanceScreen').then((m) => ({ default: m.AppearanceScreen })));
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();

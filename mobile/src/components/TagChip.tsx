@@ -16,7 +16,7 @@ interface Props {
 }
 
 /** Pill de etiqueta: fondo translúcido del color del tag; sólido si está seleccionada. */
-export function TagChip({ tag, selected = false, size = 'md', onPress, onRemove }: Props) {
+function TagChipComponent({ tag, selected = false, size = 'md', onPress, onRemove }: Props) {
   const styles = useThemedStyles(createStyles);
   const isMini = size === 'sm';
   const textColor = selected ? '#FFFFFF' : tag.color;
@@ -64,3 +64,6 @@ const createStyles = (theme: Theme) =>
     text: { fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold, maxWidth: 120 },
     textMini: { fontSize: theme.fontSize.xs - 1, maxWidth: 90 },
   });
+
+// Memoizado: se renderiza en listas (chips dentro de TransactionCard, TagPicker).
+export const TagChip = React.memo(TagChipComponent);

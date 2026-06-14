@@ -22,7 +22,7 @@ function dueLabel(dueDate: string): { text: string; urgent: boolean } {
   return { text: `Vence en ${days} días`, urgent: false };
 }
 
-export function DebtCard({ debt, onPress }: Props) {
+function DebtCardComponent({ debt, onPress }: Props) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const isDebt = debt.type === 'debt';
@@ -122,3 +122,6 @@ const createStyles = (theme: Theme) =>
     total: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm },
     interest: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs },
   });
+
+// Memoizado: se renderiza por fila en listas; con props estables evita re-render.
+export const DebtCard = React.memo(DebtCardComponent);
