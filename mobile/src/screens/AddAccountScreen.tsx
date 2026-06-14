@@ -19,7 +19,7 @@ import type { AccountType } from '../types';
 const TYPES: { key: AccountType; label: string; icon: string }[] = [
   { key: 'cash', label: 'Efectivo', icon: 'banknote' },
   { key: 'bank', label: 'Banco', icon: 'landmark' },
-  { key: 'credit_card', label: 'Tarjeta', icon: 'credit-card' },
+  { key: 'credit_card', label: 'Tarjeta de crédito', icon: 'credit-card' },
   { key: 'digital_wallet', label: 'Billetera', icon: 'smartphone' },
 ];
 

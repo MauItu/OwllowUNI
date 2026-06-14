@@ -215,7 +215,7 @@ export function CreditCardDetailScreen() {
   if ((loading || loadingStatements) && !account) {
     return (
       <Screen>
-        <ScreenHeader title="Tarjeta" onBack={() => navigation.goBack()} />
+        <ScreenHeader title="Tarjeta de crédito" onBack={() => navigation.goBack()} />
         <Loading />
       </Screen>
     );
@@ -224,7 +224,7 @@ export function CreditCardDetailScreen() {
   if (error && !account) {
     return (
       <Screen>
-        <ScreenHeader title="Tarjeta" onBack={() => navigation.goBack()} />
+        <ScreenHeader title="Tarjeta de crédito" onBack={() => navigation.goBack()} />
         <ErrorState message={error} onRetry={() => load()} />
       </Screen>
     );
