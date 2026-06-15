@@ -3,7 +3,6 @@ import {
   View,
   Text,
   Pressable,
-  ScrollView,
   StyleSheet,
   Animated,
   Dimensions,
@@ -13,50 +12,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
-import { CurrencyPicker } from './CurrencyPicker';
 import { useAuth } from '../hooks/useAuth';
 import { useSidebarStore } from '../stores/sidebarStore';
-import { useSettingsStore } from '../stores/settingsStore';
-import { navigate } from '../navigation/navigationRef';
-import type { RootStackParamList } from '../navigation/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.8, 320);
 
-type Route = keyof RootStackParamList;
-interface NavItem {
-  label: string;
-  icon: string;
-  route: Route;
-  color: (t: Theme) => string;
-}
-
-// Opciones de navegación (las que estaban en MoreScreen), agrupadas por sección.
-const FINANZAS: NavItem[] = [
-  { label: 'Cuentas', icon: 'wallet', route: 'Accounts', color: (t) => t.colors.primary },
-  { label: 'Categorías', icon: 'shapes', route: 'Categories', color: (t) => t.colors.accentLight },
-  { label: 'Plantillas', icon: 'zap', route: 'Templates', color: (t) => t.colors.income },
-  { label: 'Etiquetas', icon: 'tag', route: 'Tags', color: (t) => t.colors.secondary },
-  { label: 'Metas de ahorro', icon: 'piggy-bank', route: 'Savings', color: (t) => t.colors.income },
-  { label: 'Deudas y préstamos', icon: 'landmark', route: 'Debts', color: (t) => t.colors.expense },
-  { label: 'Presupuestos', icon: 'pie-chart', route: 'Budgets', color: (t) => t.colors.primary },
-  { label: 'Pagos recurrentes', icon: 'repeat', route: 'Recurring', color: (t) => t.colors.secondary },
-  { label: 'Gastos compartidos', icon: 'users', route: 'Splits', color: (t) => t.colors.accentLight },
-];
-
-const ANALISIS: NavItem[] = [
-  // Estadísticas vive ahora en la barra inferior (tab principal), no en el Sidebar.
-  { label: 'Insights', icon: 'lightbulb', route: 'Insights', color: (t) => t.colors.accentLight },
-  { label: 'Tasas de cambio', icon: 'arrow-right-left', route: 'Rates', color: (t) => t.colors.income },
-  { label: 'Importar / Exportar', icon: 'arrow-down-up', route: 'ImportExport', color: (t) => t.colors.secondary },
-];
-
-const AJUSTES: NavItem[] = [
-  { label: 'Notificaciones', icon: 'bell', route: 'SettingsNotifications', color: (t) => t.colors.accentLight },
-  { label: 'Seguridad', icon: 'lock-keyhole', route: 'Security', color: (t) => t.colors.primary },
-  { label: 'Apariencia', icon: 'palette', route: 'Appearance', color: (t) => t.colors.secondary },
-];
-
+/**
+ * Drawer lateral de PERFIL. Se abre desde el botón superior izquierdo de Home y
+ * muestra los datos de la cuenta (nombre, correo) y el botón de cerrar sesión.
+ * El menú de navegación vive ahora en el tab "Más" (ver `MoreScreen`).
+ */
 export function Sidebar() {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
@@ -64,14 +30,11 @@ export function Sidebar() {
   const { user, logout } = useAuth();
   const isOpen = useSidebarStore((s) => s.isOpen);
   const close = useSidebarStore((s) => s.close);
-  const mainCurrency = useSettingsStore((s) => s.mainCurrency);
-  const setMainCurrency = useSettingsStore((s) => s.setMainCurrency);
 
   const progress = useRef(new Animated.Value(0)).current;
   // Mantiene el drawer montado durante la animación de cierre; lo desmonta al
   // terminar para no capturar toques mientras está oculto.
   const [mounted, setMounted] = useState(isOpen);
-  const [showCurrency, setShowCurrency] = useState(false);
 
   useEffect(() => {
     if (isOpen) setMounted(true);
@@ -88,11 +51,6 @@ export function Sidebar() {
 
   const translateX = progress.interpolate({ inputRange: [0, 1], outputRange: [-DRAWER_WIDTH, 0] });
 
-  const go = (route: Route) => {
-    close();
-    navigate(route);
-  };
-
   const onLogout = () => {
     close();
     Alert.alert('Cerrar sesión', '¿Seguro que querés cerrar sesión?', [
@@ -100,22 +58,6 @@ export function Sidebar() {
       // Al cerrar sesión, isAuthenticated pasa a false y el navigator vuelve al login.
       { text: 'Cerrar sesión', style: 'destructive', onPress: () => logout() },
     ]);
-  };
-
-  const renderItem = (item: NavItem) => {
-    const color = item.color(theme);
-    return (
-      <Pressable
-        key={item.route}
-        style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.surfaceLight }]}
-        onPress={() => go(item.route)}
-      >
-        <View style={[styles.iconWrap, { backgroundColor: `${color}22` }]}>
-          <Icon name={item.icon} size={20} color={color} />
-        </View>
-        <Text style={styles.itemLabel}>{item.label}</Text>
-      </Pressable>
-    );
   };
 
   return (
@@ -131,10 +73,18 @@ export function Sidebar() {
           { paddingTop: insets.top + theme.spacing.lg, transform: [{ translateX }] },
         ]}
       >
+        {/* Encabezado: botón de cerrar el drawer */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Mi perfil</Text>
+          <Pressable hitSlop={10} onPress={close} style={styles.closeBtn}>
+            <Icon name="x" size={20} color={theme.colors.textSecondary} />
+          </Pressable>
+        </View>
+
         {/* Perfil del usuario */}
         <View style={styles.profile}>
           <View style={styles.avatar}>
-            <Icon name="user" size={26} color={theme.colors.primary} />
+            <Icon name="user" size={34} color={theme.colors.primary} />
           </View>
           <Text style={styles.profileName} numberOfLines={1}>
             {user?.name ?? 'Mi cuenta'}
@@ -144,50 +94,18 @@ export function Sidebar() {
           </Text>
         </View>
 
-        <ScrollView
-          contentContainerStyle={{ paddingBottom: insets.bottom + theme.spacing.lg }}
-          showsVerticalScrollIndicator={false}
+        <View style={{ flex: 1 }} />
+
+        {/* Cerrar sesión, anclado al fondo */}
+        <Pressable
+          style={({ pressed }) => [styles.logout, pressed && { backgroundColor: `${theme.colors.expense}26` }]}
+          onPress={onLogout}
         >
-          {FINANZAS.map(renderItem)}
-
-          <View style={styles.divider} />
-          {ANALISIS.map(renderItem)}
-
-          {/* Moneda principal abre el selector (preserva la opción de MoreScreen) */}
-          <Pressable
-            style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.surfaceLight }]}
-            onPress={() => setShowCurrency(true)}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.income}22` }]}>
-              <Icon name="circle-dollar-sign" size={20} color={theme.colors.income} />
-            </View>
-            <Text style={styles.itemLabel}>Moneda principal</Text>
-            <Text style={styles.itemValue}>{mainCurrency}</Text>
-          </Pressable>
-
-          <View style={styles.divider} />
-          {AJUSTES.map(renderItem)}
-
-          <View style={styles.divider} />
-          <Pressable
-            style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.surfaceLight }]}
-            onPress={onLogout}
-          >
-            <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.expense}22` }]}>
-              <Icon name="log-out" size={20} color={theme.colors.expense} />
-            </View>
-            <Text style={[styles.itemLabel, { color: theme.colors.expense }]}>Cerrar sesión</Text>
-          </Pressable>
-        </ScrollView>
+          <Icon name="log-out" size={20} color={theme.colors.expense} />
+          <Text style={styles.logoutText}>Cerrar sesión</Text>
+        </Pressable>
+        <View style={{ height: insets.bottom + theme.spacing.lg }} />
       </Animated.View>
-
-      <CurrencyPicker
-        visible={showCurrency}
-        title="Moneda principal"
-        selected={mainCurrency}
-        onSelect={setMainCurrency}
-        onClose={() => setShowCurrency(false)}
-      />
     </View>
   );
 }
@@ -204,44 +122,49 @@ const createStyles = (theme: Theme) =>
       backgroundColor: theme.colors.surface,
       borderRightWidth: StyleSheet.hairlineWidth,
       borderRightColor: theme.colors.border,
+      paddingHorizontal: theme.spacing.lg,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: theme.spacing.lg,
+    },
+    headerTitle: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold },
+    closeBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: theme.colors.surfaceLight,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     profile: {
-      paddingHorizontal: theme.spacing.lg,
-      paddingBottom: theme.spacing.lg,
+      alignItems: 'center',
+      paddingVertical: theme.spacing.lg,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: theme.colors.border,
     },
     avatar: {
-      width: 56,
-      height: 56,
+      width: 84,
+      height: 84,
       borderRadius: theme.borderRadius.full,
       backgroundColor: `${theme.colors.primary}22`,
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: theme.spacing.sm,
+      marginBottom: theme.spacing.md,
     },
-    profileName: { color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold },
-    profileEmail: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 2 },
-    item: {
+    profileName: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold, textAlign: 'center' },
+    profileEmail: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 4, textAlign: 'center' },
+    logout: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: theme.spacing.md,
-      paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.sm,
-    },
-    iconWrap: {
-      width: 38,
-      height: 38,
-      borderRadius: theme.borderRadius.full,
-      alignItems: 'center',
       justifyContent: 'center',
+      gap: theme.spacing.sm,
+      paddingVertical: theme.spacing.md,
+      borderRadius: theme.borderRadius.lg,
+      borderWidth: 1,
+      borderColor: theme.colors.expense,
     },
-    itemLabel: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.medium },
-    itemValue: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
-    divider: {
-      height: StyleSheet.hairlineWidth,
-      backgroundColor: theme.colors.border,
-      marginVertical: theme.spacing.sm,
-      marginHorizontal: theme.spacing.lg,
-    },
+    logoutText: { color: theme.colors.expense, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
   });

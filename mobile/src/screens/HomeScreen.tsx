@@ -101,8 +101,9 @@ export function HomeScreen() {
         end={{ x: 1, y: 0 }}
         style={styles.topBar}
       >
+        {/* Abre el drawer de perfil (nombre, correo, cerrar sesión). */}
         <Pressable style={styles.iconBtn} onPress={openSidebar} hitSlop={8}>
-          <Icon name="menu" size={24} color="#FFFFFF" />
+          <Icon name="circle-user" size={24} color="#FFFFFF" />
         </Pressable>
         <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
           <Text style={styles.greeting}>{greeting()}</Text>
