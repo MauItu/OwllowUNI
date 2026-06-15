@@ -316,11 +316,17 @@ mobile/
 · `deadline` date · `color` varchar(7) def `#2E8B57` · `icon` varchar(50) def `piggy-bank`
 · `is_completed` bool def false · `completed_at` timestamp · `account_id` int FK→accounts · `notes` text
 · `created_at` / `updated_at` timestamp def now()
+> **`account_id` = earmark (reserva, no movimiento).** Si la meta se asocia a una cuenta, `current_amount` (lo ahorrado) queda
+> RESERVADO dentro del saldo de esa cuenta: NO se mueve dinero ni se crean transacciones. `GET /api/accounts` expone
+> `reservedSavings` (suma de las metas vinculadas) y el mobile muestra el disponible (`current_balance − reservedSavings`).
 
 ### savings_contributions
 `id` serial PK · `goal_id` int FK→savings_goals ON DELETE CASCADE NN · `amount` decimal(15,2) NN
 · `type` varchar(10) NN (`deposit|withdrawal`) · `description` varchar(255) · `date` date NN
 · `transaction_id` int FK→transactions · `created_at` timestamp def now()
+> Editables/eliminables (`PUT`/`DELETE /api/savings/:id/contribute/:contributionId`): revierten su efecto sobre
+> `current_amount` y recalculan `is_completed` (400 si dejaría el ahorro negativo). En el modelo earmark `transaction_id`
+> queda null (las contribuciones no mueven dinero de la cuenta).
 
 ### debts
 `id` serial PK · `name` varchar(100) NN · `type` varchar(10) NN (`debt`=yo debo | `loan`=me deben)
@@ -378,6 +384,8 @@ mobile/
 ### split_groups
 `id` serial PK · `name` varchar(100) NN · `description` varchar(255) · `icon` varchar(50) def `users`
 · `color` varchar(7) def `#3A60A1` · `is_active` bool def true · `created_at` / `updated_at` timestamp def now()
+> Editable (`PUT /api/splits/:id`: nombre/descripción/color/ícono). `DELETE` con `?settle=true` = **Liquidar** (borra el grupo
+> conservando las transacciones generadas); sin el flag = **Eliminar** (revierte esas transacciones). Ver Splits API.
 
 ### split_members
 `id` serial PK · `group_id` int FK→split_groups ON DELETE CASCADE NN · `name` varchar(100) NN
@@ -391,6 +399,8 @@ mobile/
 · `account_id` int FK→accounts (nullable; solo si lo pagó el miembro `is_me`)
 · `transaction_id` int FK→transactions · `category_id` int FK→categories · `created_at` / `updated_at` timestamp def now()
 > Si lo pagó `is_me` con `account_id`, se crea una transacción `expense` en esa cuenta y se enlaza `transaction_id`.
+> Editable (`PUT /api/splits/:groupId/expenses/:expenseId`): reemplaza los shares y reconcilia la tx/saldo; rechaza editar
+> si alguna parte de TERCEROS ya está liquidada.
 
 ### split_shares
 `id` serial PK · `expense_id` int FK→split_expenses ON DELETE CASCADE NN · `member_id` int FK→split_members ON DELETE CASCADE NN
@@ -1045,9 +1055,9 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 7. **Estadísticas**: período seleccionable, resumen, donut por categoría, barras ingresos/gastos, línea de evolución, top categorías. Gráficas con SVG propio (`react-native-svg`) en `components/StatChart.tsx` (`DonutChart`, `BarChart`, `LineChart`) — **no** `victory-native`.
 8. Montos siempre formateados (separador de miles + símbolo). Pull-to-refresh en listas. Errores vía toasts (mobile) y middleware (backend).
 9. **Etiquetas (tags):** etiquetas libres con color/ícono, asignables a transacciones (`TagPicker` en AddTransaction, `TagChip`), CRUD en `TagsScreen` ("Más"), filtro por tag en Movimientos.
-10. **Metas de ahorro:** `SavingsScreen` con card total gradiente, `AddSavingsGoal` (Calculator, fecha límite, cuenta, color/ícono), `SavingsDetail` con contribuciones (depósito/retiro vía BottomSheet+Calculator), card resumen en Home (`HomeSummaryCard`).
-11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben", card de balance neto y sección **"Historial"** colapsable para las saldadas (con borrado definitivo); `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, **fecha de corte + fecha límite de pago** (C6), cuenta + switch "registrar desembolso inicial en la cuenta", y **toggle "¿A cuotas / crédito?"** (C4) con nº de cuotas + interés mensual del crédito + mora + preview en vivo de la cuota por amortización francesa; el interés anual informativo solo se muestra sin cuotas); `DebtDetail` con historial de pagos (muestra la cuenta), metaRow con Corte/Límite de pago, y FAB "Registrar pago" (BottomSheet con `AccountChips` **sin tarjetas de crédito** (C3) + selector de fecha (`DateRangePicker`) + nota + Calculator **prellenada con la cuota/`nextPaymentAmount`**, más mora si está vencida — C5). **Cada pago del historial es tappable → reabre el mismo BottomSheet en modo edición** prellenado con sus datos (`PUT /debts/:id/payments/:paymentId`, C7); tras editar/crear se hace `triggerRefresh()` + `load(true)` para reflejar el restante, el historial y los saldos de cuentas/tarjeta. Cada abono con cuenta mueve el balance real (income/expense). Card en Home si hay activas.
-12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia (con `AccountChips` cuando me involucra, como confirmación explícita del movimiento), lista cronológica de gastos y FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional y **cuenta cuando pago yo** (descuenta de la cuenta real). Card en Home si hay balances pendientes.
+10. **Metas de ahorro:** `SavingsScreen` con card total gradiente, `AddSavingsGoal` (Calculator, fecha límite, **cuenta "donde estará el ahorro"** con earmark — placeholder y nota que explica que el saldo no cambia, solo se reserva, color/ícono), `SavingsDetail` con contribuciones (depósito/retiro vía BottomSheet+Calculator) **editables (tap) y eliminables (long-press)**, card resumen en Home (`HomeSummaryCard`). La `AccountCard` de una cuenta con ahorro reservado muestra "Disp." (saldo − ahorro) y "Ahorro X".
+11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben", card de balance neto y sección **"Historial"** colapsable para las saldadas (con borrado definitivo); `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, **fecha de corte + fecha límite de pago** (C6), cuenta + switch "registrar desembolso inicial en la cuenta" (**ON por defecto al asociar una cuenta normal a una deuda nueva**, para que el saldo refleje la deuda sin activarlo a mano), y **toggle "¿A cuotas / crédito?"** (C4) con nº de cuotas + interés mensual del crédito + mora + preview en vivo de la cuota por amortización francesa; el interés anual informativo solo se muestra sin cuotas); `DebtDetail` con historial de pagos (muestra la cuenta), metaRow con Corte/Límite de pago, y FAB "Registrar pago" (BottomSheet con `AccountChips` **sin tarjetas de crédito** (C3) + selector de fecha (`DateRangePicker`) + nota + Calculator **prellenada con la cuota/`nextPaymentAmount`**, más mora si está vencida — C5). **Cada pago del historial es tappable → reabre el mismo BottomSheet en modo edición** prellenado con sus datos (`PUT /debts/:id/payments/:paymentId`, C7); tras editar/crear se hace `triggerRefresh()` + `load(true)` para reflejar el restante, el historial y los saldos de cuentas/tarjeta. Cada abono con cuenta mueve el balance real (income/expense). Card en Home si hay activas.
+12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2) **y modo edición del grupo** (nombre/descripción/color/ícono; agrega/quita miembros en el acto); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia (con `AccountChips` cuando me involucra, como confirmación explícita del movimiento), lista cronológica de gastos (**tappables → editar gasto**), botón de editar grupo en el header y, en la papelera, **menú "Liquidar" (conserva las transacciones de mi parte) vs "Eliminar" (revierte todo)**, FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional y **cuenta cuando pago yo** (descuenta de la cuenta real), **reutilizado en modo edición** (`expenseId`). Card en Home si hay balances pendientes.
 13. **Hora editable** en gastos/ingresos (`TimePicker` propio, BottomSheet de 2 columnas 24h) junto al chip de fecha en `AddTransaction`.
 14. **Íconos y colores ampliados:** `ACCOUNT_ICONS` (25) y `CATEGORY_ICONS` (60) en `Icon.tsx`, `PALETTE` (24) en `theme/index.ts` (los 12 originales primero). Selectores en grilla (`flexWrap`). `components/AccountChips.tsx` = selector inline de cuenta para BottomSheets.
 15. **Importar / Exportar:** `ImportExportScreen` (sección "Ajustes" de "Más"). **Exportar:** filtros de tipo
