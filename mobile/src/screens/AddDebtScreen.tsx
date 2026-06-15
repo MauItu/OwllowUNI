@@ -14,6 +14,7 @@ import { debtsApi, getErrorMessage } from '../api/client';
 import { rescheduleDebtNotifications } from '../services/notifications';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
+import { frenchInstallment } from '../utils/installments';
 import { formatShortDate, parseISOSafe, todayISO } from '../utils/formatDate';
 import type { RootStackParamList } from '../navigation/types';
 import type { DebtType } from '../types';
@@ -37,6 +38,11 @@ export function AddDebtScreen() {
   const [creditorDebtor, setCreditorDebtor] = useState('');
   const [totalAmount, setTotalAmount] = useState(0);
   const [interestRate, setInterestRate] = useState('');
+  // Cuotas a crédito (amortización francesa). Si está activo, se calcula la cuota.
+  const [installmentsOn, setInstallmentsOn] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState('12');
+  const [monthlyRate, setMonthlyRate] = useState('');
+  const [lateRate, setLateRate] = useState('');
   const [startDate, setStartDate] = useState(todayISO());
   const [cutoffDate, setCutoffDate] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState<string | null>(null);
@@ -64,6 +70,12 @@ export function AddDebtScreen() {
         setCreditorDebtor(d.creditorDebtor ?? '');
         setTotalAmount(Number(d.totalAmount));
         setInterestRate(d.interestRate != null ? String(Number(d.interestRate)) : '');
+        if (d.installments && d.installments >= 2) {
+          setInstallmentsOn(true);
+          setInstallmentCount(String(d.installments));
+          setMonthlyRate(d.monthlyInterestRate != null ? String(Number(d.monthlyInterestRate)) : '');
+          setLateRate(d.lateInterestRate != null ? String(Number(d.lateInterestRate)) : '');
+        }
         setStartDate(d.startDate);
         setCutoffDate(d.cutoffDate);
         setDueDate(d.dueDate);
@@ -81,6 +93,14 @@ export function AddDebtScreen() {
   const isDebt = type === 'debt';
   const semanticColor = isDebt ? theme.colors.expense : theme.colors.income;
 
+  // Cuota estimada (amortización francesa) para el preview en vivo.
+  const installmentCountNum = Math.min(60, Math.max(0, parseInt(installmentCount || '0', 10) || 0));
+  const monthlyRateNum = monthlyRate.trim() ? Number(monthlyRate.replace(',', '.')) : 0;
+  const cuotaPreview =
+    installmentsOn && installmentCountNum >= 2 && totalAmount > 0
+      ? frenchInstallment(totalAmount, monthlyRateNum || 0, installmentCountNum)
+      : null;
+
   const save = async () => {
     if (!name.trim()) {
       showError('Escribe un nombre para la deuda');
@@ -95,11 +115,27 @@ export function AddDebtScreen() {
       showError('La tasa de interés no es válida');
       return;
     }
+    const installments = installmentsOn && installmentCountNum >= 2 ? installmentCountNum : null;
+    const lateRateNum = lateRate.trim() ? Number(lateRate.replace(',', '.')) : null;
+    if (installments) {
+      if (monthlyRate.trim() && (Number.isNaN(monthlyRateNum) || monthlyRateNum < 0)) {
+        showError('La tasa de interés del crédito no es válida');
+        return;
+      }
+      if (lateRateNum != null && (Number.isNaN(lateRateNum) || lateRateNum < 0)) {
+        showError('La tasa de mora no es válida');
+        return;
+      }
+    }
     const payload = {
       name: name.trim(),
       type,
       totalAmount,
-      interestRate: rate,
+      // El interés anual informativo solo aplica a deudas sin cuotas.
+      interestRate: installments ? null : rate,
+      installments,
+      monthlyInterestRate: installments && monthlyRate.trim() ? monthlyRateNum : null,
+      lateInterestRate: installments ? lateRateNum : null,
       creditorDebtor: creditorDebtor.trim() || null,
       startDate,
       cutoffDate,
@@ -182,14 +218,62 @@ export function AddDebtScreen() {
           onPress={() => setShowAmount(true)}
         />
 
-        <TextField
-          label="Tasa de interés anual % (opcional)"
-          value={interestRate}
-          onChangeText={setInterestRate}
-          placeholder="Ej: 12.5"
-          keyboardType="decimal-pad"
-          maxLength={6}
-        />
+        {/* Cuotas a crédito (amortización francesa) */}
+        <View style={styles.switchRow}>
+          <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
+            <Text style={styles.switchTitle}>¿A cuotas / crédito?</Text>
+            <Text style={styles.switchHint}>Calcula la cuota mensual con interés (amortización francesa).</Text>
+          </View>
+          <Switch
+            value={installmentsOn}
+            onValueChange={setInstallmentsOn}
+            trackColor={{ true: semanticColor, false: theme.colors.border }}
+            thumbColor="#FFFFFF"
+          />
+        </View>
+
+        {installmentsOn ? (
+          <>
+            <TextField
+              label="Número de cuotas"
+              value={installmentCount}
+              onChangeText={(t) => setInstallmentCount(t.replace(/[^0-9]/g, '').slice(0, 2))}
+              placeholder="12"
+              keyboardType="number-pad"
+              maxLength={2}
+            />
+            <TextField
+              label="Tasa de interés mensual % (crédito)"
+              value={monthlyRate}
+              onChangeText={setMonthlyRate}
+              placeholder="Ej: 2.5"
+              keyboardType="decimal-pad"
+              maxLength={6}
+            />
+            <TextField
+              label="Tasa de mora mensual % (opcional)"
+              value={lateRate}
+              onChangeText={setLateRate}
+              placeholder="Ej: 3"
+              keyboardType="decimal-pad"
+              maxLength={6}
+            />
+            <Text style={styles.cuotaHint}>
+              {cuotaPreview != null
+                ? `Cuota mensual estimada: ${formatCurrency(cuotaPreview)}`
+                : 'Ingresa el monto y un número de cuotas entre 2 y 60.'}
+            </Text>
+          </>
+        ) : (
+          <TextField
+            label="Tasa de interés anual % (opcional)"
+            value={interestRate}
+            onChangeText={setInterestRate}
+            placeholder="Ej: 12.5"
+            keyboardType="decimal-pad"
+            maxLength={6}
+          />
+        )}
 
         <SelectRow
           label="Fecha de inicio"
@@ -399,4 +483,10 @@ const createStyles = (theme: Theme) =>
     },
     switchTitle: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
     switchHint: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginTop: 2 },
+    cuotaHint: {
+      color: theme.colors.primaryLight,
+      fontSize: theme.fontSize.sm,
+      fontWeight: theme.fontWeight.medium,
+      marginBottom: theme.spacing.md,
+    },
   });

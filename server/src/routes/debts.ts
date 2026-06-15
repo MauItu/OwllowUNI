@@ -14,6 +14,7 @@ import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
+import { frenchInstallment, computeDueInfo } from '../utils/installments.js';
 
 export const debtsRouter = Router();
 
@@ -46,11 +47,42 @@ async function assertAccountOwned(uid: number, accountId: number): Promise<{ typ
   return { type: acc.type };
 }
 
+/**
+ * Columnas de cuotas derivadas para insert/update de `debts`. Sin `installments`
+ * válidos (>=2), todas quedan null (deuda de un solo pago). `installmentAmount` se
+ * calcula por amortización francesa con la tasa mensual del crédito.
+ */
+function installmentColumns(
+  total: number,
+  installments: number | null | undefined,
+  monthlyRate: number | null | undefined,
+  lateRate: number | null | undefined,
+) {
+  if (!installments || installments < 2) {
+    return {
+      installments: null,
+      installmentAmount: null,
+      monthlyInterestRate: null,
+      lateInterestRate: null,
+    };
+  }
+  return {
+    installments,
+    installmentAmount: frenchInstallment(total, monthlyRate ?? 0, installments).toFixed(2),
+    monthlyInterestRate: monthlyRate != null ? monthlyRate.toFixed(2) : null,
+    lateInterestRate: lateRate != null ? lateRate.toFixed(2) : null,
+  };
+}
+
 const debtSchema = z.object({
   name: z.string().min(1).max(100),
   type: z.enum(['debt', 'loan']),
   totalAmount: z.coerce.number().positive(),
   interestRate: z.coerce.number().min(0).max(999.99).optional().nullable(),
+  // ── Cuotas a crédito (opcional). El backend deriva installmentAmount ──
+  installments: z.coerce.number().int().min(2).max(60).optional().nullable(),
+  monthlyInterestRate: z.coerce.number().min(0).max(999.99).optional().nullable(),
+  lateInterestRate: z.coerce.number().min(0).max(999.99).optional().nullable(),
   creditorDebtor: z.string().max(100).optional().nullable(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   dueDate: z
@@ -100,6 +132,10 @@ debtsRouter.get(
         startDate: debts.startDate,
         dueDate: debts.dueDate,
         cutoffDate: debts.cutoffDate,
+        installments: debts.installments,
+        installmentAmount: debts.installmentAmount,
+        monthlyInterestRate: debts.monthlyInterestRate,
+        lateInterestRate: debts.lateInterestRate,
         color: debts.color,
         icon: debts.icon,
         isPaidOff: debts.isPaidOff,
@@ -117,7 +153,19 @@ debtsRouter.get(
       .orderBy(asc(debts.isPaidOff), desc(debts.createdAt))
       // TODO: paginar con load-more en mobile
       .limit(200);
-    res.json(rows);
+    // Campos derivados de vencimiento/próximo pago (cuota + mora si aplica).
+    res.json(
+      rows.map((d) => ({
+        ...d,
+        ...computeDueInfo({
+          remaining: Number(d.remainingAmount),
+          installmentAmount: d.installmentAmount != null ? Number(d.installmentAmount) : null,
+          lateRatePct: d.lateInterestRate != null ? Number(d.lateInterestRate) : null,
+          dueDate: d.dueDate,
+          isPaidOff: d.isPaidOff,
+        }),
+      })),
+    );
   }),
 );
 
@@ -179,7 +227,15 @@ debtsRouter.get(
       // TODO: paginar con load-more en mobile
       .limit(200);
 
-    res.json({ ...debt, payments });
+    const due = computeDueInfo({
+      remaining: Number(debt.remainingAmount),
+      installmentAmount: debt.installmentAmount != null ? Number(debt.installmentAmount) : null,
+      lateRatePct: debt.lateInterestRate != null ? Number(debt.lateInterestRate) : null,
+      dueDate: debt.dueDate,
+      isPaidOff: debt.isPaidOff,
+    });
+
+    res.json({ ...debt, payments, ...due });
   }),
 );
 
@@ -203,6 +259,12 @@ debtsRouter.post(
         startDate: data.startDate,
         dueDate: data.dueDate ?? null,
         cutoffDate: data.cutoffDate ?? null,
+        ...installmentColumns(
+          data.totalAmount,
+          data.installments,
+          data.monthlyInterestRate,
+          data.lateInterestRate,
+        ),
         ...(data.color && { color: data.color }),
         ...(data.icon && { icon: data.icon }),
         notes: data.notes ?? null,
@@ -255,9 +317,27 @@ debtsRouter.put(
     }
     const paidOff = remaining <= 0;
 
+    // Recalcula las columnas de cuotas con los valores efectivos (lo que envía el
+    // cliente o, si no, lo que ya tenía la deuda). `undefined` = no tocado; `null` = limpiar.
+    const effTotal = data.totalAmount != null ? data.totalAmount : Number(old.totalAmount);
+    const effInstallments = data.installments !== undefined ? data.installments : old.installments;
+    const effMonthly =
+      data.monthlyInterestRate !== undefined
+        ? data.monthlyInterestRate
+        : old.monthlyInterestRate != null
+          ? Number(old.monthlyInterestRate)
+          : null;
+    const effLate =
+      data.lateInterestRate !== undefined
+        ? data.lateInterestRate
+        : old.lateInterestRate != null
+          ? Number(old.lateInterestRate)
+          : null;
+
     const [row] = await db
       .update(debts)
       .set({
+        ...installmentColumns(effTotal, effInstallments, effMonthly, effLate),
         ...(data.name !== undefined && { name: data.name }),
         ...(data.type !== undefined && { type: data.type }),
         ...(data.totalAmount !== undefined && {

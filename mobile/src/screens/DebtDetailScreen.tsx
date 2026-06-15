@@ -205,11 +205,24 @@ export function DebtDetailScreen() {
             <Text style={styles.sheetHint}>
               Restante: <Text style={{ color: semanticColor, fontWeight: theme.fontWeight.bold }}>{formatCurrency(debt.remainingAmount)}</Text>
             </Text>
+            {debt.installmentAmount != null && (
+              <Text style={styles.sheetHint}>
+                Cuota: <Text style={{ color: theme.colors.text, fontWeight: theme.fontWeight.bold }}>{formatCurrency(debt.installmentAmount)}</Text>
+                {debt.isOverdue && debt.lateFee ? (
+                  <Text style={{ color: theme.colors.expense }}>{`  + mora ${formatCurrency(debt.lateFee)}`}</Text>
+                ) : null}
+              </Text>
+            )}
             <Text style={styles.accountLabel}>
               {isDebt ? '¿De qué cuenta pagaste?' : '¿En qué cuenta te depositaron?'}
             </Text>
             <AccountChips accounts={accounts.filter((a) => a.type !== 'credit_card')} selectedId={payAccountId} onSelect={setPayAccountId} allowNone noneLabel="No registrar" />
-            <Calculator type={isDebt ? 'expense' : 'income'} onConfirm={registerPayment} />
+            <Calculator
+              key={sheetOpen ? 'open' : 'closed'}
+              initialValue={Number(debt.nextPaymentAmount ?? 0)}
+              type={isDebt ? 'expense' : 'income'}
+              onConfirm={registerPayment}
+            />
           </BottomSheet>
         </>
       ) : null}

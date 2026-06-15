@@ -224,6 +224,9 @@ export interface TransactionInput {
   tagIds?: number[];
   /** Compra a cuotas (solo gasto con tarjeta de crédito): nº total de cuotas (2–60). */
   installments?: number | null;
+  /** Interés del crédito (% mensual) y de mora (% mensual) de la compra a cuotas. */
+  monthlyInterestRate?: number | null;
+  lateInterestRate?: number | null;
 }
 
 export interface TagInput {
@@ -367,6 +370,15 @@ export interface Debt {
   dueDate: string | null;
   /** Fecha de corte (statement). */
   cutoffDate: string | null;
+  /** Cuotas a crédito (null = deuda de un solo pago). */
+  installments?: number | null;
+  installmentAmount?: string | null;
+  monthlyInterestRate?: string | null;
+  lateInterestRate?: string | null;
+  /** Derivados del servidor (GET): estado de vencimiento y próximo pago sugerido. */
+  isOverdue?: boolean;
+  lateFee?: number;
+  nextPaymentAmount?: number;
   color: string;
   icon: string;
   isPaidOff: boolean;
@@ -403,6 +415,10 @@ export interface DebtInput {
   startDate: string;
   dueDate?: string | null;
   cutoffDate?: string | null;
+  /** Cuotas a crédito (el backend deriva installmentAmount por amortización). */
+  installments?: number | null;
+  monthlyInterestRate?: number | null;
+  lateInterestRate?: number | null;
   color?: string;
   icon?: string;
   notes?: string | null;

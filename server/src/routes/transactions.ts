@@ -10,6 +10,7 @@ import { userId } from '../middleware/auth.js';
 import { PAGINATION_DEFAULT_LIMIT, PAGINATION_MAX_LIMIT, IMPORT_BATCH_SIZE } from '../utils/constants.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
+import { frenchInstallment } from '../utils/installments.js';
 
 /** yyyy-MM-dd de una fecha local. */
 function ymd(d: Date): string {
@@ -95,6 +96,10 @@ const txSchema = z.object({
   // currentInstallment (=1) e installmentAmount (=amount/installments); el cliente
   // solo manda el nº total de cuotas (2–60). null/ausente = compra de contado.
   installments: z.coerce.number().int().min(2).max(60).optional().nullable(),
+  // Interés de la compra a cuotas (% mensual del crédito) y de mora (% mensual).
+  // Solo aplican a gasto con tarjeta a cuotas; se guardan en la deuda automática.
+  monthlyInterestRate: z.coerce.number().min(0).max(999.99).optional().nullable(),
+  lateInterestRate: z.coerce.number().min(0).max(999.99).optional().nullable(),
 });
 
 /** Busca las etiquetas de un conjunto de transacciones y las agrupa por id. */
@@ -579,9 +584,13 @@ transactionsRouter.post(
       }
     }
 
-    // Cuotas: solo aplican a gasto con tarjeta. El backend deriva los valores.
+    // Cuotas: solo aplican a gasto con tarjeta. El backend deriva los valores
+    // (cuota por amortización francesa con la tasa mensual del crédito, si la hay).
     const installments = isCardExpense && data.installments && data.installments > 1 ? data.installments : null;
-    const installmentAmount = installments ? data.amount / installments : null;
+    const monthlyRate = installments ? data.monthlyInterestRate ?? 0 : null;
+    const installmentAmount = installments
+      ? frenchInstallment(data.amount, monthlyRate ?? 0, installments)
+      : null;
 
     const toAmount = data.type === 'transfer' ? data.toAmount ?? null : null;
 
@@ -630,7 +639,8 @@ transactionsRouter.post(
         const baseName = data.description?.trim() || `Compra tarjeta ${srcAcc!.name}`;
         const name = installments ? `${baseName} (Cuota 1/${installments})` : baseName;
         const notes = installments
-          ? `Compra a ${installments} cuotas de ${installmentAmount!.toFixed(2)} c/u`
+          ? `Compra a ${installments} cuotas de ${installmentAmount!.toFixed(2)} c/u` +
+            (monthlyRate ? ` (interés ${monthlyRate}% mensual)` : '')
           : null;
         const [debt] = await db
           .insert(debts)
@@ -646,6 +656,12 @@ transactionsRouter.post(
             icon: 'credit-card',
             color: srcAcc!.color,
             notes,
+            // Cuotas/interés del crédito (null en compras de contado).
+            installments,
+            installmentAmount: installmentAmount != null ? installmentAmount.toFixed(2) : null,
+            monthlyInterestRate: monthlyRate != null ? monthlyRate.toFixed(2) : null,
+            lateInterestRate:
+              installments && data.lateInterestRate != null ? data.lateInterestRate.toFixed(2) : null,
           })
           .returning({ id: debts.id });
         createdDebt = debt;
@@ -712,7 +728,10 @@ transactionsRouter.put(
     }
     const newCardExpense = data.type === 'expense' && srcAcc?.type === 'credit_card';
     const installments = newCardExpense && data.installments && data.installments > 1 ? data.installments : null;
-    const installmentAmount = installments ? data.amount / installments : null;
+    const monthlyRate = installments ? data.monthlyInterestRate ?? 0 : null;
+    const installmentAmount = installments
+      ? frenchInstallment(data.amount, monthlyRate ?? 0, installments)
+      : null;
 
     // Deuda automática enlazada (si la había). Se actualiza/borra junto con la tx.
     const oldDebt =
@@ -791,7 +810,15 @@ transactionsRouter.put(
             name: installments ? `${baseName} (Cuota 1/${installments})` : baseName,
             totalAmount: data.amount.toFixed(2),
             remainingAmount: newRemaining.toFixed(2),
-            notes: installments ? `Compra a ${installments} cuotas de ${installmentAmount!.toFixed(2)} c/u` : null,
+            notes: installments
+              ? `Compra a ${installments} cuotas de ${installmentAmount!.toFixed(2)} c/u` +
+                (monthlyRate ? ` (interés ${monthlyRate}% mensual)` : '')
+              : null,
+            installments,
+            installmentAmount: installmentAmount != null ? installmentAmount.toFixed(2) : null,
+            monthlyInterestRate: monthlyRate != null ? monthlyRate.toFixed(2) : null,
+            lateInterestRate:
+              installments && data.lateInterestRate != null ? data.lateInterestRate.toFixed(2) : null,
             isPaidOff: paidOff,
             paidOffAt: paidOff ? oldDebt.paidOffAt ?? new Date() : null,
             updatedAt: new Date(),

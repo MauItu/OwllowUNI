@@ -20,7 +20,8 @@ import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useCategories } from '../hooks/useCategories';
 import { useAppStore } from '../stores/appStore';
-import { transactionsApi, templatesApi, ratesApi, getErrorMessage } from '../api/client';
+import { transactionsApi, templatesApi, ratesApi, debtsApi, getErrorMessage } from '../api/client';
+import { frenchInstallment } from '../utils/installments';
 import { showError, showSuccess } from '../components/toastConfig';
 import { todayISO, nowTime, formatShortDate, formatTime, parseISOSafe } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -90,6 +91,9 @@ export function AddTransactionScreen() {
   // valor de la calculadora para mostrar la cuota mensual al teclear.
   const [installmentsOn, setInstallmentsOn] = useState(false);
   const [installmentCount, setInstallmentCount] = useState('12');
+  // Interés del crédito (% mensual) y de mora (% mensual) de la compra a cuotas.
+  const [monthlyRate, setMonthlyRate] = useState('');
+  const [lateRate, setLateRate] = useState('');
   const [liveAmount, setLiveAmount] = useState<number>(
     params.template?.amount ? parseFloat(params.template.amount) : 0,
   );
@@ -134,9 +138,10 @@ export function AddTransactionScreen() {
   // Gasto con tarjeta de crédito → habilita la opción de cuotas.
   const isCardExpense = type === 'expense' && account?.type === 'credit_card';
   const installmentCountNum = Math.min(60, Math.max(0, parseInt(installmentCount || '0', 10) || 0));
+  const monthlyRateNum = monthlyRate.trim() ? Number(monthlyRate.replace(',', '.')) : 0;
   const cuotaMensual =
     isCardExpense && installmentsOn && installmentCountNum >= 2 && liveAmount > 0
-      ? liveAmount / installmentCountNum
+      ? frenchInstallment(liveAmount, monthlyRateNum || 0, installmentCountNum)
       : null;
 
   const toggleTag = (tag: Pick<Tag, 'id' | 'name' | 'color' | 'icon'>) => {
@@ -168,6 +173,16 @@ export function AddTransactionScreen() {
         if (tx.installments && tx.installments > 1) {
           setInstallmentsOn(true);
           setInstallmentCount(String(tx.installments));
+          // Las tasas viven en la deuda enlazada; las traemos para no perderlas al editar.
+          if (tx.debtId != null) {
+            try {
+              const d = await debtsApi.get(tx.debtId);
+              setMonthlyRate(d.monthlyInterestRate != null ? String(Number(d.monthlyInterestRate)) : '');
+              setLateRate(d.lateInterestRate != null ? String(Number(d.lateInterestRate)) : '');
+            } catch {
+              // Si falla, se editan en blanco (el usuario puede reingresarlas).
+            }
+          }
         }
         setCalcKey((k) => k + 1);
         if (tx.toAmount != null) setLoadedToAmount(parseFloat(tx.toAmount));
@@ -259,6 +274,7 @@ export function AddTransactionScreen() {
     const cardExpense = type === 'expense' && account.type === 'credit_card';
     const installments =
       cardExpense && installmentsOn && installmentCountNum >= 2 ? installmentCountNum : null;
+    const lateRateNum = lateRate.trim() ? Number(lateRate.replace(',', '.')) : null;
     const payload = {
       type,
       amount,
@@ -273,6 +289,8 @@ export function AddTransactionScreen() {
       receiptFilename,
       tagIds: selectedTags.map((t) => t.id),
       installments,
+      monthlyInterestRate: installments && monthlyRate.trim() ? monthlyRateNum : null,
+      lateInterestRate: installments ? lateRateNum : null,
     };
 
     try {
@@ -507,6 +525,28 @@ export function AddTransactionScreen() {
                     onChangeText={(t) => setInstallmentCount(t.replace(/[^0-9]/g, '').slice(0, 2))}
                     keyboardType="number-pad"
                     placeholder="12"
+                    placeholderTextColor={theme.colors.textMuted}
+                    style={styles.countInput}
+                  />
+                </View>
+                <View style={styles.countRow}>
+                  <Text style={styles.countLabel}>Interés mensual % (crédito)</Text>
+                  <TextInput
+                    value={monthlyRate}
+                    onChangeText={(t) => setMonthlyRate(t.replace(/[^0-9.,]/g, '').slice(0, 6))}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                    placeholderTextColor={theme.colors.textMuted}
+                    style={styles.countInput}
+                  />
+                </View>
+                <View style={styles.countRow}>
+                  <Text style={styles.countLabel}>Mora mensual % (opcional)</Text>
+                  <TextInput
+                    value={lateRate}
+                    onChangeText={(t) => setLateRate(t.replace(/[^0-9.,]/g, '').slice(0, 6))}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
                     placeholderTextColor={theme.colors.textMuted}
                     style={styles.countInput}
                   />
