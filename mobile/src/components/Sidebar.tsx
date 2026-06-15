@@ -14,6 +14,7 @@ import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from './Icon';
 import { useAuth } from '../hooks/useAuth';
 import { useSidebarStore } from '../stores/sidebarStore';
+import { getUserRole } from '../utils/roles';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.8, 320);
@@ -30,6 +31,7 @@ export function Sidebar() {
   const { user, logout } = useAuth();
   const isOpen = useSidebarStore((s) => s.isOpen);
   const close = useSidebarStore((s) => s.close);
+  const role = getUserRole(user?.email);
 
   const progress = useRef(new Animated.Value(0)).current;
   // Mantiene el drawer montado durante la animación de cierre; lo desmonta al
@@ -92,6 +94,13 @@ export function Sidebar() {
           <Text style={styles.profileEmail} numberOfLines={1}>
             {user?.email ?? ''}
           </Text>
+          {/* Insignia de rol (solo usuarios con rol especial, p.ej. Alpha Tester). */}
+          {role && (
+            <View style={styles.roleBadge}>
+              <Icon name="shield-check" size={13} color={theme.colors.accent} />
+              <Text style={styles.roleText}>{role}</Text>
+            </View>
+          )}
         </View>
 
         <View style={{ flex: 1 }} />
@@ -156,6 +165,19 @@ const createStyles = (theme: Theme) =>
     },
     profileName: { color: theme.colors.text, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold, textAlign: 'center' },
     profileEmail: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginTop: 4, textAlign: 'center' },
+    roleBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      marginTop: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 5,
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: `${theme.colors.accent}1F`,
+      borderWidth: 1,
+      borderColor: `${theme.colors.accent}55`,
+    },
+    roleText: { color: theme.colors.accent, fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.bold, letterSpacing: 0.3 },
     logout: {
       flexDirection: 'row',
       alignItems: 'center',
