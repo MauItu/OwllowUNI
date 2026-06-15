@@ -431,6 +431,11 @@ export function AddDebtScreen() {
         title="Cuenta asociada"
         onSelect={(a) => {
           setAccountId(a.id);
+          // Al asociar una cuenta normal a una deuda NUEVA, el registro del
+          // movimiento arranca activado: la deuda se refleja de una vez en el
+          // saldo (suma en "Yo debo", resta en "Me deben"). En tarjeta de
+          // crédito no aplica. Al editar se respeta lo que ya tenía la deuda.
+          if (!debtId) setRegisterInitial(a.type !== 'credit_card');
           setShowAccount(false);
         }}
         onClose={() => setShowAccount(false)}
