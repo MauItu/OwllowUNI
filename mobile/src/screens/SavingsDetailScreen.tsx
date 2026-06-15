@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, RefreshControl, Alert, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -16,7 +16,7 @@ import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatShortDate, todayISO } from '../utils/formatDate';
 import type { RootStackParamList } from '../navigation/types';
-import type { SavingsGoal, ContributionType } from '../types';
+import type { SavingsGoal, SavingsContribution, ContributionType } from '../types';
 
 export function SavingsDetailScreen() {
   const navigation = useNavigation<any>();
@@ -34,6 +34,8 @@ export function SavingsDetailScreen() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [contribType, setContribType] = useState<ContributionType>('deposit');
+  // Contribución en edición (null = nueva contribución).
+  const [editingContrib, setEditingContrib] = useState<SavingsContribution | null>(null);
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -56,22 +58,47 @@ export function SavingsDetailScreen() {
     load();
   }, [load]);
 
+  const openAdd = () => {
+    setEditingContrib(null);
+    setContribType('deposit');
+    setSheetOpen(true);
+  };
+
+  const openEdit = (c: SavingsContribution) => {
+    setEditingContrib(c);
+    setContribType(c.type);
+    setSheetOpen(true);
+  };
+
   const contribute = async (amount: number) => {
     if (amount <= 0) {
       showError('El monto debe ser mayor a 0');
       return;
     }
     try {
-      const updated = await savingsApi.contribute(goalId, {
-        amount,
-        type: contribType,
-        date: todayISO(),
-      });
+      let updated: SavingsGoal;
+      if (editingContrib) {
+        // Edición: se conserva la fecha y descripción originales; cambia monto/tipo.
+        updated = await savingsApi.updateContribution(goalId, editingContrib.id, {
+          amount,
+          type: contribType,
+          date: editingContrib.date,
+          description: editingContrib.description,
+        });
+      } else {
+        updated = await savingsApi.contribute(goalId, {
+          amount,
+          type: contribType,
+          date: todayISO(),
+        });
+      }
       setSheetOpen(false);
       // Si la meta quedó completada, su alerta se cancela; si no, se mantiene.
       rescheduleGoalNotifications(updated).catch(() => {});
       if (updated.isCompleted && !goal?.isCompleted) {
         showSuccess('🎉 ¡Felicitaciones! Completaste tu meta');
+      } else if (editingContrib) {
+        showSuccess('Contribución actualizada');
       } else {
         showSuccess(contribType === 'deposit' ? 'Depósito registrado' : 'Retiro registrado');
       }
@@ -80,6 +107,28 @@ export function SavingsDetailScreen() {
     } catch (err) {
       showError(getErrorMessage(err));
     }
+  };
+
+  const removeContrib = (c: SavingsContribution) => {
+    Alert.alert('Eliminar contribución', '¿Seguro que quieres eliminar esta contribución?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const updated = await savingsApi.removeContribution(goalId, c.id);
+            setSheetOpen(false);
+            rescheduleGoalNotifications(updated).catch(() => {});
+            showSuccess('Contribución eliminada');
+            triggerRefresh();
+            load(true);
+          } catch (err) {
+            showError(getErrorMessage(err));
+          }
+        },
+      },
+    ]);
   };
 
   const removeGoal = async () => {
@@ -141,7 +190,11 @@ export function SavingsDetailScreen() {
             renderItem={({ item }) => {
               const isDeposit = item.type === 'deposit';
               return (
-                <View style={styles.contribRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.contribRow, pressed && { opacity: 0.7 }]}
+                  onPress={() => openEdit(item)}
+                  onLongPress={() => removeContrib(item)}
+                >
                   <View
                     style={[
                       styles.contribIcon,
@@ -164,18 +217,23 @@ export function SavingsDetailScreen() {
                     {isDeposit ? '+' : '-'}
                     {formatCurrency(item.amount)}
                   </Text>
-                </View>
+                </Pressable>
               );
             }}
           />
 
           {/* FAB Contribuir */}
-          <Pressable style={[styles.fab, { bottom: insets.bottom + theme.spacing.lg }]} onPress={() => { setContribType('deposit'); setSheetOpen(true); }}>
+          <Pressable style={[styles.fab, { bottom: insets.bottom + theme.spacing.lg }]} onPress={openAdd}>
             <Icon name="plus" size={20} color="#FFFFFF" strokeWidth={2.6} />
             <Text style={styles.fabText}>Contribuir</Text>
           </Pressable>
 
-          <BottomSheet visible={sheetOpen} title="Nueva contribución" onClose={() => setSheetOpen(false)} maxHeight="85%">
+          <BottomSheet
+            visible={sheetOpen}
+            title={editingContrib ? 'Editar contribución' : 'Nueva contribución'}
+            onClose={() => setSheetOpen(false)}
+            maxHeight="85%"
+          >
             {/* Toggle depósito / retiro */}
             <View style={styles.toggle}>
               {(
@@ -193,8 +251,17 @@ export function SavingsDetailScreen() {
                 </Pressable>
               ))}
             </View>
+            {editingContrib && (
+              <Pressable style={styles.deleteContribBtn} onPress={() => removeContrib(editingContrib)}>
+                <Icon name="trash-2" size={16} color={theme.colors.expense} />
+                <Text style={styles.deleteContribText}>Eliminar contribución</Text>
+              </Pressable>
+            )}
             <Calculator
+              // key fuerza remount para tomar el nuevo initialValue al editar.
+              key={editingContrib?.id ?? 'new'}
               type={contribType === 'deposit' ? 'income' : 'expense'}
+              initialValue={editingContrib ? Number(editingContrib.amount) : 0}
               onConfirm={contribute}
             />
           </BottomSheet>
@@ -251,4 +318,13 @@ const createStyles = (theme: Theme) =>
     },
     toggleText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
     toggleTextActive: { color: '#FFFFFF', fontWeight: theme.fontWeight.bold },
+    deleteContribBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: theme.spacing.xs,
+      paddingVertical: theme.spacing.sm,
+      marginBottom: theme.spacing.sm,
+    },
+    deleteContribText: { color: theme.colors.expense, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },
   });

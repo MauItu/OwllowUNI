@@ -263,3 +263,134 @@ savingsRouter.post(
     }
   }),
 );
+
+/** Efecto de una contribución sobre el ahorro acumulado (depósito suma, retiro resta). */
+function signedAmount(type: string, amount: number): number {
+  return type === 'withdrawal' ? -amount : amount;
+}
+
+/** Vuelve a leer la meta con sus contribuciones para responder tras editar/borrar. */
+async function loadGoalDetail(uid: number, id: number) {
+  const [goal] = await db
+    .select()
+    .from(savingsGoals)
+    .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
+  if (!goal) return null;
+  const contributions = await db
+    .select()
+    .from(savingsContributions)
+    .where(eq(savingsContributions.goalId, id))
+    .orderBy(desc(savingsContributions.date), desc(savingsContributions.id))
+    .limit(200);
+  return { ...goal, contributions };
+}
+
+// PUT /api/savings/:id/contribute/:contributionId — edita una contribución
+//
+// Revierte el efecto de la contribución vieja y aplica el nuevo, recalculando el
+// ahorro acumulado y el estado de completitud. No puede dejar el ahorro negativo.
+savingsRouter.put(
+  '/:id/contribute/:contributionId',
+  asyncHandler(async (req, res) => {
+    const uid = userId(req);
+    const id = parseId(req.params.id);
+    const contributionId = parseId(req.params.contributionId);
+    const data = contributionSchema.parse(req.body);
+
+    const [goal] = await db
+      .select()
+      .from(savingsGoals)
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
+    if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
+
+    const [contribution] = await db
+      .select()
+      .from(savingsContributions)
+      .where(and(eq(savingsContributions.id, contributionId), eq(savingsContributions.goalId, id)));
+    if (!contribution) throw new ApiError(404, 'Contribución no encontrada');
+
+    const oldSigned = signedAmount(contribution.type, Number(contribution.amount));
+    const newSigned = signedAmount(data.type, data.amount);
+    const newCurrent = Number(goal.currentAmount) - oldSigned + newSigned;
+    if (newCurrent < -0.001) {
+      throw new ApiError(400, 'La edición dejaría el ahorro en negativo');
+    }
+    const rounded = Math.max(0, Math.round(newCurrent * 100) / 100);
+    const completed = rounded >= Number(goal.targetAmount);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.batch([
+      db
+        .update(savingsGoals)
+        .set({
+          currentAmount: rounded.toFixed(2),
+          isCompleted: completed,
+          completedAt: completed ? goal.completedAt ?? new Date() : null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid))),
+      db
+        .update(savingsContributions)
+        .set({
+          amount: data.amount.toFixed(2),
+          type: data.type,
+          description: data.description ?? null,
+          date: data.date,
+        })
+        .where(eq(savingsContributions.id, contributionId)),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any);
+
+    res.json(await loadGoalDetail(uid, id));
+  }),
+);
+
+// DELETE /api/savings/:id/contribute/:contributionId — elimina una contribución
+//
+// Revierte su efecto sobre el ahorro acumulado. No puede dejar el ahorro negativo
+// (p.ej. borrar un depósito que ya fue retirado).
+savingsRouter.delete(
+  '/:id/contribute/:contributionId',
+  asyncHandler(async (req, res) => {
+    const uid = userId(req);
+    const id = parseId(req.params.id);
+    const contributionId = parseId(req.params.contributionId);
+
+    const [goal] = await db
+      .select()
+      .from(savingsGoals)
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
+    if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
+
+    const [contribution] = await db
+      .select()
+      .from(savingsContributions)
+      .where(and(eq(savingsContributions.id, contributionId), eq(savingsContributions.goalId, id)));
+    if (!contribution) throw new ApiError(404, 'Contribución no encontrada');
+
+    const signed = signedAmount(contribution.type, Number(contribution.amount));
+    const newCurrent = Number(goal.currentAmount) - signed;
+    if (newCurrent < -0.001) {
+      throw new ApiError(400, 'No se puede eliminar: dejaría el ahorro en negativo');
+    }
+    const rounded = Math.max(0, Math.round(newCurrent * 100) / 100);
+    const completed = rounded >= Number(goal.targetAmount);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.batch([
+      db
+        .update(savingsGoals)
+        .set({
+          currentAmount: rounded.toFixed(2),
+          isCompleted: completed,
+          completedAt: completed ? goal.completedAt ?? new Date() : null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid))),
+      db.delete(savingsContributions).where(eq(savingsContributions.id, contributionId)),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ] as any);
+
+    res.json(await loadGoalDetail(uid, id));
+  }),
+);

@@ -266,6 +266,10 @@ export const savingsApi = {
   remove: (id: number) => api.delete(`/savings/${id}`).then((r) => r.data),
   contribute: (id: number, data: ContributionInput) =>
     api.post<SavingsGoal>(`/savings/${id}/contribute`, data).then((r) => r.data),
+  updateContribution: (id: number, contributionId: number, data: ContributionInput) =>
+    api.put<SavingsGoal>(`/savings/${id}/contribute/${contributionId}`, data).then((r) => r.data),
+  removeContribution: (id: number, contributionId: number) =>
+    api.delete<SavingsGoal>(`/savings/${id}/contribute/${contributionId}`).then((r) => r.data),
   summary: () => api.get<SavingsSummary>('/savings/summary').then((r) => r.data),
 };
 
