@@ -240,7 +240,10 @@ export function SplitGroupDetailScreen() {
             renderItem={({ item }) => {
               const color = item.categoryColor ?? group.color;
               return (
-                <View style={styles.expenseRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.expenseRow, pressed && { opacity: 0.7 }]}
+                  onPress={() => navigation.navigate('AddSplitExpense', { groupId, expenseId: item.id })}
+                >
                   <View style={[styles.expenseIcon, { backgroundColor: `${color}26` }]}>
                     <Icon name={item.categoryIcon ?? 'receipt'} size={18} color={color} />
                   </View>
@@ -252,7 +255,7 @@ export function SplitGroupDetailScreen() {
                     </Text>
                   </View>
                   <Text style={styles.expenseAmount}>{formatCurrency(item.totalAmount)}</Text>
-                </View>
+                </Pressable>
               );
             }}
           />

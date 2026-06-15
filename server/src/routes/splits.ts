@@ -656,6 +656,173 @@ splitsRouter.post(
   }),
 );
 
+// PUT /api/splits/:groupId/expenses/:expenseId — edita un gasto y sus shares
+//
+// Reemplaza por completo los shares y reconcilia (si el gasto lo pago yo) la
+// transacción de cuenta y el saldo, igual que al crear. No se permite editar un
+// gasto cuyos shares de terceros ya fueron liquidados (rompería el historial de
+// liquidaciones); el self-share del pagador, que nace liquidado, no cuenta.
+splitsRouter.put(
+  '/:groupId/expenses/:expenseId',
+  asyncHandler(async (req, res) => {
+    const uid = userId(req);
+    const groupId = parseId(req.params.groupId);
+    const expenseId = parseId(req.params.expenseId);
+    const data = expenseSchema.parse(req.body);
+
+    await getOwnedGroup(uid, groupId);
+    const [expense] = await db
+      .select()
+      .from(splitExpenses)
+      .where(and(eq(splitExpenses.id, expenseId), eq(splitExpenses.groupId, groupId)));
+    if (!expense) throw new ApiError(404, 'Gasto no encontrado');
+
+    const members = await db.select().from(splitMembers).where(eq(splitMembers.groupId, groupId));
+    const memberIds = new Set(members.map((m) => m.id));
+    if (!memberIds.has(data.paidByMemberId)) {
+      throw new ApiError(400, 'El pagador no pertenece al grupo');
+    }
+    for (const s of data.shares) {
+      if (!memberIds.has(s.memberId)) throw new ApiError(400, 'Un share no pertenece al grupo');
+    }
+    const shareMemberIds = new Set(data.shares.map((s) => s.memberId));
+    if (shareMemberIds.size !== data.shares.length) {
+      throw new ApiError(400, 'Hay miembros repetidos en la división');
+    }
+    const sum = data.shares.reduce((acc, s) => acc + s.amount, 0);
+    if (Math.abs(sum - data.totalAmount) > 0.01) {
+      throw new ApiError(400, 'La división debe sumar el total del gasto');
+    }
+
+    const paidByMember = members.find((m) => m.id === data.paidByMemberId);
+    if (data.accountId != null && !paidByMember?.isMe) {
+      throw new ApiError(400, 'Solo puedes asignar cuenta a gastos pagados por ti');
+    }
+
+    // No editar si alguna parte de TERCEROS ya está liquidada (el self-share del
+    // pagador nace liquidado y se ignora).
+    const existingShares = await db.select().from(splitShares).where(eq(splitShares.expenseId, expenseId));
+    const hasSettled = existingShares.some((s) => s.isSettled && s.memberId !== expense.paidByMemberId);
+    if (hasSettled) {
+      throw new ApiError(400, 'No se puede editar un gasto con partes ya liquidadas');
+    }
+
+    const newAccountId = paidByMember?.isMe ? data.accountId ?? null : null;
+    if (newAccountId != null) await assertAccountOwned(uid, newAccountId);
+
+    // Transacción de cuenta anterior (si el gasto lo pagaba yo y tenía cuenta).
+    let oldTx: { id: number; amount: string; accountId: number | null } | null = null;
+    if (expense.transactionId != null) {
+      const [t] = await db
+        .select({ id: transactions.id, amount: transactions.amount, accountId: transactions.accountId })
+        .from(transactions)
+        .where(and(eq(transactions.id, expense.transactionId), eq(transactions.userId, uid)));
+      oldTx = t ?? null;
+    }
+
+    const newAmount = data.totalAmount;
+    const expenseWhere = eq(splitExpenses.id, expenseId);
+    const expenseSet = {
+      description: data.description,
+      totalAmount: newAmount.toFixed(2),
+      paidByMemberId: data.paidByMemberId,
+      date: data.date,
+      categoryId: data.categoryId ?? null,
+      accountId: newAccountId,
+      updatedAt: new Date(),
+    };
+
+    // Reemplazo total de shares: el self-share del pagador nace liquidado.
+    const deleteShares = db.delete(splitShares).where(eq(splitShares.expenseId, expenseId));
+    const insertShares = db.insert(splitShares).values(
+      data.shares
+        .filter((s) => s.amount > 0)
+        .map((s) => ({
+          expenseId,
+          memberId: s.memberId,
+          amount: s.amount.toFixed(2),
+          isSettled: s.memberId === data.paidByMemberId,
+          settledAt: s.memberId === data.paidByMemberId ? new Date() : null,
+        })),
+    );
+
+    if (newAccountId != null && oldTx == null) {
+      // (A) No había movimiento y ahora sí: crear la tx, enlazarla y descontar (saga).
+      const [tx] = await db
+        .insert(transactions)
+        .values({
+          userId: uid,
+          type: 'expense',
+          amount: newAmount.toFixed(2),
+          description: data.description,
+          date: data.date,
+          time: nowTime(),
+          accountId: newAccountId,
+          categoryId: data.categoryId ?? null,
+        })
+        .returning({ id: transactions.id });
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.batch([
+          db.update(splitExpenses).set({ ...expenseSet, transactionId: tx.id }).where(expenseWhere),
+          balanceUpdate(uid, newAccountId, -newAmount),
+          deleteShares,
+          insertShares,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any);
+      } catch (err) {
+        await safeCompensate([db.delete(transactions).where(eq(transactions.id, tx.id))], {
+          endpoint: 'PUT /api/splits/:groupId/expenses/:expenseId',
+          operation: 'editExpense-add-tx',
+          userId: uid,
+          entityId: expenseId,
+          txId: tx.id,
+        });
+        throw err;
+      }
+    } else {
+      const stmts: unknown[] = [];
+      // Revertir el saldo de la tx vieja (un gasto restó → sumar de vuelta).
+      if (oldTx != null && oldTx.accountId != null) {
+        stmts.push(balanceUpdate(uid, oldTx.accountId, Number(oldTx.amount)));
+      }
+      if (newAccountId != null && oldTx != null) {
+        // (C) Sigue moviendo dinero: actualizar la tx en sitio y aplicar el nuevo saldo.
+        stmts.push(db.update(splitExpenses).set({ ...expenseSet, transactionId: oldTx.id }).where(expenseWhere));
+        stmts.push(
+          db
+            .update(transactions)
+            .set({
+              type: 'expense',
+              amount: newAmount.toFixed(2),
+              description: data.description,
+              date: data.date,
+              accountId: newAccountId,
+              categoryId: data.categoryId ?? null,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(transactions.id, oldTx.id), eq(transactions.userId, uid))),
+        );
+        stmts.push(balanceUpdate(uid, newAccountId, -newAmount));
+      } else if (newAccountId == null && oldTx != null) {
+        // (B) Ya no mueve dinero: desenlazar y borrar la tx (ya revertida arriba).
+        stmts.push(db.update(splitExpenses).set({ ...expenseSet, transactionId: null }).where(expenseWhere));
+        stmts.push(db.delete(transactions).where(and(eq(transactions.id, oldTx.id), eq(transactions.userId, uid))));
+      } else {
+        // (D) Sin movimiento involucrado.
+        stmts.push(db.update(splitExpenses).set({ ...expenseSet, transactionId: null }).where(expenseWhere));
+      }
+      stmts.push(deleteShares, insertShares);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.batch(stmts as any);
+    }
+
+    const [updated] = await db.select().from(splitExpenses).where(expenseWhere);
+    const shares = await db.select().from(splitShares).where(eq(splitShares.expenseId, expenseId));
+    res.json({ ...updated, shares });
+  }),
+);
+
 // GET /api/splits/:groupId/balances — balances por miembro + transferencias simplificadas
 splitsRouter.get(
   '/:groupId/balances',

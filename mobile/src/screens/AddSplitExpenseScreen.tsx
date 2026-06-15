@@ -38,6 +38,8 @@ export function AddSplitExpenseScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<RootStackParamList, 'AddSplitExpense'>>();
   const groupId = route.params.groupId;
+  const expenseId = route.params.expenseId;
+  const isEdit = expenseId != null;
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
@@ -65,13 +67,45 @@ export function AddSplitExpenseScreen() {
         const g = await splitsApi.get(groupId);
         const ms = g.members ?? [];
         setMembers(ms);
-        const me = ms.find((m) => m.isMe);
-        setPaidBy(me?.id ?? ms[0]?.id ?? null);
+        if (isEdit) {
+          // Prefill con el gasto a editar (se busca en la lista del grupo).
+          const all = await splitsApi.expenses(groupId);
+          const exp = all.find((e) => e.id === expenseId);
+          if (!exp) {
+            showError('No se encontró el gasto');
+            navigation.goBack();
+            return;
+          }
+          setDescription(exp.description);
+          setTotalAmount(Number(exp.totalAmount));
+          setPaidBy(exp.paidByMemberId);
+          setAccountId(exp.accountId);
+          setDate(exp.date);
+          if (exp.categoryId != null) {
+            setCategory({
+              id: exp.categoryId,
+              name: exp.categoryName ?? '',
+              icon: exp.categoryIcon ?? 'shapes',
+              color: exp.categoryColor ?? theme.colors.accentLight,
+              type: 'expense',
+            } as Category);
+          }
+          // Conservar los montos exactos: división personalizada con los shares.
+          const byMember: Record<number, string> = {};
+          ms.forEach((m) => { byMember[m.id] = '0'; });
+          (exp.shares ?? []).forEach((s) => { byMember[s.memberId] = String(Number(s.amount)); });
+          setCustomAmounts(byMember);
+          setCustomSplit(true);
+        } else {
+          const me = ms.find((m) => m.isMe);
+          setPaidBy(me?.id ?? ms[0]?.id ?? null);
+        }
       } catch (err) {
         showError(getErrorMessage(err));
       }
     })();
-  }, [groupId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, expenseId]);
 
   const memberIds = useMemo(() => members.map((m) => m.id), [members]);
   const equal = useMemo(() => equalShares(totalAmount, memberIds), [totalAmount, memberIds]);
@@ -123,19 +157,25 @@ export function AddSplitExpenseScreen() {
     } else {
       shares = members.map((m) => ({ memberId: m.id, amount: equal.get(m.id) ?? 0 }));
     }
+    const payload = {
+      description: description.trim(),
+      totalAmount,
+      paidByMemberId: paidBy,
+      date,
+      categoryId: category?.id ?? null,
+      // La cuenta solo aplica si el gasto lo pagué yo.
+      accountId: paidByMember?.isMe ? accountId : null,
+      shares,
+    };
     try {
       setSaving(true);
-      await splitsApi.addExpense(groupId, {
-        description: description.trim(),
-        totalAmount,
-        paidByMemberId: paidBy,
-        date,
-        categoryId: category?.id ?? null,
-        // La cuenta solo aplica si el gasto lo pagué yo.
-        accountId: paidByMember?.isMe ? accountId : null,
-        shares,
-      });
-      showSuccess('Gasto registrado');
+      if (isEdit) {
+        await splitsApi.updateExpense(groupId, expenseId, payload);
+        showSuccess('Gasto actualizado');
+      } else {
+        await splitsApi.addExpense(groupId, payload);
+        showSuccess('Gasto registrado');
+      }
       triggerRefresh();
       navigation.goBack();
     } catch (err) {
@@ -147,7 +187,7 @@ export function AddSplitExpenseScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="Nuevo gasto compartido" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={isEdit ? 'Editar gasto compartido' : 'Nuevo gasto compartido'} onBack={() => navigation.goBack()} />
       <FormScrollView contentContainerStyle={styles.content}>
         <TextField
           label="Descripción"
@@ -258,7 +298,7 @@ export function AddSplitExpenseScreen() {
         )}
 
         <View style={{ marginTop: theme.spacing.md }}>
-          <PrimaryButton label="Registrar gasto" onPress={save} loading={saving} icon="receipt" />
+          <PrimaryButton label={isEdit ? 'Guardar cambios' : 'Registrar gasto'} onPress={save} loading={saving} icon="receipt" />
         </View>
       </FormScrollView>
 
