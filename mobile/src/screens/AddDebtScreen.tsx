@@ -90,6 +90,9 @@ export function AddDebtScreen() {
   }, [debtId]);
 
   const selectedAccount = accounts.find((a) => a.id === accountId);
+  // El desembolso inicial solo aplica a cuentas normales: en una tarjeta de crédito
+  // no salen/entran fondos así (el gasto con tarjeta tiene su propio flujo).
+  const canRegisterInitial = selectedAccount != null && selectedAccount.type !== 'credit_card';
   const isDebt = type === 'debt';
   const semanticColor = isDebt ? theme.colors.expense : theme.colors.income;
 
@@ -154,7 +157,7 @@ export function AddDebtScreen() {
       } else {
         const created = await debtsApi.create({
           ...payload,
-          registerInitialTransaction: registerInitial && accountId != null,
+          registerInitialTransaction: registerInitial && canRegisterInitial,
         });
         showSuccess(isDebt ? 'Deuda registrada' : 'Préstamo registrado');
         rescheduleDebtNotifications(created).catch(() => {});
@@ -322,8 +325,8 @@ export function AddDebtScreen() {
           onPress={() => setShowAccount(true)}
         />
 
-        {/* Solo al crear y con cuenta: registrar el desembolso inicial como movimiento */}
-        {!debtId && accountId != null && (
+        {/* Solo al crear y con cuenta NORMAL (no tarjeta): registrar el desembolso inicial */}
+        {!debtId && canRegisterInitial && (
           <View style={styles.switchRow}>
             <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
               <Text style={styles.switchTitle}>Registrar el movimiento en la cuenta</Text>

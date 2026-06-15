@@ -266,7 +266,8 @@ debtsRouter.post(
   asyncHandler(async (req, res) => {
     const uid = userId(req);
     const data = debtSchema.parse(req.body);
-    if (data.accountId != null) await assertAccountOwned(uid, data.accountId);
+    let accountType: string | null = null;
+    if (data.accountId != null) accountType = (await assertAccountOwned(uid, data.accountId)).type;
     const [row] = await db
       .insert(debts)
       .values({
@@ -293,11 +294,15 @@ debtsRouter.post(
       })
       .returning();
 
-    // Desembolso inicial opcional: el dinero que entra (pedí prestado) o sale (yo presté).
-    if (data.registerInitialTransaction && data.accountId) {
+    // Desembolso inicial opcional (solo deuda NORMAL, no tarjeta de crédito): el
+    // dinero que entra (pedí prestado → income) o sale (yo presté → expense). Se
+    // crea como transacción REAL y se enlaza a la deuda (`initialTransactionId`)
+    // para poder revertir el saldo al eliminar la deuda.
+    if (data.registerInitialTransaction && data.accountId && accountType !== 'credit_card') {
       const txType = data.type === 'debt' ? 'income' : 'expense';
       const delta = txType === 'income' ? data.totalAmount : -data.totalAmount;
-      const insertTx = db
+      // La deuda ya está persistida; la tx necesita su id para enlazarse → saga.
+      const [tx] = await db
         .insert(transactions)
         .values({
           userId: uid,
@@ -308,9 +313,28 @@ debtsRouter.post(
           date: data.startDate,
           time: nowTime(),
           accountId: data.accountId,
+        })
+        .returning({ id: transactions.id });
+      try {
+        await db.batch([
+          balanceUpdate(uid, data.accountId, delta),
+          db
+            .update(debts)
+            .set({ initialTransactionId: tx.id, updatedAt: new Date() })
+            .where(and(eq(debts.id, row.id), eq(debts.userId, uid))),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any);
+        row.initialTransactionId = tx.id;
+      } catch (err) {
+        await safeCompensate([db.delete(transactions).where(eq(transactions.id, tx.id))], {
+          endpoint: 'POST /api/debts',
+          operation: 'initial-disbursement',
+          userId: uid,
+          entityId: row.id,
+          txId: tx.id,
         });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await db.batch([insertTx, balanceUpdate(uid, data.accountId, delta)] as any);
+        throw err;
+      }
     }
 
     res.status(201).json(row);
@@ -400,9 +424,11 @@ debtsRouter.delete(
       .where(and(eq(debts.id, id), eq(debts.userId, uid)));
     if (!debt) throw new ApiError(404, 'Deuda no encontrada');
 
-    // Transacciones generadas por los abonos de esta deuda (las del FK transaction_id).
+    // Transacciones a revertir: las de los abonos (FK transaction_id) + el
+    // desembolso inicial (deuda normal con cuenta), si lo hubo.
     const payments = await db.select().from(debtPayments).where(eq(debtPayments.debtId, id));
     const txIds = payments.map((p) => p.transactionId).filter((t): t is number => t != null);
+    if (debt.initialTransactionId != null) txIds.push(debt.initialTransactionId);
     const txs =
       txIds.length > 0
         ? await db

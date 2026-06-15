@@ -315,6 +315,10 @@ mobile/
 · `creditor_debtor` varchar(100) · `start_date` date NN · `due_date` date (**fecha límite de pago**) · `color` varchar(7) def `#C1437A`
 · `icon` varchar(50) def `landmark` · `is_paid_off` bool def false · `paid_off_at` timestamp · `notes` text
 · `account_id` int FK→accounts · `created_at` / `updated_at` timestamp def now()
+· **Desembolso inicial enlazado (migración `0016_warm_bug.sql`, aditiva):** `initial_transaction_id` int FK→transactions
+  (ON DELETE **SET NULL**) — la transacción del desembolso inicial de una deuda NORMAL con cuenta asociada (opt-in
+  `registerInitialTransaction`). Permite revertir el saldo de la cuenta al ELIMINAR la deuda (C8). null en deudas sin
+  desembolso y en deudas automáticas de tarjeta.
 · **Corte + cuotas/interés (migración `0015_clammy_blindfold.sql`, aditiva, todas nullable):** `cutoff_date` date
   (fecha de corte/statement) · `installments` int (nº de cuotas; null = deuda de un solo pago) · `installment_amount`
   decimal(15,2) (**cuota amortizada** = `frenchInstallment(total, %mensual, n)`) · `monthly_interest_rate` decimal(5,2)
@@ -560,13 +564,22 @@ mobile/
 - `GET    /api/debts/summary` — `{ totalDebt, totalLoan, netBalance, activeDebts, activeLoans }`
 - `GET    /api/debts/:id` — incluye `payments[]` + `isOverdue`/`lateFee`/`nextPaymentAmount`
 - `POST   /api/debts` — `remaining_amount` arranca igual a `total_amount`; con `installments` deriva `installment_amount`
-  (amortización francesa) y persiste las tasas; con `registerInitialTransaction:true` + `accountId` registra el desembolso
-  inicial como `income` (debt: me prestaron) / `expense` (loan: yo presté)
+  (amortización francesa) y persiste las tasas; con `registerInitialTransaction:true` + `accountId` **de cuenta NORMAL
+  (no `credit_card`)** registra el desembolso inicial como `income` (debt: me prestaron) / `expense` (loan: yo presté),
+  ajusta el saldo de la cuenta y **enlaza la tx en `debts.initial_transaction_id`** (saga: inserta la deuda y la tx, luego
+  batch saldo+enlace con compensación que borra la tx; C8). Si la cuenta es una tarjeta se omite el desembolso.
 - `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado; recalcula `installment_amount`
   con los valores efectivos (lo enviado o lo previo)
-- `DELETE /api/debts/:id` — CASCADE en pagos + revierte balances y borra las transacciones de los abonos vinculados (db.batch)
+- `DELETE /api/debts/:id` — CASCADE en pagos + revierte balances y borra las transacciones de los abonos vinculados **y la
+  del desembolso inicial (`initial_transaction_id`)** si la hubo (db.batch; borra la deuda antes que las tx para liberar los FK). C8
 - `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante (UPDATE condicional `remaining_amount >= amount`, 0 filas → 400, anti-TOCTOU) y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch); compensa el decremento + la tx si falla el registro del pago. **Rechaza pagar con cuenta `credit_card` (400, C3).** Si la deuda es de una tarjeta (deuda automática), **restaura el crédito disponible** de la tarjeta (`current_balance += monto`, C7) en el mismo batch (revertido en la compensación).
 - `PUT    /api/debts/:id/payments/:paymentId` — `{ amount, date, description?, accountId? }`; **edita un abono existente** (C7). Revierte por completo el efecto del pago viejo y aplica el nuevo dejando consistentes: el restante de la deuda (recalculado: `restante + viejo − nuevo`, 400 si <0), la **transacción enlazada** (actualiza en sitio si seguía con cuenta; la borra si se quitó la cuenta; la inserta vía saga si antes no tenía y ahora sí — desenlaza el FK `transaction_id` antes de borrar la tx) y el **crédito de la tarjeta** (ajuste por la diferencia de monto). Recalcula `is_paid_off`/`paid_off_at`. Devuelve la deuda con su historial actualizado (igual que `GET /:id`). Rechaza cuenta `credit_card` (400, C3).
+> **Mobile — agrupación de deudas por tarjeta (C9, `DebtsScreen`):** la lista de deudas activas usa **`SectionList`**: un grupo
+> POR CADA tarjeta de crédito con deudas asociadas (header = nombre de la tarjeta + total adeudado del grupo + saldo
+> disponible, leído de `useAccounts().creditAvailable`) + un grupo **"Otras deudas"** para las no asociadas a tarjetas. Las
+> tarjetas sin deudas no aparecen; si el único grupo es "Otras deudas" (p. ej. la pestaña "Me deben") no se muestra header
+> redundante. Las deudas de tarjeta se detectan por `accountType === 'credit_card'`. Se conserva el toggle Mis deudas/Me deben,
+> el historial de saldadas y crear/ver/pagar dentro de cada grupo.
 
 ### Budgets (presupuestos mensuales)
 > Router `routes/budgets.ts`, montado en `index.ts` con `authenticate` + `invalidateOnMutation`; los **GET están cacheados**
@@ -808,8 +821,8 @@ global en `App.tsx` captura crashes y muestra un fallback en lugar de congelar l
   secundarias y de detalle (Tags, Templates, DebtDetail/`payments`, SavingsDetail/`contributions`,
   SplitGroupDetail/`expenses`) llevan al menos `keyExtractor` por id + `removeClippedSubviews` +
   `maxToRenderPerBatch={15}` (su `renderItem` inline es aceptable: listas cortas, acotadas a 200). **Sin
-  `getItemLayout`**: las cards tienen altura variable (filas opcionales de tags/progreso/fechas, y la lista de
-  Transactions es `SectionList` con headers) → poner `getItemLayout` causaría bugs de scroll.
+  `getItemLayout`**: las cards tienen altura variable (filas opcionales de tags/progreso/fechas, y las listas de
+  Transactions y Debts son `SectionList` con headers — Debts agrupa por tarjeta, C9) → poner `getItemLayout` causaría bugs de scroll.
 - **Hooks de datos** (`useTransactions`/`useAccounts`/`useStats`/`useDebts`/`useSavings`/`useSplits`): usan
   `useState` con el setter solo dentro del fetch y devuelven referencias de estado estables. Los pocos
   derivados sí se memoizan: `useAccounts.totalBalance` (`useMemo` sobre `data`) y `useGlobalSearch`

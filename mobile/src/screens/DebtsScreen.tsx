@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, SectionList, Pressable, RefreshControl, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -8,17 +8,28 @@ import { Screen, ScreenHeader, EmptyState, ErrorState, Loading } from '../compon
 import { DebtCard } from '../components/DebtCard';
 import { Icon } from '../components/Icon';
 import { useDebts } from '../hooks/useDebts';
+import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { debtsApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
 import type { Debt, DebtType } from '../types';
 
+/** Sección de la lista de deudas: un grupo por tarjeta de crédito + "Otras deudas". */
+type DebtSection = {
+  key: string;
+  title: string;
+  data: Debt[];
+  // Presente solo en grupos de tarjeta: total adeudado del grupo + saldo disponible.
+  card?: { total: number; available: number | null };
+};
+
 export function DebtsScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { debts, summary, loading, refreshing, error, refetch } = useDebts();
+  const { accounts } = useAccounts();
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
   const [tab, setTab] = useState<DebtType>('debt');
   const [showHistory, setShowHistory] = useState(false);
@@ -26,6 +37,74 @@ export function DebtsScreen() {
   // Activas en la lista principal; saldadas van a la sección "Historial".
   const filtered = debts.filter((d) => d.type === tab && !d.isPaidOff);
   const history = debts.filter((d) => d.type === tab && d.isPaidOff);
+
+  // Agrupa las deudas activas: un grupo por cada tarjeta de crédito con deudas
+  // asociadas (deudas automáticas de compras) + un grupo "Otras deudas" para el
+  // resto. Las tarjetas sin deudas no aparecen. El orden dentro de cada grupo se
+  // conserva (el de `filtered`).
+  const sections: DebtSection[] = (() => {
+    const cardGroups = new Map<number, Debt[]>();
+    const others: Debt[] = [];
+    for (const d of filtered) {
+      if (d.accountType === 'credit_card' && d.accountId != null) {
+        const arr = cardGroups.get(d.accountId);
+        if (arr) arr.push(d);
+        else cardGroups.set(d.accountId, [d]);
+      } else {
+        others.push(d);
+      }
+    }
+    const result: DebtSection[] = [];
+    for (const [accId, list] of cardGroups) {
+      const acc = accounts.find((a) => a.id === accId);
+      const total = list.reduce((sum, d) => sum + Number(d.remainingAmount), 0);
+      result.push({
+        key: `card-${accId}`,
+        title: acc?.name ?? list[0].accountName ?? 'Tarjeta',
+        data: list,
+        card: { total, available: acc?.creditAvailable ?? null },
+      });
+    }
+    if (others.length > 0) {
+      result.push({ key: 'others', title: 'Otras deudas', data: others });
+    }
+    return result;
+  })();
+
+  // Header de "Otras deudas" solo si hay además grupos de tarjeta (si no, es redundante).
+  const renderSectionHeader = ({ section }: { section: DebtSection }) => {
+    if (!section.card) {
+      if (sections.length <= 1) return null;
+      return (
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.sectionHeader, styles.cardHeader]}>
+        <View style={styles.cardHeaderTop}>
+          <Icon name="credit-card" size={16} color={theme.colors.primary} />
+          <Text style={styles.sectionTitle} numberOfLines={1}>
+            {section.title}
+          </Text>
+        </View>
+        <View style={styles.cardHeaderMeta}>
+          <Text style={styles.cardMetaLabel}>
+            Deudas <Text style={styles.cardMetaStrong}>{formatCurrency(section.card.total)}</Text>
+          </Text>
+          {section.card.available != null && (
+            <Text style={styles.cardMetaLabel}>
+              Disponible{' '}
+              <Text style={[styles.cardMetaStrong, { color: theme.colors.income }]}>
+                {formatCurrency(section.card.available)}
+              </Text>
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  };
 
   const removePaid = async (id: number) => {
     try {
@@ -65,9 +144,11 @@ export function DebtsScreen() {
       ) : error && debts.length === 0 ? (
         <ErrorState message={error} onRetry={() => refetch()} />
       ) : (
-        <FlatList
-          data={filtered}
+        <SectionList
+          sections={sections}
           keyExtractor={keyExtractor}
+          renderSectionHeader={renderSectionHeader}
+          stickySectionHeadersEnabled={false}
           contentContainerStyle={styles.list}
           removeClippedSubviews
           maxToRenderPerBatch={15}
@@ -200,6 +281,22 @@ const createStyles = (theme: Theme) =>
     },
     toggleText: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
     toggleTextActive: { color: '#FFFFFF', fontWeight: theme.fontWeight.bold },
+    sectionHeader: {
+      paddingTop: theme.spacing.sm,
+      paddingBottom: theme.spacing.sm,
+      backgroundColor: theme.colors.background,
+    },
+    sectionTitle: {
+      color: theme.colors.text,
+      fontSize: theme.fontSize.md,
+      fontWeight: theme.fontWeight.bold,
+      flex: 1,
+    },
+    cardHeader: { gap: theme.spacing.xs },
+    cardHeaderTop: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs },
+    cardHeaderMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.md },
+    cardMetaLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs },
+    cardMetaStrong: { color: theme.colors.text, fontWeight: theme.fontWeight.semibold },
     historySection: { marginTop: theme.spacing.md },
     historyHeader: {
       flexDirection: 'row',

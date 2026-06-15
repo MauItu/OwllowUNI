@@ -299,6 +299,12 @@ export const debts = pgTable('debts', {
   paidOffAt: timestamp('paid_off_at'),
   notes: text('notes'),
   accountId: integer('account_id').references(() => accounts.id),
+  // Transacción del desembolso inicial (deuda NORMAL con cuenta asociada, opt-in
+  // `registerInitialTransaction`). Permite revertir el saldo al eliminar la deuda.
+  // SET NULL si la tx se borra suelta (no rompe el FK; el saldo lo revierte la tx).
+  initialTransactionId: integer('initial_transaction_id').references(() => transactions.id, {
+    onDelete: 'set null',
+  }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => ({
