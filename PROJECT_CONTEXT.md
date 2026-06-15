@@ -317,17 +317,20 @@ mobile/
 · `deadline` date · `color` varchar(7) def `#2E8B57` · `icon` varchar(50) def `piggy-bank`
 · `is_completed` bool def false · `completed_at` timestamp · `account_id` int FK→accounts · `notes` text
 · `created_at` / `updated_at` timestamp def now()
-> **`account_id` = earmark (reserva, no movimiento).** Si la meta se asocia a una cuenta, `current_amount` (lo ahorrado) queda
-> RESERVADO dentro del saldo de esa cuenta: NO se mueve dinero ni se crean transacciones. `GET /api/accounts` expone
-> `reservedSavings` (suma de las metas vinculadas) y el mobile muestra el disponible (`current_balance − reservedSavings`).
+> **`account_id` = cuenta por defecto del aporte (ya NO es earmark).** Es solo la cuenta sugerida al contribuir; no
+> reserva ni descuenta nada por sí misma. El dinero se mueve en cada contribución (ver abajo), no por la asociación.
 
 ### savings_contributions
 `id` serial PK · `goal_id` int FK→savings_goals ON DELETE CASCADE NN · `amount` decimal(15,2) NN
 · `type` varchar(10) NN (`deposit|withdrawal`) · `description` varchar(255) · `date` date NN
-· `transaction_id` int FK→transactions · `created_at` timestamp def now()
+· `account_id` int FK→accounts (cuenta que financia/recibe, idx) · `transaction_id` int FK→transactions · `created_at` timestamp def now()
+> **Modelo de movimiento real (migración 0020).** Cada aporte EXIGE `account_id` y mueve el saldo de esa cuenta: depósito
+> RESTA del `current_balance`, retiro lo DEVUELVE. El ahorro deja de contar como saldo líquido y se rastrea por cuenta. NO
+> se crean transacciones (`transaction_id` queda null) para no contaminar stats de gastos. `GET /api/accounts` expone
+> `savingsBalance` (neto Σdep − Σret financiado desde la cuenta) y `GET /api/accounts/:id/savings` da el desglose por meta.
 > Editables/eliminables (`PUT`/`DELETE /api/savings/:id/contribute/:contributionId`): revierten su efecto sobre
-> `current_amount` y recalculan `is_completed` (400 si dejaría el ahorro negativo). En el modelo earmark `transaction_id`
-> queda null (las contribuciones no mueven dinero de la cuenta).
+> `current_amount` Y sobre el saldo de la(s) cuenta(s) involucrada(s) en un batch atómico, y recalculan `is_completed`
+> (400 si dejaría el ahorro negativo). Los aportes del modelo viejo (sin `account_id`) no mueven saldo al editarse/borrarse.
 
 ### debts
 `id` serial PK · `name` varchar(100) NN · `type` varchar(10) NN (`debt`=yo debo | `loan`=me deben)
@@ -499,9 +502,11 @@ mobile/
 - `GET    /api/accounts[?includeInactive=true]` — cuentas activas (con `includeInactive=true` también las desactivadas,
   ordenadas activas primero; lo usa SOLO la pantalla de lista). Para `credit_card` agrega campos calculados (ver Tarjetas
   de crédito); para el resto OMITE las columnas de tarjeta. Siempre devuelve `is_active`, `is_frozen`, los `management_fee_*`
-  y **`reservedSavings`** (ahorro reservado por metas vinculadas a la cuenta = suma de `savings_goals.current_amount`; earmark).
-  `GET /:id` también lo incluye. El mobile muestra "Disp." (`current_balance − reservedSavings`) y "Ahorro X" en la card. El
-  dinero NO se mueve: el ahorro queda reservado dentro del saldo (no afecta el patrimonio del `/summary`).
+  y **`savingsBalance`** (dinero que SALIÓ de la cuenta hacia metas = neto Σdep − Σret de `savings_contributions` con esa
+  `account_id`). `GET /:id` también lo incluye. El mobile muestra el saldo real y, debajo, "Ahorro X" tocable en la card. El
+  dinero YA se restó del saldo al aportar (afecta el patrimonio del `/summary`, que es saldo líquido); el ahorro se muestra aparte.
+- `GET    /api/accounts/:id/savings` — desglose `[{ goalId, goalName, color, icon, amount }]` del ahorro de la cuenta por meta
+  (en qué metas está ese dinero). Lo abre el bottom sheet al tocar "Ahorro" en la card; cada meta navega a su detalle.
 - `GET    /api/accounts/summary?displayCurrency=COP[&refresh=true]` — balance consolidado convertido a
   `displayCurrency`, **separando débito y crédito**: `{ displayCurrency, total (=debitTotal−creditUsed, patrimonio
   neto líquido), debitTotal (cuentas no-tarjeta = el "Saldo"), creditTotal (=−creditUsed, contribución neta de tarjetas),
@@ -609,17 +614,17 @@ mobile/
 - `POST   /api/savings`
 - `PUT    /api/savings/:id`
 - `DELETE /api/savings/:id`
-- `POST   /api/savings/:id/contribute` — `{ amount, type: deposit|withdrawal, date, description? }`; marca `is_completed` al llegar al objetivo. El saldo se ajusta con un UPDATE condicional (retiro: guard `current_amount >= amount`, 0 filas → 400) y se compensa si falla el insert de la contribución (anti-TOCTOU)
+- `POST   /api/savings/:id/contribute` — `{ amount, type: deposit|withdrawal, date, description?, accountId }` (**`accountId` obligatorio**); marca `is_completed` al llegar al objetivo. El `current_amount` se ajusta con un UPDATE condicional (retiro: guard `current_amount >= amount`, 0 filas → 400) y luego un batch atómico inserta la contribución y **mueve el saldo de la cuenta** (depósito −, retiro +), compensando si falla (anti-TOCTOU)
 - `PUT    /api/savings/:id/contribute/:contributionId` — **edita una contribución**: revierte su efecto viejo y aplica el
-  nuevo (`current_amount − viejoConSigno + nuevoConSigno`, 400 si quedaría negativo), recalcula `is_completed`/`completed_at`
-  y actualiza la contribución (batch atómico). Devuelve la meta con `contributions[]`.
+  nuevo sobre `current_amount` (400 si quedaría negativo) Y sobre el saldo de la(s) cuenta(s) (revierte en la cuenta vieja,
+  aplica en la nueva), recalcula `is_completed`/`completed_at` (batch atómico). Devuelve la meta con `contributions[]`.
 - `DELETE /api/savings/:id/contribute/:contributionId` — **elimina una contribución** revirtiendo su efecto sobre
-  `current_amount` (400 si dejaría el ahorro negativo, p.ej. borrar un depósito ya retirado). Devuelve la meta con `contributions[]`.
-> **Earmark cuenta↔ahorro:** una meta puede asociarse a una cuenta (`accountId`) "donde estará el ahorro". El modelo es de
-> **reserva, no de movimiento**: contribuir NO crea transacciones ni cambia `current_balance`; solo sube `current_amount` (lo
-> reservado). La cuenta expone `reservedSavings` (ver Accounts) y el mobile muestra el disponible (saldo − ahorro). El campo de
-> cuenta en la meta usa el placeholder "Cuenta donde estará el ahorro". Editar/eliminar contribuciones desde `SavingsDetailScreen`
-> (tap = editar, long-press = eliminar).
+  `current_amount` y devolviendo el saldo a su cuenta (400 si dejaría el ahorro negativo). Devuelve la meta con `contributions[]`.
+> **Cuenta↔ahorro = movimiento real (no earmark).** Cada aporte EXIGE cuenta: el depósito sale del `current_balance` de esa
+> cuenta y el retiro lo devuelve. NO crea transacciones (para no contaminar stats). La cuenta expone `savingsBalance` y
+> `/accounts/:id/savings` (ver Accounts); el mobile muestra el saldo real y, debajo, "Ahorro" tocable. La `accountId` de la meta
+> es solo la **cuenta por defecto** sugerida al aportar (placeholder "Cuenta sugerida al aportar"). En `SavingsDetailScreen` el
+> sheet de aporte pide la cuenta con `AccountChips` (default = la de la meta). Editar = tap, eliminar = long-press.
 
 ### Debts (deudas y préstamos)
 > Aceptan `cutoffDate` (fecha de corte, C6), `installments` (2–60) + `monthlyInterestRate`/`lateInterestRate` (cuotas con
@@ -1061,7 +1066,7 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 7. **Estadísticas**: período seleccionable, resumen, donut por categoría, barras ingresos/gastos, línea de evolución, top categorías. Gráficas con SVG propio (`react-native-svg`) en `components/StatChart.tsx` (`DonutChart`, `BarChart`, `LineChart`) — **no** `victory-native`.
 8. Montos siempre formateados (separador de miles + símbolo). Pull-to-refresh en listas. Errores vía toasts (mobile) y middleware (backend).
 9. **Etiquetas (tags):** etiquetas libres con color/ícono, asignables a transacciones (`TagPicker` en AddTransaction, `TagChip`), CRUD en `TagsScreen` ("Más"), filtro por tag en Movimientos.
-10. **Metas de ahorro:** `SavingsScreen` con card total gradiente, `AddSavingsGoal` (Calculator, fecha límite, **cuenta "donde estará el ahorro"** con earmark — placeholder y nota que explica que el saldo no cambia, solo se reserva, color/ícono), `SavingsDetail` con contribuciones (depósito/retiro vía BottomSheet+Calculator) **editables (tap) y eliminables (long-press)**, card resumen en Home (`HomeSummaryCard`). La `AccountCard` de una cuenta con ahorro reservado muestra "Disp." (saldo − ahorro) y "Ahorro X".
+10. **Metas de ahorro:** `SavingsScreen` con card total gradiente, `AddSavingsGoal` (Calculator, fecha límite, **cuenta por defecto del aporte** — placeholder "Cuenta sugerida al aportar", color/ícono), `SavingsDetail` con contribuciones (depósito/retiro vía BottomSheet+Calculator, **cuenta obligatoria con `AccountChips`** — default = la de la meta) **editables (tap) y eliminables (long-press)**, card resumen en Home (`HomeSummaryCard`). **El aporte mueve dinero real:** el depósito resta del saldo de la cuenta elegida y el retiro lo devuelve. La `AccountCard` muestra el saldo real y, debajo, "Ahorro X" tocable → bottom sheet con el desglose por meta (`GET /accounts/:id/savings`).
 11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben", card de balance neto y sección **"Historial"** colapsable para las saldadas (con borrado definitivo); `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, **fecha de corte + fecha límite de pago** (C6), cuenta + switch "registrar desembolso inicial en la cuenta" (**ON por defecto al asociar una cuenta normal a una deuda nueva**, para que el saldo refleje la deuda sin activarlo a mano), y **toggle "¿A cuotas / crédito?"** (C4) con nº de cuotas + interés mensual del crédito + mora + preview en vivo de la cuota por amortización francesa; el interés anual informativo solo se muestra sin cuotas); `DebtDetail` con historial de pagos (muestra la cuenta), metaRow con Corte/Límite de pago, y FAB "Registrar pago" (BottomSheet con `AccountChips` **sin tarjetas de crédito** (C3) + selector de fecha (`DateRangePicker`) + nota + Calculator **prellenada con la cuota/`nextPaymentAmount`**, más mora si está vencida — C5). **Cada pago del historial es tappable → reabre el mismo BottomSheet en modo edición** prellenado con sus datos (`PUT /debts/:id/payments/:paymentId`, C7); tras editar/crear se hace `triggerRefresh()` + `load(true)` para reflejar el restante, el historial y los saldos de cuentas/tarjeta. Cada abono con cuenta mueve el balance real (income/expense). Card en Home si hay activas.
 12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2) **y modo edición del grupo** (nombre/descripción/color/ícono; agrega/quita miembros en el acto); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia (con `AccountChips` cuando me involucra, como confirmación explícita del movimiento), lista cronológica de gastos (**tappables → editar gasto**), botón de editar grupo en el header y, en la papelera, **menú "Liquidar" (conserva las transacciones de mi parte) vs "Eliminar" (revierte todo)**, FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional y **cuenta cuando pago yo** (descuenta de la cuenta real), **reutilizado en modo edición** (`expenseId`). Card en Home si hay balances pendientes.
 13. **Hora editable** en gastos/ingresos (`TimePicker` propio, BottomSheet de 2 columnas 24h) junto al chip de fecha en `AddTransaction`.
