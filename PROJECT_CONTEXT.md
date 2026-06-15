@@ -184,6 +184,8 @@ server/
 │       ├── safeCompensate.ts ← rollback de saga tolerante a fallos (log estructurado, no pisa el error original)
 │       ├── validateEnv.ts    ← validación de env con Zod al arrancar (import PRIMERO en index.ts) + JWT_EXPIRATION
 │       ├── parseId.ts        ← parseId(req.params.*) → entero > 0 o ApiError(400)
+│       ├── creditCardDebt.ts ← buildFifoCardDebtPayment: abono FIFO a las deudas automáticas de una tarjeta
+│       ├── installments.ts   ← cuotas a crédito: frenchInstallment (amortización francesa) + computeDueInfo (mora/próximo pago)
 │       └── constants.ts      ← números mágicos centralizados (BCRYPT_ROUNDS, PAGINATION_*, IMPORT_BATCH_SIZE, CACHE_TTL_*)
 └── drizzle/                    ← migraciones generadas por drizzle-kit
 ```
@@ -228,7 +230,8 @@ mobile/
     ├── utils/                  ← formatCurrency (Intl + fallback manual), currencies (catálogo curado),
     │                              formatDate, calculatorEngine, csv (parser propio + csvToImportRows),
     │                              statsAggregation (recálculo client-side de stats por tipo de cuenta),
-    │                              receiptStorage (fotos de recibos locales: comprimir/guardar/borrar/rutas)
+    │                              receiptStorage (fotos de recibos locales: comprimir/guardar/borrar/rutas),
+    │                              installments (frenchInstallment: espejo del server para el preview de cuotas)
     └── types/index.ts          ← tipos compartidos
 ```
 
@@ -270,8 +273,13 @@ mobile/
   la imagen vive LOCAL en el dispositivo, NO en la DB; migración `0007_hard_red_shift.sql`)
 · **Cuotas + deuda automática (migración `0014`, aditiva):** `installments` int nullable (nº total de cuotas, ej: 36) ·
   `current_installment` int nullable (cuota actual, al crear = 1) · `installment_amount` decimal(15,2) nullable
-  (= `amount / installments`) · `debt_id` int FK→debts nullable (deuda generada al gastar con tarjeta; 1 por compra).
-  Los 4 campos solo aplican a **gasto con tarjeta de crédito**; null en débito y en compras de contado.
+  (**cuota amortizada** = `frenchInstallment(amount, %mensual, n)`; con 0% de interés ≡ `amount/n`) · `debt_id` int FK→debts
+  nullable (deuda generada al gastar con tarjeta; 1 por compra). Los 4 campos solo aplican a **gasto con tarjeta de
+  crédito**; null en débito y en compras de contado. Las **tasas** de la compra a cuotas (interés del crédito y de mora)
+  se piden en `POST/PUT /api/transactions` (`monthlyInterestRate`/`lateInterestRate`) y se guardan en la **deuda
+  automática**, no en la transacción.
+> **No se admiten ingresos en tarjetas de crédito** (corrección C1): `POST`/`PUT` con `type='income'` y cuenta origen
+> `credit_card` → **400**. En mobile la pestaña "Ingreso" se oculta cuando la cuenta es una tarjeta.
 · `created_at` / `updated_at` timestamp def now()
 > **Multi-moneda:** cada transacción se guarda SIEMPRE en la moneda de su cuenta. En transferencias entre
 > cuentas de distinta moneda, la cuenta origen se mueve por `amount` (su moneda) y la destino por `to_amount`
@@ -303,10 +311,20 @@ mobile/
 
 ### debts
 `id` serial PK · `name` varchar(100) NN · `type` varchar(10) NN (`debt`=yo debo | `loan`=me deben)
-· `total_amount` decimal(15,2) NN · `remaining_amount` decimal(15,2) NN · `interest_rate` decimal(5,2) (% anual, informativo)
-· `creditor_debtor` varchar(100) · `start_date` date NN · `due_date` date · `color` varchar(7) def `#C1437A`
+· `total_amount` decimal(15,2) NN · `remaining_amount` decimal(15,2) NN · `interest_rate` decimal(5,2) (% anual, informativo — deudas SIN cuotas)
+· `creditor_debtor` varchar(100) · `start_date` date NN · `due_date` date (**fecha límite de pago**) · `color` varchar(7) def `#C1437A`
 · `icon` varchar(50) def `landmark` · `is_paid_off` bool def false · `paid_off_at` timestamp · `notes` text
 · `account_id` int FK→accounts · `created_at` / `updated_at` timestamp def now()
+· **Corte + cuotas/interés (migración `0015_clammy_blindfold.sql`, aditiva, todas nullable):** `cutoff_date` date
+  (fecha de corte/statement) · `installments` int (nº de cuotas; null = deuda de un solo pago) · `installment_amount`
+  decimal(15,2) (**cuota amortizada** = `frenchInstallment(total, %mensual, n)`) · `monthly_interest_rate` decimal(5,2)
+  (interés del crédito, **% MENSUAL**, amortización francesa) · `late_interest_rate` decimal(5,2) (interés de mora, **% MENSUAL**).
+> **Cuotas con interés (correcciones C4/C5).** Cuando una deuda/crédito tiene `installments`, la cuota se calcula por
+> **amortización francesa** (`server/src/utils/installments.ts → frenchInstallment`): cuota fija = `P·i/(1−(1+i)^−n)` con
+> `i = monthly_interest_rate/100`; si `i=0` ≡ `P/n`. `GET /api/debts` y `/:id` agregan campos **derivados** (no persistidos)
+> con `computeDueInfo`: `isOverdue` (hoy > `due_date` y no saldada), `lateFee` (= cuota·`late_interest_rate`%·meses vencidos,
+> mín. 1 mes) y `nextPaymentAmount` (= cuota + mora, topado al restante). El mobile prellena la calculadora del pago con
+> `nextPaymentAmount`. Las deudas automáticas de compras a cuotas con tarjeta heredan estas columnas desde `transactions`.
 
 ### debt_payments
 `id` serial PK · `debt_id` int FK→debts ON DELETE CASCADE NN · `amount` decimal(15,2) NN · `date` date NN
@@ -477,9 +495,11 @@ mobile/
 ### Transactions
 - `GET    /api/transactions` — query: `account_id, category_id, type, from_date, to_date, search, page, limit`
 - `GET    /api/transactions/:id`
-- `POST   /api/transactions` — crea y actualiza balance. Acepta `installments` (2–60, solo gasto con tarjeta; el backend
-  deriva `current_installment=1` e `installment_amount`). Gasto con tarjeta → genera deuda automática (saga: tx+saldo en
-  batch; luego deuda + enlace `debt_id` + tags, con compensación que revierte todo). Transfer hacia tarjeta → abona FIFO.
+- `POST   /api/transactions` — crea y actualiza balance. **Rechaza `type='income'` con cuenta `credit_card` (400, C1).**
+  Acepta `installments` (2–60, solo gasto con tarjeta) + `monthlyInterestRate`/`lateInterestRate` (opcionales); el backend
+  deriva `current_installment=1` e `installment_amount` por **amortización francesa** (`frenchInstallment`). Gasto con tarjeta →
+  genera deuda automática (saga: tx+saldo en batch; luego deuda + enlace `debt_id` + tags, con compensación que revierte todo);
+  la deuda guarda `installments`/`installment_amount`/tasas. Transfer hacia tarjeta → abona FIFO.
 - `PUT    /api/transactions/:id` — recalcula balances; actualiza/borra la deuda automática enlazada según el nuevo estado
   (sigue siendo gasto con tarjeta → actualiza total/restante conservando lo pagado; ya no lo es → borra la deuda).
 - `DELETE /api/transactions/:id` — recalcula balance y borra la deuda automática enlazada (`debt_id`) si existe.
@@ -530,13 +550,18 @@ mobile/
 - `POST   /api/savings/:id/contribute` — `{ amount, type: deposit|withdrawal, date, description? }`; marca `is_completed` al llegar al objetivo. El saldo se ajusta con un UPDATE condicional (retiro: guard `current_amount >= amount`, 0 filas → 400) y se compensa si falla el insert de la contribución (anti-TOCTOU)
 
 ### Debts (deudas y préstamos)
-- `GET    /api/debts` — activas primero, con nombre de cuenta
+> Aceptan `cutoffDate` (fecha de corte, C6), `installments` (2–60) + `monthlyInterestRate`/`lateInterestRate` (cuotas con
+> interés, C4). `GET /api/debts` y `/:id` agregan los **derivados** `isOverdue`/`lateFee`/`nextPaymentAmount` (`computeDueInfo`).
+- `GET    /api/debts` — activas primero, con nombre de cuenta + derivados de vencimiento/próximo pago
 - `GET    /api/debts/summary` — `{ totalDebt, totalLoan, netBalance, activeDebts, activeLoans }`
-- `GET    /api/debts/:id` — incluye `payments[]`
-- `POST   /api/debts` — `remaining_amount` arranca igual a `total_amount`; con `registerInitialTransaction:true` + `accountId` registra el desembolso inicial como `income` (debt: me prestaron) / `expense` (loan: yo presté)
-- `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado
+- `GET    /api/debts/:id` — incluye `payments[]` + `isOverdue`/`lateFee`/`nextPaymentAmount`
+- `POST   /api/debts` — `remaining_amount` arranca igual a `total_amount`; con `installments` deriva `installment_amount`
+  (amortización francesa) y persiste las tasas; con `registerInitialTransaction:true` + `accountId` registra el desembolso
+  inicial como `income` (debt: me prestaron) / `expense` (loan: yo presté)
+- `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado; recalcula `installment_amount`
+  con los valores efectivos (lo enviado o lo previo)
 - `DELETE /api/debts/:id` — CASCADE en pagos + revierte balances y borra las transacciones de los abonos vinculados (db.batch)
-- `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante (UPDATE condicional `remaining_amount >= amount`, 0 filas → 400, anti-TOCTOU) y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch); compensa el decremento + la tx si falla el registro del pago
+- `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante (UPDATE condicional `remaining_amount >= amount`, 0 filas → 400, anti-TOCTOU) y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch); compensa el decremento + la tx si falla el registro del pago. **Rechaza pagar con cuenta `credit_card` (400, C3).**
 
 ### Budgets (presupuestos mensuales)
 > Router `routes/budgets.ts`, montado en `index.ts` con `authenticate` + `invalidateOnMutation`; los **GET están cacheados**
@@ -847,8 +872,10 @@ transacción" → `AddTransaction`.
 **Botón flotante (44×44, fondo `accent`, ícono `zap` blanco) abajo-derecha** abre un `BottomSheet` con las
 plantillas (cada una con botón "Usar"); enlace "Gestionar plantillas" lleva al CRUD completo.
 
-**AddTransactionScreen:** tabs de tipo tipo pill con color semántico; fila de chips scrollable
-(cuenta / categoría o destino / fecha); input de descripción opcional; `Calculator` en la mitad inferior.
+**AddTransactionScreen:** tabs de tipo tipo pill con color semántico (**la pestaña "Ingreso" se oculta cuando la
+cuenta es una tarjeta de crédito** — C1); fila de chips scrollable (cuenta / categoría o destino / fecha); input de
+descripción opcional; caja de **cuotas** para gasto con tarjeta (nº de cuotas + interés mensual del crédito + mora,
+con la cuota mensual calculada por amortización francesa — C4); `Calculator` en la mitad inferior.
 
 **TransactionsScreen:** búsqueda pill (`borderRadius.full`), chips de filtro scrollables (tipo + cuenta +
 fecha + limpiar), **filtro por tipo de cuenta** (`AccountTypeFilter`: Todas | Débito | Crédito), lista
@@ -898,7 +925,7 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 8. Montos siempre formateados (separador de miles + símbolo). Pull-to-refresh en listas. Errores vía toasts (mobile) y middleware (backend).
 9. **Etiquetas (tags):** etiquetas libres con color/ícono, asignables a transacciones (`TagPicker` en AddTransaction, `TagChip`), CRUD en `TagsScreen` ("Más"), filtro por tag en Movimientos.
 10. **Metas de ahorro:** `SavingsScreen` con card total gradiente, `AddSavingsGoal` (Calculator, fecha límite, cuenta, color/ícono), `SavingsDetail` con contribuciones (depósito/retiro vía BottomSheet+Calculator), card resumen en Home (`HomeSummaryCard`).
-11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben", card de balance neto y sección **"Historial"** colapsable para las saldadas (con borrado definitivo); `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, tasa de interés, fechas, cuenta + switch "registrar desembolso inicial en la cuenta"); `DebtDetail` con historial de pagos (muestra la cuenta) y FAB "Registrar pago" (BottomSheet con `AccountChips` + Calculator). Cada abono con cuenta mueve el balance real (income/expense). Card en Home si hay activas.
+11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben", card de balance neto y sección **"Historial"** colapsable para las saldadas (con borrado definitivo); `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, **fecha de corte + fecha límite de pago** (C6), cuenta + switch "registrar desembolso inicial en la cuenta", y **toggle "¿A cuotas / crédito?"** (C4) con nº de cuotas + interés mensual del crédito + mora + preview en vivo de la cuota por amortización francesa; el interés anual informativo solo se muestra sin cuotas); `DebtDetail` con historial de pagos (muestra la cuenta), metaRow con Corte/Límite de pago, y FAB "Registrar pago" (BottomSheet con `AccountChips` **sin tarjetas de crédito** (C3) + Calculator **prellenada con la cuota/`nextPaymentAmount`**, más mora si está vencida — C5). Cada abono con cuenta mueve el balance real (income/expense). Card en Home si hay activas.
 12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia (con `AccountChips` cuando me involucra, como confirmación explícita del movimiento), lista cronológica de gastos y FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional y **cuenta cuando pago yo** (descuenta de la cuenta real). Card en Home si hay balances pendientes.
 13. **Hora editable** en gastos/ingresos (`TimePicker` propio, BottomSheet de 2 columnas 24h) junto al chip de fecha en `AddTransaction`.
 14. **Íconos y colores ampliados:** `ACCOUNT_ICONS` (25) y `CATEGORY_ICONS` (60) en `Icon.tsx`, `PALETTE` (24) en `theme/index.ts` (los 12 originales primero). Selectores en grilla (`flexWrap`). `components/AccountChips.tsx` = selector inline de cuenta para BottomSheets.
@@ -1223,6 +1250,45 @@ pnpm start          # Expo dev server (SDK 54 / Expo Go)
 pnpm typecheck      # tsc --noEmit
 pnpm build:apk      # eas build -p android --profile preview
 ```
+
+---
+
+## CORRECCIONES TARJETAS / DEUDAS (rama `Prestamo-Correcciones`, jun 2026)
+
+> Lote de 6 correcciones sobre tarjetas de crédito, deudas y cuotas. Migración **`0015_clammy_blindfold.sql`**
+> (aditiva, solo `ADD COLUMN` nullable en `debts`). Util nuevo `server/src/utils/installments.ts` (+ espejo
+> `mobile/src/utils/installments.ts`). 5 commits detallados en la rama.
+
+- **C1 — No ingresos en tarjetas de crédito.** `POST`/`PUT /api/transactions` con `type='income'` y cuenta
+  `credit_card` → 400; en mobile la pestaña "Ingreso" se oculta y se fuerza "Gasto" al elegir una tarjeta.
+- **C2 — Cupo de tarjeta (descartada).** Confirmado con el usuario: el cupo disponible se repone **de inmediato**
+  al pagar la deuda (deuda 300K, pago 200K → vuelven 200K al disponible). Ya era el comportamiento; sin cambios.
+- **C3 — No abonar deudas con tarjeta.** `POST /api/debts/:id/pay` rechaza `accountId` de tipo `credit_card`
+  (400); en mobile el `AccountChips` del sheet de pago excluye las tarjetas y el FAB no las preselecciona.
+- **C4 — Cuotas con interés (crédito + mora), calculadas.** Columnas nuevas en `debts` (`installments`,
+  `installment_amount`, `monthly_interest_rate`, `late_interest_rate`). Cuota por **amortización francesa**
+  (`frenchInstallment`, interés **mensual** sobre saldo). Las compras a cuotas con tarjeta envían las tasas en
+  `POST/PUT /api/transactions` y se guardan en la deuda automática. UI: toggle "¿A cuotas / crédito?" en `AddDebt`
+  y campos de tasa en la caja de cuotas de `AddTransaction`, con preview en vivo.
+- **C5 — Prellenar la cuota al pagar.** `GET /api/debts` y `/:id` devuelven `isOverdue`/`lateFee`/`nextPaymentAmount`
+  (`computeDueInfo`: cuota + mora·meses vencidos, topado al restante). `DebtDetail` prellena la calculadora del pago
+  con `nextPaymentAmount` y muestra la cuota (+ mora si vencida).
+- **C6 — Fecha de corte + fecha límite de pago.** Columna `cutoff_date` en `debts`; `due_date` se reetiqueta como
+  "fecha límite de pago". `AddDebt` tiene ambos selectores; `DebtDetail` los muestra en la metaRow.
+
+> **Validación:** `pnpm typecheck` limpio en server y mobile; migración solo `ADD COLUMN` (count `debts`=7 intacto);
+> amortización verificada (500k/10=50k; 1M/10@2%=111 326,53; mora 100k@3%×2 meses → próximo pago 106 000).
+
+### PENDIENTE — Próxima rama (funciones nuevas, derivar de `Prestamo-Correcciones`)
+> Acordado con el usuario: implementar en una rama nueva creada a partir de esta, con commits detallados + push.
+1. **Cuota de manejo por cuenta.** Cada cuenta puede definir una cuota de manejo (monto + día/periodicidad de cobro)
+   y registrarla automáticamente. Requiere columnas en `accounts` + generación automática (ver punto 2).
+2. **Pagos automáticos por fecha.** Cargos recurrentes con cuenta, monto, categoría, etiquetas y demás propiedades de
+   un registro normal. Ejecución decidida: **cron en el servidor + catch-up al abrir la app** (Render free puede dormir).
+   Necesita tabla nueva (reglas recurrentes) + materialización idempotente (no duplicar cargos ya generados).
+3. **Desactivar cuentas y congelar tarjetas.** Toggle para desactivar una cuenta y para **congelar** una tarjeta de
+   crédito (bloquea nuevos gastos sin borrarla). Probablemente un flag `is_frozen`/estado en `accounts` + validación
+   en `POST /api/transactions`.
 
 ---
 
