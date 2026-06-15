@@ -78,6 +78,17 @@ export const accounts = pgTable('accounts', {
   paymentDueDay: integer('payment_due_day'),
   // Si es true, se permite gastar por encima del crédito disponible (sin 400).
   allowOverdraft: boolean('allow_overdraft').default(false).notNull(),
+  // ── Cuota de manejo (caso especial de regla recurrente; nullable) ──
+  // Monto de la cuota de manejo. null = sin cuota.
+  managementFeeAmount: decimal('management_fee_amount', { precision: 15, scale: 2 }),
+  // Día del mes (1-28) en que se cobra la cuota de manejo.
+  managementFeeDay: integer('management_fee_day'),
+  // Regla recurrente vinculada que materializa la cuota de manejo. SET NULL si
+  // la regla se elimina.
+  managementFeeRuleId: integer('management_fee_rule_id').references(
+    (): AnyPgColumn => recurringRules.id,
+    { onDelete: 'set null' },
+  ),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => ({

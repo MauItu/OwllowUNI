@@ -49,6 +49,13 @@ export function AddAccountScreen() {
   const [showBillingDay, setShowBillingDay] = useState(false);
   const [showPaymentDay, setShowPaymentDay] = useState(false);
 
+  // Cuota de manejo (cualquier tipo de cuenta)
+  const [feeEnabled, setFeeEnabled] = useState(false);
+  const [feeAmount, setFeeAmount] = useState(0);
+  const [feeDay, setFeeDay] = useState(1);
+  const [showFeeAmount, setShowFeeAmount] = useState(false);
+  const [showFeeDay, setShowFeeDay] = useState(false);
+
   useEffect(() => {
     if (!editingId) return;
     (async () => {
@@ -75,6 +82,11 @@ export function AddAccountScreen() {
           setPaymentDueDay(a.paymentDueDay ?? 20);
           setAllowOverdraft(a.allowOverdraft ?? false);
         }
+        if (a.managementFeeAmount != null) {
+          setFeeEnabled(true);
+          setFeeAmount(Number(a.managementFeeAmount));
+          setFeeDay(a.managementFeeDay ?? 1);
+        }
       } catch (err) {
         showError(getErrorMessage(err));
       }
@@ -88,6 +100,10 @@ export function AddAccountScreen() {
     }
     if (type === 'credit_card' && creditLimit <= 0) {
       showError('Ingresa un límite de crédito mayor a 0');
+      return;
+    }
+    if (feeEnabled && feeAmount <= 0) {
+      showError('Ingresa el monto de la cuota de manejo');
       return;
     }
     const balanceNum = parseFloat(balance) || 0;
@@ -108,6 +124,9 @@ export function AddAccountScreen() {
         paymentDueDay,
         allowOverdraft,
       }),
+      // Cuota de manejo: se envía siempre (null desactiva la regla vinculada al editar).
+      managementFeeAmount: feeEnabled && feeAmount > 0 ? feeAmount : null,
+      managementFeeDay: feeEnabled && feeAmount > 0 ? feeDay : null,
     };
     try {
       setSaving(true);
@@ -232,6 +251,36 @@ export function AddAccountScreen() {
           onPress={() => setShowCurrency(true)}
         />
 
+        {/* Cuota de manejo (cualquier tipo de cuenta) */}
+        <View style={styles.switchRow}>
+          <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
+            <Text style={styles.switchTitle}>Cuota de manejo</Text>
+            <Text style={styles.switchHint}>Cobra automáticamente una cuota mensual desde esta cuenta.</Text>
+          </View>
+          <Switch
+            value={feeEnabled}
+            onValueChange={setFeeEnabled}
+            trackColor={{ true: color, false: theme.colors.border }}
+            thumbColor="#FFFFFF"
+          />
+        </View>
+        {feeEnabled && (
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}>
+              <SelectRow
+                label="Monto de la cuota"
+                value={feeAmount > 0 ? formatCurrency(feeAmount, currency) : null}
+                placeholder="Monto"
+                icon="calculator"
+                onPress={() => setShowFeeAmount(true)}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <SelectRow label="Día de cobro" value={String(feeDay)} icon="calendar" onPress={() => setShowFeeDay(true)} />
+            </View>
+          </View>
+        )}
+
         <Text style={styles.label}>Color</Text>
         <View style={styles.palette}>
           {PALETTE.map((c) => (
@@ -287,6 +336,25 @@ export function AddAccountScreen() {
         value={paymentDueDay}
         onConfirm={setPaymentDueDay}
         onClose={() => setShowPaymentDay(false)}
+      />
+      <CalculatorSheet
+        visible={showFeeAmount}
+        title="Cuota de manejo"
+        type="expense"
+        initialValue={feeAmount}
+        currency={currency}
+        onConfirm={(v) => {
+          if (v > 0) setFeeAmount(v);
+          setShowFeeAmount(false);
+        }}
+        onClose={() => setShowFeeAmount(false)}
+      />
+      <DayPickerSheet
+        visible={showFeeDay}
+        title="Día de cobro"
+        value={feeDay}
+        onConfirm={setFeeDay}
+        onClose={() => setShowFeeDay(false)}
       />
     </Screen>
   );

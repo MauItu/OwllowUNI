@@ -77,6 +77,10 @@ export interface Account {
   paymentDueDay?: number;
   nextBillingDate?: string;
   nextPaymentDueDate?: string;
+  // Cuota de manejo (cualquier tipo de cuenta; null = sin cuota).
+  managementFeeAmount?: string | null;
+  managementFeeDay?: number | null;
+  managementFeeRuleId?: number | null;
 }
 
 export interface Category {
@@ -274,6 +278,9 @@ export interface AccountInput {
   billingCycleDay?: number;
   paymentDueDay?: number;
   allowOverdraft?: boolean;
+  // Cuota de manejo: enviar ambos para activarla; managementFeeAmount: null la desactiva.
+  managementFeeAmount?: number | null;
+  managementFeeDay?: number | null;
 }
 
 export interface CategoryInput {
