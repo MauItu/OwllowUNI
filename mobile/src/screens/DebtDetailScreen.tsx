@@ -184,7 +184,7 @@ export function DebtDetailScreen() {
 
           {/* FAB Registrar pago */}
           {!debt.isPaidOff && (
-            <Pressable style={[styles.fab, { backgroundColor: semanticColor, shadowColor: semanticColor, bottom: insets.bottom + theme.spacing.lg }]} onPress={() => { setPayAccountId(debt.accountId ?? null); setSheetOpen(true); }}>
+            <Pressable style={[styles.fab, { backgroundColor: semanticColor, shadowColor: semanticColor, bottom: insets.bottom + theme.spacing.lg }]} onPress={() => { setPayAccountId(accounts.find((a) => a.id === debt.accountId && a.type !== 'credit_card')?.id ?? null); setSheetOpen(true); }}>
               <Icon name="hand-coins" size={20} color="#FFFFFF" strokeWidth={2.4} />
               <Text style={styles.fabText}>{isDebt ? 'Registrar pago' : 'Registrar abono'}</Text>
             </Pressable>
@@ -202,7 +202,7 @@ export function DebtDetailScreen() {
             <Text style={styles.accountLabel}>
               {isDebt ? '¿De qué cuenta pagaste?' : '¿En qué cuenta te depositaron?'}
             </Text>
-            <AccountChips accounts={accounts} selectedId={payAccountId} onSelect={setPayAccountId} allowNone noneLabel="No registrar" />
+            <AccountChips accounts={accounts.filter((a) => a.type !== 'credit_card')} selectedId={payAccountId} onSelect={setPayAccountId} allowNone noneLabel="No registrar" />
             <Calculator type={isDebt ? 'expense' : 'income'} onConfirm={registerPayment} />
           </BottomSheet>
         </>

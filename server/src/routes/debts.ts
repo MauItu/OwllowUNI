@@ -36,13 +36,14 @@ function balanceUpdate(uid: number, accountId: number, delta: number) {
     .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
 }
 
-/** Verifica que una cuenta pertenezca al usuario (404 si no). */
-async function assertAccountOwned(uid: number, accountId: number): Promise<void> {
+/** Verifica que una cuenta pertenezca al usuario (404 si no) y devuelve su tipo. */
+async function assertAccountOwned(uid: number, accountId: number): Promise<{ type: string }> {
   const [acc] = await db
-    .select({ id: accounts.id })
+    .select({ id: accounts.id, type: accounts.type })
     .from(accounts)
     .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
   if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
+  return { type: acc.type };
 }
 
 const debtSchema = z.object({
@@ -340,7 +341,14 @@ debtsRouter.post(
       .where(and(eq(debts.id, id), eq(debts.userId, uid)));
     if (!debt) throw new ApiError(404, 'Deuda no encontrada');
     if (debt.isPaidOff) throw new ApiError(400, 'Esta deuda ya está saldada');
-    if (data.accountId != null) await assertAccountOwned(uid, data.accountId);
+    if (data.accountId != null) {
+      const payAcc = await assertAccountOwned(uid, data.accountId);
+      // Una tarjeta de crédito no puede usarse para abonar una deuda (no salen
+      // fondos de ella; pagar con tarjeta solo trasladaría la deuda).
+      if (payAcc.type === 'credit_card') {
+        throw new ApiError(400, 'No puedes pagar una deuda con una tarjeta de crédito');
+      }
+    }
 
     // Decremento CONDICIONAL del restante (elimina el TOCTOU: dos pagos concurrentes
     // que leyeran el mismo `remaining` pasarían ambos una validación en memoria y
