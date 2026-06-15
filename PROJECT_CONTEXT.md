@@ -219,17 +219,18 @@ mobile/
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Budgets, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense,
-    │                              RecurringRules, AddRecurringRule,
+    │                              RecurringRules, AddRecurringRule, More (tab "Más": menú de navegación),
     │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen, SetupPin, Search
-    │                              (More.tsx fue eliminado: el Sidebar lo reemplaza)
+    ├── utils/roles.ts          ← getUserRole(email): rol informativo por correo (Alpha Tester)
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
     │                              AccountPicker, CategoryPicker, DateRangePicker, BalanceSummary,
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
-    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, Sidebar, GlobalSearchBar,
+    │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, Sidebar (drawer de perfil),
+    │                              WelcomeOverlay (bienvenida épica al login), GlobalSearchBar,
     │                              AccountTypeFilter (filtro Todas/Débito/Crédito), PinDots, PinKeypad, PinModal,
     │                              ReceiptViewer, BottomSheet, DayPickerSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks (NavigationContainer con navigationRef)
-    ├── navigation/navigationRef.ts  ← createNavigationContainerRef: navegar desde fuera del árbol (Sidebar)
+    ├── navigation/navigationRef.ts  ← createNavigationContainerRef: navegar desde fuera del árbol (overlays/notificaciones)
     ├── theme/index.ts          ← lightTheme + darkTheme (colores, spacing, radius, fontSize)
     ├── theme/ThemeContext.tsx  ← ThemeProvider, useTheme(), useThemedStyles()
     ├── utils/                  ← formatCurrency (Intl + fallback manual), currencies (catálogo curado),
@@ -947,40 +948,45 @@ la app dibuja bajo las barras del sistema. El fix:
   usos dentro de `BottomSheet`/`CalculatorSheet`). Los FAB de pantallas apiladas (DebtDetail, SavingsDetail,
   SplitGroupDetail) suman `insets.bottom` a su `bottom`.
 
-**Navegación (bottom tabs, `CustomTabBar`):** SOLO 3 tabs esenciales — Inicio (house) · Agregar
+**Navegación (bottom tabs, `CustomTabBar`):** 5 tabs — Inicio (house) · **Cuentas** (wallet) · Agregar
 (botón central circular elevado -24, fondo primary, borde del color background) · Estadísticas
-(`bar-chart-3`). Tab activo en `primary`, inactivo en `textMuted`, labels `fontSize.xs`; cada slot es
-`flex:1` con contenido centrado (al ser 3, el FAB "Agregar" queda perfectamente centrado). El botón
-central abre el modal `AddTransaction` del root stack. `StatsScreen` es ahora un **tab** (carga diferida
-vía `lazyScreen`); su `ScreenHeader` no lleva botón "atrás".
-> **Cuentas ya NO es un tab: pasó al Sidebar.** `AccountsScreen` se registra como **screen del root
-> stack** (`Accounts: { selectAccountId? }`) y se abre desde el **Sidebar** ("Cuentas", sección Finanzas)
-> y desde los atajos del header de Home (icono wallet + card "Crédito disponible"); su header recuperó el
-> botón "atrás" (`onBack` → `goBack`).
-> **Transacciones y "Más" tampoco son tabs.** `TransactionsScreen` se registra como screen del root
-> stack (`Transactions: { accountId? }`) y se abre desde Home ("Últimas transacciones → Ver todas"). El
-> tab "Más" se reemplazó por el **Sidebar** (drawer lateral custom, ver abajo).
+(`bar-chart-3`) · **Más** (`layout-grid`). Tab activo en `primary`, inactivo en `textMuted`, labels
+`fontSize.xs`; cada slot es `flex:1` con contenido centrado (al ser 5 con el "Agregar" en el medio, el FAB
+queda perfectamente centrado). El botón central abre el modal `AddTransaction` del root stack. `StatsScreen`
+y `MoreScreen` son tabs con **carga diferida** (`lazyScreen`); su `ScreenHeader` no lleva botón "atrás".
+> **Tab "Cuentas" (`AccountsTab`).** Renderiza `AccountsScreen` como raíz del tab. Nombre interno distinto
+> del **screen `Accounts` del root stack** (`Accounts: { selectAccountId? }`), que se conserva para la
+> navegación profunda (atajos del header de Home: wallet + card "Crédito disponible", y otros screens). El
+> header de `AccountsScreen` muestra el botón "atrás" **solo si `navigation.canGoBack()`** → en el tab (raíz)
+> no aparece; al abrirse apilado desde el stack sí.
+> **Tab "Más" (`MoreScreen.tsx`).** Reúne el menú de navegación que antes vivía en el Sidebar, agrupado en
+> **Finanzas** (Cuentas, Categorías, Plantillas, Etiquetas, Metas de ahorro, Deudas, Presupuestos, Pagos
+> recurrentes, Gastos compartidos), **Análisis** (Insights, Tasas de cambio, Importar/Exportar) y
+> **Preferencias** (Moneda principal vía `CurrencyPicker`, Notificaciones, Seguridad, Apariencia). Cada fila
+> navega al screen del root stack. `TransactionsScreen` sigue siendo screen del root stack (se abre desde Home).
 
-> **Sidebar (drawer lateral custom — reemplaza el tab "Más").** `components/Sidebar.tsx`, **sin
-> `@react-navigation/drawer`** (evita deps nativas). Se abre con el **botón hamburguesa** (`Icon menu`)
-> en la esquina superior-izquierda del header de Home. Estado global en `stores/sidebarStore.ts`
-> (Zustand: `{ isOpen, open, close, toggle }`), así se abre desde el header de cualquier pantalla.
-> Se renderiza como **overlay en `App.tsx`** (sibling de `AppNavigator`, igual que `LockScreen`, solo
-> si `isAuthenticated`), por lo que vive FUERA del `NavigationContainer`: navega vía
-> `navigation/navigationRef.ts` (`createNavigationContainerRef` adjunto al container con `ref=`).
-> Animación **slide** con `Animated` nativo de RN (`translateX` de `-DRAWER_WIDTH` a 0, 300 ms, native
-> driver) + overlay semitransparente (`rgba(0,0,0,0.5)`, opacidad animada) que al tocarlo cierra; se
-> desmonta al terminar el cierre (no captura toques oculto). Ancho `min(80%, 320px)`. Contenido: perfil
-> (nombre + email de `useAuth`) arriba, luego las opciones que estaban en MoreScreen agrupadas con
-> separadores sutiles — **Finanzas** (Cuentas, Categorías, Plantillas, Etiquetas, Metas de ahorro,
-> Deudas, Gastos compartidos), **Análisis** (Insights, Tasas de cambio, Importar/Exportar, Moneda
-> principal vía `CurrencyPicker` — Estadísticas ya NO está aquí: vive en la barra inferior),
-> **Ajustes** (Notificaciones, Seguridad, Apariencia) y **Cerrar
-> sesión** (con `Alert.alert` de confirmación). Cada opción cierra el drawer y navega. Colores del theme
-> (`surface` de fondo). `MoreScreen.tsx` queda huérfano (ya no se referencia).
+> **Sidebar = drawer de PERFIL (`components/Sidebar.tsx`).** Tras mover el menú al tab "Más", el Sidebar dejó
+> de ser navegación y ahora muestra el **perfil del usuario**: avatar, nombre y correo (de `useAuth`), una
+> **insignia de rol** (ver abajo) cuando aplica, y el botón **Cerrar sesión** anclado al fondo (con
+> `Alert.alert` de confirmación). **Sin `@react-navigation/drawer`**; se abre con el **botón de perfil**
+> (`Icon circle-user`) en la esquina superior-izquierda del header de Home. Estado global en
+> `stores/sidebarStore.ts` (Zustand `{ isOpen, open, close, toggle }`). Se renderiza como **overlay en
+> `App.tsx`** (sibling de `AppNavigator`, solo si `isAuthenticated`), FUERA del `NavigationContainer`.
+> Animación **slide** con `Animated` nativo (`translateX` de `-DRAWER_WIDTH` a 0, 300 ms) + overlay
+> `rgba(0,0,0,0.5)` que al tocarlo cierra; se desmonta al terminar el cierre. Ancho `min(80%, 320px)`.
 
-**HomeScreen:** header con **botón hamburguesa** (abre el Sidebar) a la izquierda, saludo por hora
-("Buenos días/tardes/noches") + fecha al centro y atajo a Cuentas (wallet) a la derecha; `BalanceSummary`
+> **Roles especiales (`utils/roles.ts`).** `getUserRole(email)` mapea correos a un rol SOLO informativo
+> (no otorga permisos): `cymslucas4@gmail.com → 'Alpha Tester'`. Se usa en el drawer de perfil (insignia) y
+> para disparar la bienvenida.
+> **Bienvenida al login (`components/WelcomeOverlay.tsx`).** Overlay a pantalla completa que aparece UNA vez
+> tras un **login/registro** (en `useAuth.applySession`, NO en el cold-start que restaura sesión) cuando el
+> usuario tiene rol. Muestra "Bienvenido de vuelta / <rol>" en rojo épico (`#FF2D4B`) con ícono `sparkles` y
+> halo pulsante; entra con fade+escala, late ~1.6 s y se desvanece llamando `dismissWelcome` para seguir
+> usando la app. `useAuth` expone `welcome: { name, role } | null` y `dismissWelcome`; se renderiza en
+> `App.tsx` (overlay top-most, gated por `isAuthenticated && welcome`).
+
+**HomeScreen:** header con **botón de perfil** (`circle-user`, abre el drawer de perfil) a la izquierda,
+saludo por hora ("Buenos días/tardes/noches") + fecha al centro y atajos de búsqueda + Cuentas (wallet) a la derecha; `BalanceSummary`
 con **tres líneas de saldo** (modelo `0014`, de `/api/accounts/summary`): **"Saldo"** grande (= `debitTotal`, solo
 cuentas de débito) y, si el usuario tiene tarjetas, **"Crédito disponible"** (verde, = `creditAvailable`) y **"Dinero
 posible (saldo + crédito)"** (sutil, = `possibleMoney = debitTotal + creditAvailable`) — más las dos pills de
@@ -1116,7 +1122,7 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     `TransactionsScreen` y el trash de la edición); el archivo persistido solo se borra al confirmar el cambio al
     guardar. `TransactionCard` muestra un ícono `paperclip` si la transacción tiene recibo.
 
-21. **Presupuestos mensuales:** pantalla `BudgetsScreen` (accesible desde el **Sidebar** → "Presupuestos",
+21. **Presupuestos mensuales:** pantalla `BudgetsScreen` (accesible desde el tab **"Más"** → "Presupuestos",
     ícono `pie-chart`; registrada en `RootStack`, carga diferida) + hook `useBudgets` (mismo patrón que
     `useDebts`/`useSavings`: `{ budgets, summary, history, loading, refreshing, error, refetch }`) + `budgetsApi`
     en `api/client.ts`. La pantalla tiene **2 tabs**: "Presupuestos" (tarjeta de resumen con restante/presupuestado/
@@ -1210,7 +1216,7 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 
 27. **Pagos recurrentes, cuota de manejo y desactivar/congelar cuentas:** motor de cargos recurrentes idempotente
     (cron horario + catch-up al abrir la app), pantalla de gestión de reglas (`RecurringRulesScreen`/`AddRecurringRuleScreen`,
-    Sidebar → "Pagos recurrentes"); cuota de manejo por cuenta como regla recurrente especial (sección en `AddAccountScreen`);
+    tab "Más" → "Pagos recurrentes"); cuota de manejo por cuenta como regla recurrente especial (sección en `AddAccountScreen`);
     desactivar cuentas (fuera de selectores, visibles en lista con indicador) y congelar tarjetas (❄️, bloquea gastos, permite
     pagos de deuda). Detalle completo en la sección "PAGOS RECURRENTES, CUOTA DE MANEJO Y DESACTIVAR/CONGELAR".
 
@@ -1459,7 +1465,7 @@ pnpm build:apk      # eas build -p android --profile preview
 - **UI (Fase 3)**: `RecurringRulesScreen` (lista con frecuencia legible, cuenta, estado, próxima fecha; toggle pausar/activar y
   eliminar con aviso de que las tx generadas no se borran) + `AddRecurringRuleScreen` (crear/editar reutilizando
   AccountPicker/CategoryPicker/TagPicker/DayPickerSheet/DateRangePicker/CalculatorSheet; toggle gasto/ingreso oculto en tarjetas).
-  Entrada "Pagos recurrentes" en el Sidebar (Finanzas).
+  Entrada "Pagos recurrentes" en el tab "Más" (Finanzas).
 
 ### Cuota de manejo por cuenta (Fase 4)
 - Caso ESPECIAL de regla recurrente. Activar (`managementFeeAmount>0` + `managementFeeDay` en POST/PUT account) crea/actualiza
