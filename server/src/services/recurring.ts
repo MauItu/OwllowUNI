@@ -184,11 +184,32 @@ async function materializeRule(uid: number, rule: RecurringRule, today: string):
 }
 
 /**
+ * Lock por usuario EN PROCESO. El cursor `last_generated_date` garantiza
+ * idempotencia entre llamadas SECUENCIALES, pero no entre CONCURRENTES sobre la
+ * misma regla (dos corridas leerían el mismo cursor y ambas insertarían las mismas
+ * ocurrencias). El cron horario y el catch-up del mobile corren en el MISMO proceso
+ * Express (la app ya asume un único proceso, igual que la caché en memoria), así que
+ * un lock en proceso por usuario los serializa: si ya hay una materialización en
+ * curso para el usuario, la segunda llamada no hace nada (devuelve 0).
+ */
+const inFlight = new Set<number>();
+
+/**
  * Materializa TODOS los cargos recurrentes pendientes de un usuario. Idempotente:
- * llamarla N veces produce el mismo resultado (el cursor por regla evita duplicar).
- * Devuelve el total de transacciones generadas.
+ * llamarla N veces produce el mismo resultado (el cursor por regla evita duplicar y
+ * el lock en proceso evita duplicación por concurrencia). Devuelve el total generado.
  */
 export async function materializeRecurringCharges(uid: number): Promise<number> {
+  if (inFlight.has(uid)) return 0;
+  inFlight.add(uid);
+  try {
+    return await materializeUser(uid);
+  } finally {
+    inFlight.delete(uid);
+  }
+}
+
+async function materializeUser(uid: number): Promise<number> {
   const today = ymd(new Date());
   const rules = await db
     .select()

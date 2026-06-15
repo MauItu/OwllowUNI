@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { authApi, setAuthToken, setUnauthorizedHandler } from '../api/client';
+import { authApi, recurringApi, setAuthToken, setUnauthorizedHandler } from '../api/client';
 import { saveToken, getToken, removeToken } from '../services/auth';
 import { loadSettingsForUser } from '../stores/settingsStore';
 import { useAppStore } from '../stores/appStore';
@@ -129,6 +129,29 @@ function useProvideAuth(): AuthValue {
     });
     return () => setUnauthorizedHandler(null);
   }, []);
+
+  // Al quedar autenticado (login/registro o restauración en cold-start), dispara
+  // UNA vez el catch-up de pagos recurrentes en BACKGROUND (Render free puede haber
+  // dormido y el cron no corrió). Sin UI bloqueante y silenciando errores: si falla
+  // se reintenta al próximo arranque o en el cron horario. Si generó cargos, refresca
+  // las pantallas para que aparezcan.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    recurringApi
+      .catchUp()
+      .then((res) => {
+        if (active && res.generatedCount > 0) useAppStore.getState().triggerRefresh();
+      })
+      .catch((err) => {
+        // Background, sin UI: el cron horario del server es la red de seguridad.
+        // En dev dejamos rastro para no perder de vista errores reales en QA.
+        if (__DEV__) console.warn('[recurring] catch-up falló (silenciado):', err?.message ?? err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   return {
     user,

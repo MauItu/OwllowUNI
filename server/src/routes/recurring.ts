@@ -14,8 +14,26 @@ import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { nextOccurrence, parseYmd, ymd, type Frequency } from '../utils/recurrence.js';
+import { materializeRecurringCharges } from '../services/recurring.js';
 
 export const recurringRouter = Router();
+
+/**
+ * Router de acciones recurrentes (montado en /api/recurring). Separado de
+ * /api/recurring-rules porque opera sobre el motor, no sobre el CRUD de reglas.
+ */
+export const recurringActionsRouter = Router();
+
+// POST /api/recurring/catch-up — materializa los cargos pendientes del usuario.
+// Lo llama el mobile UNA vez al abrir la app (Render free puede dormir y el cron
+// no corrió). Idempotente: si no hay nada pendiente devuelve generatedCount: 0.
+recurringActionsRouter.post(
+  '/catch-up',
+  asyncHandler(async (req, res) => {
+    const generatedCount = await materializeRecurringCharges(userId(req));
+    res.json({ generatedCount });
+  }),
+);
 
 const FREQUENCIES = ['daily', 'weekly', 'biweekly', 'monthly', 'yearly'] as const;
 

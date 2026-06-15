@@ -20,7 +20,9 @@ import { budgetsRouter } from './routes/budgets.js';
 import { splitsRouter } from './routes/splits.js';
 import { insightsRouter } from './routes/insights.js';
 import { ratesRouter } from './routes/rates.js';
-import { recurringRouter } from './routes/recurring.js';
+import { recurringRouter, recurringActionsRouter } from './routes/recurring.js';
+import { materializeRecurringCharges, usersWithActiveRules } from './services/recurring.js';
+import cron from 'node-cron';
 import { authRouter } from './routes/auth.js';
 import { passwordResetRouter } from './routes/password-reset.js';
 import { authenticate } from './middleware/auth.js';
@@ -98,6 +100,7 @@ app.use('/api/splits', authenticate, invalidateOnMutation, splitsRouter);
 app.use('/api/insights', authenticate, cacheResponse(INSIGHTS_TTL_MS), insightsRouter);
 app.use('/api/rates', authenticate, invalidateOnMutation, ratesRouter);
 app.use('/api/recurring-rules', authenticate, invalidateOnMutation, recurringRouter);
+app.use('/api/recurring', authenticate, invalidateOnMutation, recurringActionsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
@@ -105,6 +108,36 @@ app.use(errorHandler);
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 API escuchando en http://localhost:${PORT}`);
 });
+
+// ── Cron de pagos recurrentes ──
+// Corre cada hora (Render free duerme: al despertar retoma; el mobile también
+// dispara catch-up al abrir). Materializa por usuario en try/catch aislado para
+// que el fallo de uno no aborte a los demás. La materialización es idempotente
+// (cursor last_generated_date), así que correrla de más no duplica cargos.
+// `noOverlap: true`: si una corrida tarda > 1h (backfill largo tras dormir),
+// la siguiente NO arranca en paralelo (además del lock por usuario del servicio).
+const recurringTask = cron.schedule(
+  '0 * * * *',
+  async () => {
+    try {
+      const users = await usersWithActiveRules();
+      let total = 0;
+      for (const uid of users) {
+        try {
+          total += await materializeRecurringCharges(uid);
+        } catch (err) {
+          console.error(`[recurring] materialización falló para el usuario ${uid}:`, err);
+        }
+      }
+      console.log(
+        `[recurring] ${new Date().toISOString()} — ${total} transacción(es) generada(s) para ${users.length} usuario(s) con reglas activas`,
+      );
+    } catch (err) {
+      console.error('[recurring] el job de cron falló:', err);
+    }
+  },
+  { noOverlap: true },
+);
 
 // ── Graceful shutdown ──
 // Ante SIGTERM/SIGINT (deploy en Render, Ctrl-C): dejar de aceptar conexiones
@@ -115,6 +148,9 @@ function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`Recibido ${signal}: cerrando servidor (drenando requests en vuelo)…`);
+  // Detener el cron para no arrancar una materialización nueva mientras se drena
+  // (no aborta una en curso; reduce la ventana de cortar una saga a la mitad).
+  recurringTask.stop();
   server.close(() => {
     console.log('Servidor cerrado limpiamente');
     process.exit(0);

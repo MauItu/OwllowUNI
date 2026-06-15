@@ -316,6 +316,15 @@ export const insightsApi = {
   list: () => api.get<Insight[]>('/insights').then((r) => r.data),
 };
 
+// ────────────────────── Pagos recurrentes ───────────────────
+export const recurringApi = {
+  // Materializa los cargos recurrentes pendientes del usuario (idempotente).
+  // Se llama una vez al abrir la app, en background; el CRUD de reglas se agrega
+  // en la pantalla de gestión.
+  catchUp: () =>
+    api.post<{ generatedCount: number }>('/recurring/catch-up').then((r) => r.data),
+};
+
 // ─────────────────────────── Stats ──────────────────────────
 export const statsApi = {
   summary: (from: string, to: string, displayCurrency = 'COP') =>
