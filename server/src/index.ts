@@ -20,6 +20,7 @@ import { budgetsRouter } from './routes/budgets.js';
 import { splitsRouter } from './routes/splits.js';
 import { insightsRouter } from './routes/insights.js';
 import { ratesRouter } from './routes/rates.js';
+import { recurringRouter } from './routes/recurring.js';
 import { authRouter } from './routes/auth.js';
 import { passwordResetRouter } from './routes/password-reset.js';
 import { authenticate } from './middleware/auth.js';
@@ -96,6 +97,7 @@ app.use('/api/budgets', authenticate, invalidateOnMutation, budgetsRouter);
 app.use('/api/splits', authenticate, invalidateOnMutation, splitsRouter);
 app.use('/api/insights', authenticate, cacheResponse(INSIGHTS_TTL_MS), insightsRouter);
 app.use('/api/rates', authenticate, invalidateOnMutation, ratesRouter);
+app.use('/api/recurring-rules', authenticate, invalidateOnMutation, recurringRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

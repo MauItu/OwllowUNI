@@ -11,6 +11,7 @@ import { PAGINATION_DEFAULT_LIMIT, PAGINATION_MAX_LIMIT, IMPORT_BATCH_SIZE } fro
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
 import { frenchInstallment } from '../utils/installments.js';
+import { balanceStatements } from '../utils/balance.js';
 
 /** yyyy-MM-dd de una fecha local. */
 function ymd(d: Date): string {
@@ -122,54 +123,6 @@ async function tagsByTransaction(txIds: number[]) {
     map.get(r.transactionId)!.push({ id: r.id, name: r.name, color: r.color, icon: r.icon });
   }
   return map;
-}
-
-/**
- * Genera los UPDATE de balance para una transacción.
- * sign = 1 aplica el efecto, sign = -1 lo revierte.
- */
-function balanceStatements(
-  uid: number,
-  type: string,
-  amount: number,
-  accountId: number,
-  toAccountId: number | null | undefined,
-  sign: 1 | -1,
-  toAmount?: number | null,
-) {
-  const stmts = [];
-  // Efecto sobre la cuenta origen
-  let fromDelta = 0;
-  if (type === 'income') fromDelta = amount;
-  else if (type === 'expense') fromDelta = -amount;
-  else if (type === 'transfer') fromDelta = -amount;
-  fromDelta *= sign;
-
-  stmts.push(
-    db
-      .update(accounts)
-      .set({
-        currentBalance: sql`${accounts.currentBalance} + ${fromDelta.toFixed(2)}::numeric`,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid))),
-  );
-
-  // Cuenta destino (solo transferencias). Se mueve en SU propia moneda: usa
-  // `toAmount` cuando la transferencia cruza monedas (si no, el mismo `amount`).
-  if (type === 'transfer' && toAccountId) {
-    const toDelta = (toAmount != null ? toAmount : amount) * sign;
-    stmts.push(
-      db
-        .update(accounts)
-        .set({
-          currentBalance: sql`${accounts.currentBalance} + ${toDelta.toFixed(2)}::numeric`,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(accounts.id, toAccountId), eq(accounts.userId, uid))),
-    );
-  }
-  return stmts;
 }
 
 /** Verifica que las cuentas referenciadas pertenezcan al usuario (404 si no). */

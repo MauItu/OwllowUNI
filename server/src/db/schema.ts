@@ -105,6 +105,39 @@ export const categories = pgTable('categories', {
   parentIdx: index('categories_parent_id_idx').on(t.parentId),
 }));
 
+// ───────────────────────── recurring_rules ──────────────────────────
+// Reglas de pagos/ingresos recurrentes. La materialización (worker con
+// node-cron) crea transacciones a partir de estas reglas de forma IDEMPOTENTE,
+// usando `last_generated_date` como cursor. La cuota de manejo de tarjetas es
+// un caso especial de regla recurrente (no un sistema aparte).
+export const recurringRules = pgTable('recurring_rules', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull(),
+  accountId: integer('account_id')
+    .references(() => accounts.id)
+    .notNull(),
+  type: varchar('type', { length: 10 }).notNull(), // expense | income
+  amount: decimal('amount', { precision: 15, scale: 2 }).notNull(),
+  description: varchar('description', { length: 255 }),
+  categoryId: integer('category_id').references(() => categories.id),
+  frequency: varchar('frequency', { length: 10 }).notNull(), // daily | weekly | biweekly | monthly | yearly
+  // Día del mes (1-31) para frequency='monthly'/'yearly'. Nullable.
+  dayOfMonth: integer('day_of_month'),
+  // Día de la semana (0-6, domingo=0) para frequency='weekly'/'biweekly'. Nullable.
+  dayOfWeek: integer('day_of_week'),
+  startDate: date('start_date').notNull(),
+  endDate: date('end_date'),
+  // Cursor de idempotencia: última fecha hasta la que se generaron transacciones.
+  lastGeneratedDate: date('last_generated_date').notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  userActiveIdx: index('recurring_rules_user_active_idx').on(t.userId, t.isActive),
+}));
+
 // ─────────────────────────── transactions ───────────────────────────
 export const transactions = pgTable('transactions', {
   id: serial('id').primaryKey(),
@@ -137,6 +170,12 @@ export const transactions = pgTable('transactions', {
   installmentAmount: decimal('installment_amount', { precision: 15, scale: 2 }),
   // Deuda generada automáticamente al gastar con tarjeta de crédito (1 por compra).
   debtId: integer('debt_id').references((): AnyPgColumn => debts.id),
+  // Regla recurrente que generó esta transacción (worker de materialización).
+  // NUNCA se borra este vínculo en los registros auto-generados; SET NULL si
+  // la regla se elimina (la transacción ya generada se conserva).
+  recurringRuleId: integer('recurring_rule_id').references(() => recurringRules.id, {
+    onDelete: 'set null',
+  }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => ({
@@ -149,6 +188,7 @@ export const transactions = pgTable('transactions', {
   toAccountIdx: index('transactions_to_account_id_idx').on(t.toAccountId),
   categoryIdx: index('transactions_category_id_idx').on(t.categoryId),
   debtIdx: index('transactions_debt_id_idx').on(t.debtId),
+  recurringRuleIdx: index('transactions_recurring_rule_id_idx').on(t.recurringRuleId),
 }));
 
 // ──────────────────────────── exchange_rates ────────────────────────
@@ -227,6 +267,26 @@ export const transactionTags = pgTable(
     // El unique ya cubre lookups por transaction_id (columna líder); falta tag_id
     // para el filtro EXISTS por tag y el conteo en GET /tags.
     tagIdx: index('transaction_tags_tag_id_idx').on(t.tagId),
+  }),
+);
+
+// ──────────────────────── recurring_rule_tags ───────────────────────
+export const recurringRuleTags = pgTable(
+  'recurring_rule_tags',
+  {
+    id: serial('id').primaryKey(),
+    ruleId: integer('rule_id')
+      .references(() => recurringRules.id, { onDelete: 'cascade' })
+      .notNull(),
+    tagId: integer('tag_id')
+      .references(() => tags.id, { onDelete: 'cascade' })
+      .notNull(),
+  },
+  (t) => ({
+    uniqueRuleTag: unique().on(t.ruleId, t.tagId),
+    // El unique ya cubre lookups por rule_id (columna líder); falta tag_id
+    // para el filtro EXISTS por tag y el conteo en GET /tags.
+    tagIdx: index('recurring_rule_tags_tag_id_idx').on(t.tagId),
   }),
 );
 
@@ -579,6 +639,7 @@ export const creditCardStatementsRelations = relations(creditCardStatements, ({ 
 
 export const tagsRelations = relations(tags, ({ many }) => ({
   transactionTags: many(transactionTags),
+  recurringRuleTags: many(recurringRuleTags),
 }));
 
 export const transactionTagsRelations = relations(transactionTags, ({ one }) => ({
@@ -588,6 +649,30 @@ export const transactionTagsRelations = relations(transactionTags, ({ one }) => 
   }),
   tag: one(tags, {
     fields: [transactionTags.tagId],
+    references: [tags.id],
+  }),
+}));
+
+export const recurringRulesRelations = relations(recurringRules, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [recurringRules.accountId],
+    references: [accounts.id],
+  }),
+  category: one(categories, {
+    fields: [recurringRules.categoryId],
+    references: [categories.id],
+  }),
+  recurringRuleTags: many(recurringRuleTags),
+  transactions: many(transactions),
+}));
+
+export const recurringRuleTagsRelations = relations(recurringRuleTags, ({ one }) => ({
+  rule: one(recurringRules, {
+    fields: [recurringRuleTags.ruleId],
+    references: [recurringRules.id],
+  }),
+  tag: one(tags, {
+    fields: [recurringRuleTags.tagId],
     references: [tags.id],
   }),
 }));
@@ -609,6 +694,10 @@ export const transactionsRelations = relations(transactions, ({ one, many }) => 
   debt: one(debts, {
     fields: [transactions.debtId],
     references: [debts.id],
+  }),
+  recurringRule: one(recurringRules, {
+    fields: [transactions.recurringRuleId],
+    references: [recurringRules.id],
   }),
 }));
 
@@ -697,6 +786,10 @@ export type Category = typeof categories.$inferSelect;
 export type NewCategory = typeof categories.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
+export type RecurringRule = typeof recurringRules.$inferSelect;
+export type NewRecurringRule = typeof recurringRules.$inferInsert;
+export type RecurringRuleTag = typeof recurringRuleTags.$inferSelect;
+export type NewRecurringRuleTag = typeof recurringRuleTags.$inferInsert;
 export type Template = typeof templates.$inferSelect;
 export type NewTemplate = typeof templates.$inferInsert;
 export type Tag = typeof tags.$inferSelect;
