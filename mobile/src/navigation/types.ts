@@ -26,9 +26,9 @@ export type RootStackParamList = {
   Recurring: undefined;
   AddRecurring: { ruleId?: number } | undefined;
   Splits: undefined;
-  AddSplitGroup: undefined;
+  AddSplitGroup: { groupId?: number } | undefined;
   SplitGroupDetail: { groupId: number };
-  AddSplitExpense: { groupId: number };
+  AddSplitExpense: { groupId: number; expenseId?: number };
   // Transactions ya no es un tab: se accede como screen del stack desde Home.
   Transactions: { accountId?: number; search?: string } | undefined;
   Search: undefined;
