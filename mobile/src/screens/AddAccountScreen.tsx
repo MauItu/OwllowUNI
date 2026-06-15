@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, Switch, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Switch, StyleSheet, Alert } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { PALETTE, type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -10,7 +10,7 @@ import { CalculatorSheet } from '../components/CalculatorSheet';
 import { DayPickerSheet } from '../components/DayPickerSheet';
 import { currencyInfo } from '../utils/currencies';
 import { formatCurrency } from '../utils/formatCurrency';
-import { accountsApi, getErrorMessage } from '../api/client';
+import { accountsApi, recurringApi, getErrorMessage } from '../api/client';
 import { showError, showSuccess } from '../components/toastConfig';
 import { useAppStore } from '../stores/appStore';
 import type { RootStackParamList } from '../navigation/types';
@@ -56,6 +56,10 @@ export function AddAccountScreen() {
   const [showFeeAmount, setShowFeeAmount] = useState(false);
   const [showFeeDay, setShowFeeDay] = useState(false);
 
+  // Estado de la cuenta (solo edición): activa/inactiva y congelada (tarjetas).
+  const [isActive, setIsActive] = useState(true);
+  const [isFrozen, setIsFrozen] = useState(false);
+
   useEffect(() => {
     if (!editingId) return;
     (async () => {
@@ -87,6 +91,8 @@ export function AddAccountScreen() {
           setFeeAmount(Number(a.managementFeeAmount));
           setFeeDay(a.managementFeeDay ?? 1);
         }
+        setIsActive(a.isActive);
+        setIsFrozen(a.isFrozen);
       } catch (err) {
         showError(getErrorMessage(err));
       }
@@ -153,6 +159,61 @@ export function AddAccountScreen() {
       triggerRefresh();
       showSuccess('Cuenta eliminada');
       navigation.goBack();
+    } catch (err) {
+      showError(getErrorMessage(err));
+    }
+  };
+
+  // Desactivar/reactivar la cuenta (acción inmediata). Al desactivar, si hay reglas
+  // recurrentes activas asociadas, ofrece pausarlas también.
+  const toggleActive = async () => {
+    if (!editingId) return;
+    const applyToggle = async (pauseRules: number[]) => {
+      try {
+        await Promise.all(pauseRules.map((rid) => recurringApi.toggle(rid)));
+        const updated = await accountsApi.toggleActive(editingId);
+        setIsActive(updated.isActive);
+        triggerRefresh();
+        showSuccess(updated.isActive ? 'Cuenta reactivada' : 'Cuenta desactivada');
+      } catch (err) {
+        showError(getErrorMessage(err));
+      }
+    };
+    if (isActive) {
+      // Desactivando: ¿tiene reglas recurrentes activas?
+      let activeRuleIds: number[] = [];
+      try {
+        const rules = await recurringApi.list();
+        activeRuleIds = rules.filter((r) => r.accountId === editingId && r.isActive).map((r) => r.id);
+      } catch {
+        // Si falla la consulta de reglas, igual permite desactivar la cuenta.
+      }
+      if (activeRuleIds.length > 0) {
+        Alert.alert(
+          'Desactivar cuenta',
+          `Esta cuenta tiene ${activeRuleIds.length} pago(s) recurrente(s) activo(s). ¿Quieres pausarlos también?`,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Solo desactivar', onPress: () => applyToggle([]) },
+            { text: 'Desactivar y pausar', onPress: () => applyToggle(activeRuleIds) },
+          ],
+        );
+      } else {
+        applyToggle([]);
+      }
+    } else {
+      applyToggle([]);
+    }
+  };
+
+  // Congelar/descongelar la tarjeta (solo credit_card).
+  const toggleFrozen = async () => {
+    if (!editingId) return;
+    try {
+      const updated = await accountsApi.toggleFrozen(editingId);
+      setIsFrozen(updated.isFrozen);
+      triggerRefresh();
+      showSuccess(updated.isFrozen ? 'Tarjeta congelada' : 'Tarjeta descongelada');
     } catch (err) {
       showError(getErrorMessage(err));
     }
@@ -279,6 +340,40 @@ export function AddAccountScreen() {
               <SelectRow label="Día de cobro" value={String(feeDay)} icon="calendar" onPress={() => setShowFeeDay(true)} />
             </View>
           </View>
+        )}
+
+        {/* Estado de la cuenta (solo al editar): activa/inactiva y congelar tarjeta */}
+        {editingId && (
+          <>
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
+                <Text style={styles.switchTitle}>Cuenta activa</Text>
+                <Text style={styles.switchHint}>
+                  Desactivada no aparece en los selectores, pero sí en la lista, el historial y los reportes.
+                </Text>
+              </View>
+              <Switch
+                value={isActive}
+                onValueChange={toggleActive}
+                trackColor={{ true: theme.colors.income, false: theme.colors.border }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+            {type === 'credit_card' && (
+              <View style={styles.switchRow}>
+                <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
+                  <Text style={styles.switchTitle}>❄️ Congelar tarjeta</Text>
+                  <Text style={styles.switchHint}>Bloquea gastos nuevos; permite seguir pagando la deuda existente.</Text>
+                </View>
+                <Switch
+                  value={isFrozen}
+                  onValueChange={toggleFrozen}
+                  trackColor={{ true: theme.colors.secondary, false: theme.colors.border }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            )}
+          </>
         )}
 
         <Text style={styles.label}>Color</Text>

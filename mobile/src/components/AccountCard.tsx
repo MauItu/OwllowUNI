@@ -33,17 +33,30 @@ function AccountCardComponent({ account, onPress }: { account: Account; onPress?
     return (
       <Pressable
         onPress={() => onPress?.(account)}
-        style={({ pressed }) => [styles.card, styles.creditCard, { borderLeftColor: account.color }, pressed && { backgroundColor: theme.colors.surfaceLight }]}
+        style={({ pressed }) => [
+          styles.card,
+          styles.creditCard,
+          { borderLeftColor: account.color },
+          !account.isActive && styles.inactive,
+          pressed && { backgroundColor: theme.colors.surfaceLight },
+        ]}
       >
         <View style={styles.creditHeader}>
           <View style={[styles.iconWrap, { backgroundColor: `${account.color}26` }]}>
             <Icon name="credit-card" size={22} color={account.color} />
           </View>
           <View style={styles.info}>
-            <Text style={styles.name} numberOfLines={1}>
-              {account.name}
+            <View style={styles.nameRow}>
+              {account.isFrozen && <Icon name="snowflake" size={14} color={theme.colors.secondary} />}
+              <Text style={styles.name} numberOfLines={1}>
+                {account.name}
+              </Text>
+            </View>
+            <Text style={styles.type}>
+              {TYPE_LABEL.credit_card}
+              {account.isFrozen ? ' · Congelada' : ''}
+              {!account.isActive ? ' · Inactiva' : ''}
             </Text>
-            <Text style={styles.type}>{TYPE_LABEL.credit_card}</Text>
           </View>
         </View>
 
@@ -68,7 +81,12 @@ function AccountCardComponent({ account, onPress }: { account: Account; onPress?
   return (
     <Pressable
       onPress={() => onPress?.(account)}
-      style={({ pressed }) => [styles.card, { borderLeftColor: account.color }, pressed && { backgroundColor: theme.colors.surfaceLight }]}
+      style={({ pressed }) => [
+        styles.card,
+        { borderLeftColor: account.color },
+        !account.isActive && styles.inactive,
+        pressed && { backgroundColor: theme.colors.surfaceLight },
+      ]}
     >
       <View style={[styles.iconWrap, { backgroundColor: `${account.color}26` }]}>
         <Icon name={account.icon} size={22} color={account.color} />
@@ -77,7 +95,10 @@ function AccountCardComponent({ account, onPress }: { account: Account; onPress?
         <Text style={styles.name} numberOfLines={1}>
           {account.name}
         </Text>
-        <Text style={styles.type}>{TYPE_LABEL[account.type] ?? account.type}</Text>
+        <Text style={styles.type}>
+          {TYPE_LABEL[account.type] ?? account.type}
+          {!account.isActive ? ' · Inactiva' : ''}
+        </Text>
       </View>
       <Text style={[styles.balance, { color: balance < 0 ? theme.colors.expense : theme.colors.text }]} numberOfLines={1}>
         {formatCurrency(balance, account.currency)}
@@ -102,6 +123,8 @@ const createStyles = (theme: Theme) =>
   },
   iconWrap: { width: 48, height: 48, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
   info: { flex: 1 },
+  inactive: { opacity: 0.55 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   name: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
   type: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, marginTop: 2 },
   balance: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },

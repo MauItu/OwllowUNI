@@ -65,6 +65,8 @@ export interface Account {
   color: string;
   icon: string;
   isActive: boolean;
+  /** Tarjeta congelada: bloquea gastos nuevos, permite pagos de deuda. */
+  isFrozen: boolean;
   createdAt: string;
   updatedAt: string;
   // Solo presentes cuando type === 'credit_card' (GET /api/accounts los calcula)

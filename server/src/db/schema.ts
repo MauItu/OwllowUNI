@@ -69,6 +69,9 @@ export const accounts = pgTable('accounts', {
   color: varchar('color', { length: 7 }).default('#4F46E5').notNull(),
   icon: varchar('icon', { length: 50 }).default('wallet').notNull(),
   isActive: boolean('is_active').default(true).notNull(),
+  // Congela la tarjeta de crédito: bloquea gastos nuevos pero permite pagos de
+  // deuda. Distinto de `isActive` (desactivada no aparece en selectores).
+  isFrozen: boolean('is_frozen').default(false).notNull(),
   // ── Solo para tarjetas de crédito (type='credit_card'); nullable en el resto ──
   // Tope de crédito. null = no es tarjeta de crédito.
   creditLimit: decimal('credit_limit', { precision: 15, scale: 2 }),

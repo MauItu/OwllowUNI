@@ -152,12 +152,20 @@ export const authApi = {
 
 // ───────────────────────── Accounts ─────────────────────────
 export const accountsApi = {
-  list: () => api.get<Account[]>('/accounts').then((r) => r.data),
+  // includeInactive: true trae también las desactivadas (para la lista; los selectores
+  // usan list() normal = solo activas).
+  list: (includeInactive = false) =>
+    api
+      .get<Account[]>('/accounts', { params: { includeInactive: includeInactive || undefined } })
+      .then((r) => r.data),
   get: (id: number) => api.get<Account>(`/accounts/${id}`).then((r) => r.data),
   create: (data: AccountInput) => api.post<Account>('/accounts', data).then((r) => r.data),
   update: (id: number, data: Partial<AccountInput>) =>
     api.put<Account>(`/accounts/${id}`, data).then((r) => r.data),
   remove: (id: number) => api.delete(`/accounts/${id}`).then((r) => r.data),
+  // Desactiva/reactiva una cuenta (soft). Congela/descongela una tarjeta.
+  toggleActive: (id: number) => api.patch<Account>(`/accounts/${id}/toggle-active`).then((r) => r.data),
+  toggleFrozen: (id: number) => api.patch<Account>(`/accounts/${id}/toggle-frozen`).then((r) => r.data),
   summary: (displayCurrency: string, refresh = false) =>
     api
       .get<AccountsSummary>('/accounts/summary', { params: { displayCurrency, refresh: refresh || undefined } })

@@ -3,8 +3,12 @@ import { accountsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Account } from '../types';
 
-/** Hook de cuentas: fetch de cuentas activas + balance total, con loading/refetch. */
-export function useAccounts() {
+/**
+ * Hook de cuentas: fetch de cuentas + balance total, con loading/refetch.
+ * `includeInactive` (default false) trae también las desactivadas — usar SOLO en la
+ * pantalla de lista; los selectores deben usar `useAccounts()` (solo activas).
+ */
+export function useAccounts(includeInactive = false) {
   const [data, setData] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -16,7 +20,7 @@ export function useAccounts() {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
-      const rows = await accountsApi.list();
+      const rows = await accountsApi.list(includeInactive);
       setData(rows);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -24,7 +28,7 @@ export function useAccounts() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [includeInactive]);
 
   useEffect(() => {
     fetch();

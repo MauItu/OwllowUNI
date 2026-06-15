@@ -60,6 +60,7 @@ async function materializeRule(uid: number, rule: RecurringRule, today: string):
       color: accounts.color,
       paymentDueDay: accounts.paymentDueDay,
       isActive: accounts.isActive,
+      isFrozen: accounts.isFrozen,
     })
     .from(accounts)
     .where(and(eq(accounts.id, rule.accountId), eq(accounts.userId, uid)));
@@ -76,6 +77,10 @@ async function materializeRule(uid: number, rule: RecurringRule, today: string):
   // suma de las filas insertadas (evita drift de centavos en backfills largos).
   const perRow = Number(amountStr);
   const isCardExpense = rule.type === 'expense' && acc.type === 'credit_card';
+
+  // Tarjeta congelada: no se generan gastos nuevos (igual que POST /api/transactions).
+  // Se salta sin avanzar el cursor: los cargos se materializarán al descongelarla.
+  if (isCardExpense && acc.isFrozen) return 0;
 
   // Etiquetas de la regla (se copian a cada transacción generada).
   const tagRows = await db

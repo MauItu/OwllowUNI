@@ -207,14 +207,22 @@ function shapeAccount(row: Account) {
   };
 }
 
-// GET /api/accounts — cuentas activas
+// GET /api/accounts — cuentas activas. Con ?includeInactive=true devuelve también
+// las desactivadas (para la pantalla de lista, que las muestra con indicador). Los
+// selectores usan el GET normal (solo activas).
 accountsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
+    const includeInactive = req.query.includeInactive === 'true' || req.query.includeInactive === '1';
+    const where = includeInactive
+      ? eq(accounts.userId, userId(req))
+      : and(eq(accounts.userId, userId(req)), eq(accounts.isActive, true));
     const rows = await db
       .select()
       .from(accounts)
-      .where(and(eq(accounts.userId, userId(req)), eq(accounts.isActive, true)))
+      .where(where)
+      // Activas primero (las inactivas al final de la lista).
+      .orderBy(desc(accounts.isActive), accounts.id)
       // TODO: paginar con load-more en mobile
       .limit(200);
     res.json(rows.map(shapeAccount));
@@ -481,6 +489,48 @@ accountsRouter.delete(
       .returning();
     if (!row) throw new ApiError(404, 'Cuenta no encontrada');
     res.json({ success: true });
+  }),
+);
+
+// PATCH /api/accounts/:id/toggle-active — desactiva/reactiva una cuenta. Desactivada:
+// no aparece en selectores (GET sin includeInactive) pero sí en lista/historial/reportes.
+accountsRouter.patch(
+  '/:id/toggle-active',
+  asyncHandler(async (req, res) => {
+    const uid = userId(req);
+    const id = parseId(req.params.id);
+    const [row] = await db
+      .update(accounts)
+      .set({ isActive: sql`NOT ${accounts.isActive}`, updatedAt: new Date() })
+      .where(and(eq(accounts.id, id), eq(accounts.userId, uid)))
+      .returning();
+    if (!row) throw new ApiError(404, 'Cuenta no encontrada');
+    res.json(shapeAccount(row));
+  }),
+);
+
+// PATCH /api/accounts/:id/toggle-frozen — congela/descongela una tarjeta de crédito.
+// Congelada: bloquea gastos nuevos (POST /api/transactions), permite pagos de deuda.
+accountsRouter.patch(
+  '/:id/toggle-frozen',
+  asyncHandler(async (req, res) => {
+    const uid = userId(req);
+    const id = parseId(req.params.id);
+    const [acc] = await db
+      .select({ type: accounts.type })
+      .from(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.userId, uid)));
+    if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
+    if (acc.type !== 'credit_card') {
+      throw new ApiError(400, 'Solo se pueden congelar tarjetas de crédito');
+    }
+    const [row] = await db
+      .update(accounts)
+      .set({ isFrozen: sql`NOT ${accounts.isFrozen}`, updatedAt: new Date() })
+      .where(and(eq(accounts.id, id), eq(accounts.userId, uid)))
+      .returning();
+    if (!row) throw new ApiError(404, 'Cuenta no encontrada');
+    res.json(shapeAccount(row));
   }),
 );
 

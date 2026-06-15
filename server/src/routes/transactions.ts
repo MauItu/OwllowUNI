@@ -125,7 +125,13 @@ async function tagsByTransaction(txIds: number[]) {
   return map;
 }
 
-/** Verifica que las cuentas referenciadas pertenezcan al usuario (404 si no). */
+/**
+ * Verifica que las cuentas referenciadas pertenezcan al usuario (404 si no).
+ * NOTA de diseño (Fase 5): `is_active` significa "fuera de selectores", NO un bloqueo
+ * duro de operaciones. Una cuenta desactivada puede seguir recibiendo transacciones si
+ * el cliente ya tiene su id (p. ej. reglas recurrentes ya creadas), por eso aquí solo
+ * se valida la propiedad, no `is_active`. Congelar tarjeta SÍ bloquea gastos (ver POST).
+ */
 async function assertAccountsOwned(uid: number, ids: (number | null | undefined)[]): Promise<void> {
   const unique = [...new Set(ids.filter((id): id is number => id != null))];
   if (unique.length === 0) return;
@@ -515,6 +521,7 @@ transactionsRouter.post(
         paymentDueDay: accounts.paymentDueDay,
         currentBalance: accounts.currentBalance,
         allowOverdraft: accounts.allowOverdraft,
+        isFrozen: accounts.isFrozen,
       })
       .from(accounts)
       .where(and(eq(accounts.userId, uid), inArray(accounts.id, involvedIds)));
@@ -530,6 +537,11 @@ transactionsRouter.post(
     // ¿Gasto con tarjeta de crédito? Reduce el crédito disponible y genera una deuda
     // (1 por compra). NO afecta el saldo de débito del usuario.
     const isCardExpense = data.type === 'expense' && srcAcc?.type === 'credit_card';
+    // Tarjeta congelada: bloquea gastos nuevos (pero permite pagos de deuda, que son
+    // una transferencia HACIA la tarjeta, no un gasto con ella).
+    if (isCardExpense && srcAcc!.isFrozen) {
+      throw new ApiError(400, 'La tarjeta está congelada: no admite gastos nuevos');
+    }
     if (isCardExpense && !srcAcc!.allowOverdraft) {
       // current_balance ES el crédito disponible: no se puede gastar más que eso.
       if (Number(srcAcc!.currentBalance) < data.amount) {
@@ -673,13 +685,16 @@ transactionsRouter.put(
 
     // ¿La transacción editada sigue siendo un gasto con tarjeta de crédito?
     const [srcAcc] = await db
-      .select({ type: accounts.type })
+      .select({ type: accounts.type, isFrozen: accounts.isFrozen })
       .from(accounts)
       .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, uid)));
     if (data.type === 'income' && srcAcc?.type === 'credit_card') {
       throw new ApiError(400, 'No puedes registrar un ingreso en una tarjeta de crédito');
     }
     const newCardExpense = data.type === 'expense' && srcAcc?.type === 'credit_card';
+    if (newCardExpense && srcAcc?.isFrozen) {
+      throw new ApiError(400, 'La tarjeta está congelada: no admite gastos nuevos');
+    }
     const installments = newCardExpense && data.installments && data.installments > 1 ? data.installments : null;
     const monthlyRate = installments ? data.monthlyInterestRate ?? 0 : null;
     const installmentAmount = installments

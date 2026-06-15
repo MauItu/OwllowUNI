@@ -19,7 +19,9 @@ export function AccountsScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const { accounts, totalBalance, loading, refreshing, error, refetch } = useAccounts();
+  // includeInactive: la lista muestra también las desactivadas (con indicador en la
+  // card); los selectores de otras pantallas siguen usando useAccounts() (solo activas).
+  const { accounts, totalBalance, loading, refreshing, error, refetch } = useAccounts(true);
   const mainCurrency = useSettingsStore((s) => s.mainCurrency);
   const { summary, refetch: refetchSummary } = useAccountsSummary(mainCurrency);
 
