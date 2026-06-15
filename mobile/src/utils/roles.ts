@@ -5,6 +5,7 @@
  */
 const ROLE_BY_EMAIL: Record<string, string> = {
   'cymslucas4@gmail.com': 'Alpha Tester',
+  'test@gmail.com': 'Alpha Tester',
 };
 
 /** Devuelve el rol especial del usuario (o null si no tiene). */
