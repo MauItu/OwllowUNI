@@ -144,9 +144,15 @@ export function DebtDetailScreen() {
                     <Text style={styles.metaLabel}>Inicio</Text>
                     <Text style={styles.metaValue}>{formatShortDate(debt.startDate)}</Text>
                   </View>
+                  {debt.cutoffDate && (
+                    <View style={styles.metaItem}>
+                      <Text style={styles.metaLabel}>Corte</Text>
+                      <Text style={styles.metaValue}>{formatShortDate(debt.cutoffDate)}</Text>
+                    </View>
+                  )}
                   {debt.dueDate && (
                     <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>Vence</Text>
+                      <Text style={styles.metaLabel}>Límite de pago</Text>
                       <Text style={styles.metaValue}>{formatShortDate(debt.dueDate)}</Text>
                     </View>
                   )}

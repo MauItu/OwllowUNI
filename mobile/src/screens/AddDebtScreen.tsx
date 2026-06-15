@@ -38,6 +38,7 @@ export function AddDebtScreen() {
   const [totalAmount, setTotalAmount] = useState(0);
   const [interestRate, setInterestRate] = useState('');
   const [startDate, setStartDate] = useState(todayISO());
+  const [cutoffDate, setCutoffDate] = useState<string | null>(null);
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [accountId, setAccountId] = useState<number | null>(null);
   const [registerInitial, setRegisterInitial] = useState(false);
@@ -48,6 +49,7 @@ export function AddDebtScreen() {
 
   const [showAmount, setShowAmount] = useState(false);
   const [showStartDate, setShowStartDate] = useState(false);
+  const [showCutoffDate, setShowCutoffDate] = useState(false);
   const [showDueDate, setShowDueDate] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
 
@@ -63,6 +65,7 @@ export function AddDebtScreen() {
         setTotalAmount(Number(d.totalAmount));
         setInterestRate(d.interestRate != null ? String(Number(d.interestRate)) : '');
         setStartDate(d.startDate);
+        setCutoffDate(d.cutoffDate);
         setDueDate(d.dueDate);
         setAccountId(d.accountId);
         setColor(d.color);
@@ -99,6 +102,7 @@ export function AddDebtScreen() {
       interestRate: rate,
       creditorDebtor: creditorDebtor.trim() || null,
       startDate,
+      cutoffDate,
       dueDate,
       color,
       icon,
@@ -196,9 +200,24 @@ export function AddDebtScreen() {
         />
 
         <SelectRow
-          label="Fecha de vencimiento (opcional)"
+          label="Fecha de corte (opcional)"
+          value={cutoffDate ? formatShortDate(cutoffDate) : null}
+          placeholder="Sin fecha de corte"
+          icon="scissors"
+          iconColor={theme.colors.secondary}
+          onPress={() => setShowCutoffDate(true)}
+        />
+        {cutoffDate && (
+          <Pressable style={styles.clearRow} onPress={() => setCutoffDate(null)}>
+            <Icon name="x" size={14} color={theme.colors.expense} />
+            <Text style={styles.clearText}>Quitar fecha de corte</Text>
+          </Pressable>
+        )}
+
+        <SelectRow
+          label="Fecha límite de pago (opcional)"
           value={dueDate ? formatShortDate(dueDate) : null}
-          placeholder="Sin fecha de vencimiento"
+          placeholder="Sin fecha límite de pago"
           icon="calendar-clock"
           iconColor={theme.colors.accentLight}
           onPress={() => setShowDueDate(true)}
@@ -206,7 +225,7 @@ export function AddDebtScreen() {
         {dueDate && (
           <Pressable style={styles.clearRow} onPress={() => setDueDate(null)}>
             <Icon name="x" size={14} color={theme.colors.expense} />
-            <Text style={styles.clearText}>Quitar fecha de vencimiento</Text>
+            <Text style={styles.clearText}>Quitar fecha límite de pago</Text>
           </Pressable>
         )}
 
@@ -294,6 +313,15 @@ export function AddDebtScreen() {
           setShowStartDate(false);
         }}
         onClose={() => setShowStartDate(false)}
+      />
+      <DateRangePicker
+        visible={showCutoffDate}
+        initialFrom={cutoffDate ? parseISOSafe(cutoffDate) : undefined}
+        onConfirm={({ from }) => {
+          setCutoffDate(from);
+          setShowCutoffDate(false);
+        }}
+        onClose={() => setShowCutoffDate(false)}
       />
       <DateRangePicker
         visible={showDueDate}

@@ -365,6 +365,8 @@ export interface Debt {
   creditorDebtor: string | null;
   startDate: string;
   dueDate: string | null;
+  /** Fecha de corte (statement). */
+  cutoffDate: string | null;
   color: string;
   icon: string;
   isPaidOff: boolean;
@@ -400,6 +402,7 @@ export interface DebtInput {
   creditorDebtor?: string | null;
   startDate: string;
   dueDate?: string | null;
+  cutoffDate?: string | null;
   color?: string;
   icon?: string;
   notes?: string | null;

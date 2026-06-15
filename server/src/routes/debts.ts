@@ -58,6 +58,12 @@ const debtSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional()
     .nullable(),
+  // Fecha de corte (statement). Informativa, opcional.
+  cutoffDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
   color: z
     .string()
     .regex(/^#[0-9A-Fa-f]{6}$/)
@@ -93,6 +99,7 @@ debtsRouter.get(
         creditorDebtor: debts.creditorDebtor,
         startDate: debts.startDate,
         dueDate: debts.dueDate,
+        cutoffDate: debts.cutoffDate,
         color: debts.color,
         icon: debts.icon,
         isPaidOff: debts.isPaidOff,
@@ -195,6 +202,7 @@ debtsRouter.post(
         creditorDebtor: data.creditorDebtor ?? null,
         startDate: data.startDate,
         dueDate: data.dueDate ?? null,
+        cutoffDate: data.cutoffDate ?? null,
         ...(data.color && { color: data.color }),
         ...(data.icon && { icon: data.icon }),
         notes: data.notes ?? null,
@@ -262,6 +270,7 @@ debtsRouter.put(
         ...(data.creditorDebtor !== undefined && { creditorDebtor: data.creditorDebtor }),
         ...(data.startDate !== undefined && { startDate: data.startDate }),
         ...(data.dueDate !== undefined && { dueDate: data.dueDate }),
+        ...(data.cutoffDate !== undefined && { cutoffDate: data.cutoffDate }),
         ...(data.color !== undefined && { color: data.color }),
         ...(data.icon !== undefined && { icon: data.icon }),
         ...(data.notes !== undefined && { notes: data.notes }),
