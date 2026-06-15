@@ -88,6 +88,62 @@ const budgetSchema = z.object({
   amount: z.coerce.number().positive(),
 });
 
+/** Formato compacto para los mensajes de error (separador de miles es-CO). */
+function fmtMoney(n: number): string {
+  return `$${Math.round(n).toLocaleString('es-CO')}`;
+}
+
+/**
+ * Invariante: un presupuesto de CATEGORÍA nunca puede exceder al GLOBAL, ni la
+ * SUMA de todos los de categoría puede exceder al global. Lee todos los
+ * presupuestos del usuario (una sola query) y valida el monto propuesto.
+ * `excludeId` excluye la fila que se está editando de la suma.
+ */
+async function assertCategoryBudgetWithinGlobal(uid: number, amount: number, excludeId?: number) {
+  const rows = await db
+    .select({ id: budgets.id, categoryId: budgets.categoryId, amount: budgets.amount })
+    .from(budgets)
+    .where(eq(budgets.userId, uid));
+  const global = rows.find((r) => r.categoryId == null);
+  if (!global) {
+    throw new ApiError(400, 'Primero crea un presupuesto global antes de crear presupuestos por categoría');
+  }
+  const globalAmount = Number(global.amount);
+  if (amount > globalAmount) {
+    throw new ApiError(400, 'El presupuesto de categoría no puede ser mayor al presupuesto global');
+  }
+  const othersSum = rows
+    .filter((r) => r.categoryId != null && r.id !== excludeId)
+    .reduce((s, r) => s + Number(r.amount), 0);
+  const newSum = othersSum + amount;
+  if (newSum > globalAmount) {
+    throw new ApiError(
+      400,
+      `La suma de presupuestos por categoría (${fmtMoney(newSum)}) excedería el presupuesto global (${fmtMoney(globalAmount)})`,
+    );
+  }
+}
+
+/**
+ * Simétrico al anterior: al EDITAR el global no puede quedar por debajo de la
+ * suma de los presupuestos de categoría (rompería la invariante por el otro lado).
+ */
+async function assertGlobalNotBelowCategories(uid: number, globalAmount: number) {
+  const rows = await db
+    .select({ categoryId: budgets.categoryId, amount: budgets.amount })
+    .from(budgets)
+    .where(eq(budgets.userId, uid));
+  const catSum = rows
+    .filter((r) => r.categoryId != null)
+    .reduce((s, r) => s + Number(r.amount), 0);
+  if (catSum > globalAmount) {
+    throw new ApiError(
+      400,
+      `El presupuesto global no puede ser menor a la suma de presupuestos por categoría (${fmtMoney(catSum)})`,
+    );
+  }
+}
+
 // GET /api/budgets — presupuestos del usuario con gasto del mes actual
 budgetsRouter.get(
   '/',
@@ -224,7 +280,8 @@ budgetsRouter.post(
     const uid = userId(req);
     const data = budgetSchema.parse(req.body);
 
-    // Si trae categoría: debe existir, ser del usuario y de tipo 'expense'.
+    // Si trae categoría: debe existir, ser del usuario y de tipo 'expense', y
+    // respetar la invariante frente al presupuesto global.
     if (data.categoryId != null) {
       const [cat] = await db
         .select({ id: categories.id, type: categories.type })
@@ -232,6 +289,10 @@ budgetsRouter.post(
         .where(and(eq(categories.id, data.categoryId), eq(categories.userId, uid)));
       if (!cat) throw new ApiError(404, 'Categoría no encontrada');
       if (cat.type !== 'expense') throw new ApiError(400, 'La categoría debe ser de tipo gasto');
+      await assertCategoryBudgetWithinGlobal(uid, data.amount);
+    } else {
+      // Crear el global: no puede nacer por debajo de la suma de categorías ya existentes.
+      await assertGlobalNotBelowCategories(uid, data.amount);
     }
 
     try {
@@ -263,6 +324,21 @@ budgetsRouter.put(
     const data = z
       .object({ amount: z.coerce.number().positive().optional(), isActive: z.boolean().optional() })
       .parse(req.body);
+
+    // Al cambiar el monto, validar la invariante categoría↔global según el tipo
+    // del presupuesto editado.
+    if (data.amount !== undefined) {
+      const [existing] = await db
+        .select({ id: budgets.id, categoryId: budgets.categoryId })
+        .from(budgets)
+        .where(and(eq(budgets.id, id), eq(budgets.userId, uid)));
+      if (!existing) throw new ApiError(404, 'Presupuesto no encontrado');
+      if (existing.categoryId != null) {
+        await assertCategoryBudgetWithinGlobal(uid, data.amount, existing.id);
+      } else {
+        await assertGlobalNotBelowCategories(uid, data.amount);
+      }
+    }
 
     const [row] = await db
       .update(budgets)

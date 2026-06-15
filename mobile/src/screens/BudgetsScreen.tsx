@@ -174,6 +174,7 @@ export function BudgetsScreen() {
       <BudgetFormSheet
         visible={showForm}
         editing={editing}
+        budgets={budgets}
         currency={currency}
         onClose={() => {
           setShowForm(false);
@@ -290,6 +291,7 @@ function HistoryList({ history, currency }: { history: BudgetHistoryMonth[]; cur
 function BudgetFormSheet({
   visible,
   editing,
+  budgets,
   currency,
   onClose,
   onSaved,
@@ -297,6 +299,7 @@ function BudgetFormSheet({
 }: {
   visible: boolean;
   editing: Budget | null;
+  budgets: Budget[];
   currency: string;
   onClose: () => void;
   onSaved: () => void;
@@ -330,6 +333,39 @@ function BudgetFormSheet({
 
   const editName = editing?.categoryId == null ? 'Presupuesto Global' : editing?.categoryName ?? 'Categoría';
 
+  /**
+   * Valida la invariante categoría↔global antes de guardar (feedback inmediato;
+   * el backend la revalida). Devuelve el mensaje de error o null si todo OK.
+   */
+  const validateAmount = (): string | null => {
+    const editingId = editing?.id;
+    const editingGlobal = isEdit ? editing!.categoryId == null : isGlobal;
+    // Presupuestos de categoría existentes (excluyendo el que se edita).
+    const catBudgets = budgets.filter((b) => b.categoryId != null && b.id !== editingId);
+
+    if (editingGlobal) {
+      const catSum = catBudgets.reduce((s, b) => s + b.amount, 0);
+      if (catSum > amount) {
+        return `El presupuesto global no puede ser menor a la suma de presupuestos por categoría (${formatCurrency(catSum, currency)})`;
+      }
+      return null;
+    }
+
+    // Presupuesto de categoría: requiere un global y no puede excederlo.
+    const global = budgets.find((b) => b.categoryId == null && b.id !== editingId);
+    if (!global) {
+      return 'Primero crea un presupuesto global antes de crear presupuestos por categoría';
+    }
+    if (amount > global.amount) {
+      return 'El presupuesto de categoría no puede ser mayor al presupuesto global';
+    }
+    const newSum = catBudgets.reduce((s, b) => s + b.amount, 0) + amount;
+    if (newSum > global.amount) {
+      return `La suma de presupuestos por categoría (${formatCurrency(newSum, currency)}) excedería el presupuesto global (${formatCurrency(global.amount, currency)})`;
+    }
+    return null;
+  };
+
   const save = async () => {
     if (amount <= 0) {
       showError('Ingresa un monto mayor a 0');
@@ -337,6 +373,11 @@ function BudgetFormSheet({
     }
     if (!isEdit && !isGlobal && !category) {
       showError('Selecciona una categoría o activa "Presupuesto global"');
+      return;
+    }
+    const validationError = validateAmount();
+    if (validationError) {
+      showError(validationError);
       return;
     }
     try {

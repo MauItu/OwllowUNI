@@ -592,6 +592,13 @@ mobile/
 - `GET    /api/budgets/history?months=6` — (default 6, max 12) por mes y por presupuesto activo `{ month:'YYYY-MM', budgets:[{categoryId, categoryName, amount, spent, met}], summary:{month, totalMet, totalBudgets, complianceRate} }`, ordenado del mes más reciente al más antiguo. Compara el `amount` actual contra el gasto de cada mes.
 - `POST   /api/budgets` — `{ categoryId?, amount }` (categoryId null = global). Valida `amount > 0` y, si trae categoría, que exista, sea del usuario y de tipo `expense`. Si ya existe (UNIQUE / parcial del global) → **409** `{ error: 'Ya tienes un presupuesto para esta categoría' }` (vía `isUniqueViolation`).
 - `PUT    /api/budgets/:id` — `{ amount?, isActive? }`, solo el dueño.
+> **Invariante categoría↔global (C10, `assertCategoryBudgetWithinGlobal`/`assertGlobalNotBelowCategories`).** Un presupuesto
+> de **categoría** nunca puede exceder al **global** ni la **SUMA** de los de categoría puede excederlo. En POST/PUT (al
+> cambiar el monto): crear/editar una categoría exige que **exista un global** (si no → 400 `'Primero crea un presupuesto
+> global antes de crear presupuestos por categoría'`), que `amount <= global` (400 `'El presupuesto de categoría no puede ser
+> mayor al presupuesto global'`) y que la suma con el nuevo monto no pase el global (400 `'La suma de presupuestos por
+> categoría ($X) excedería el presupuesto global ($Y)'`). Editar el **global** a la baja no puede quedar por debajo de la suma
+> de categorías (400). Validado en backend (seguridad) y en mobile `BudgetFormSheet` (feedback inmediato antes de llamar al API).
 - `DELETE /api/budgets/:id` — hard delete, solo el dueño.
 
 ### Splits (gastos compartidos)
@@ -889,6 +896,9 @@ texto centrado (color primary, padding vertical 12px) "Ver todas las transaccion
 transacción" → `AddTransaction`.
 **Botón flotante (44×44, fondo `accent`, ícono `zap` blanco) abajo-derecha** abre un `BottomSheet` con las
 plantillas (cada una con botón "Usar"); enlace "Gestionar plantillas" lleva al CRUD completo.
+> **Cards de deudas en Home (C11):** se separan en dos `HomeSummaryCard` independientes en vez de una con balance neto:
+> **"Deudas"** muestra **solo lo que YO debo** (`totalDebt`, color expense, visible si `activeDebts > 0`) y **"Por cobrar"**
+> muestra lo que me deben (`totalLoan`, color income, ícono `hand-coins`, visible si `activeLoans > 0`). Nunca se netean entre sí.
 
 **AddTransactionScreen:** tabs de tipo tipo pill con color semántico (**la pestaña "Ingreso" se oculta cuando la
 cuenta es una tarjeta de crédito** — C1); fila de chips scrollable (cuenta / categoría o destino / fecha); input de

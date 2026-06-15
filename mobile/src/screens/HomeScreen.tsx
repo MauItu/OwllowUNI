@@ -223,14 +223,34 @@ export function HomeScreen() {
           />
         )}
 
-        {debtsSummary && debtsSummary.activeDebts + debtsSummary.activeLoans > 0 && (
+        {/* "Deudas" = solo lo que YO debo (no se neteo con lo que me deben). */}
+        {debtsSummary && debtsSummary.activeDebts > 0 && (
           <HomeSummaryCard
             icon="landmark"
             color={theme.colors.expense}
             title="Deudas"
-            subtitle={`Debo ${formatCurrency(debtsSummary.totalDebt)} · Me deben ${formatCurrency(debtsSummary.totalLoan)}`}
-            value={formatCurrency(debtsSummary.netBalance)}
-            valueColor={debtsSummary.netBalance < 0 ? theme.colors.expense : theme.colors.income}
+            subtitle={
+              debtsSummary.activeDebts === 1 ? '1 deuda activa' : `${debtsSummary.activeDebts} deudas activas`
+            }
+            value={formatCurrency(debtsSummary.totalDebt)}
+            valueColor={theme.colors.expense}
+            onPress={() => navigation.navigate('Debts')}
+          />
+        )}
+
+        {/* Indicador separado para lo que me deben (préstamos por cobrar). */}
+        {debtsSummary && debtsSummary.activeLoans > 0 && (
+          <HomeSummaryCard
+            icon="hand-coins"
+            color={theme.colors.income}
+            title="Por cobrar"
+            subtitle={
+              debtsSummary.activeLoans === 1
+                ? '1 préstamo por cobrar'
+                : `${debtsSummary.activeLoans} préstamos por cobrar`
+            }
+            value={formatCurrency(debtsSummary.totalLoan)}
+            valueColor={theme.colors.income}
             onPress={() => navigation.navigate('Debts')}
           />
         )}
