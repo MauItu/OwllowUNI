@@ -4,6 +4,7 @@ import { saveToken, getToken, removeToken } from '../services/auth';
 import { loadSettingsForUser } from '../stores/settingsStore';
 import { useAppStore } from '../stores/appStore';
 import { isPinEnabled } from '../services/security';
+import { getUserRole } from '../utils/roles';
 import type { User } from '../types';
 
 interface AuthValue {
@@ -16,12 +17,20 @@ interface AuthValue {
    * Solo se activa en login/registro, NO al restaurar sesión en cold-start.
    */
   needsPinSetup: boolean;
+  /**
+   * Mensaje de bienvenida épico que se muestra UNA vez tras un login/registro
+   * (NO al restaurar sesión en cold-start) para usuarios con rol especial.
+   * null = no mostrar. Lo limpia `dismissWelcome` cuando termina la animación.
+   */
+  welcome: { name: string; role: string } | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   /** Marca el onboarding de PIN como completado (revela el Home). */
   completePinSetup: () => void;
+  /** Oculta el mensaje de bienvenida (al terminar su animación). */
+  dismissWelcome: () => void;
 }
 
 const Ctx = createContext<AuthValue | null>(null);
@@ -30,6 +39,7 @@ function useProvideAuth(): AuthValue {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [needsPinSetup, setNeedsPinSetup] = useState(false);
+  const [welcome, setWelcome] = useState<{ name: string; role: string } | null>(null);
 
   /**
    * Aplica una sesión nueva (login/registro): cachea el token, carga las
@@ -42,6 +52,10 @@ function useProvideAuth(): AuthValue {
     await loadSettingsForUser(u.id);
     const hasPin = await isPinEnabled();
     setNeedsPinSetup(!hasPin);
+    // Bienvenida épica SOLO en login/registro (applySession) y solo para usuarios
+    // con rol especial. El cold-start NO pasa por aquí, así que no la dispara.
+    const role = getUserRole(u.email);
+    if (role) setWelcome({ name: u.name, role });
     setUser(u);
   }, []);
 
@@ -51,6 +65,7 @@ function useProvideAuth(): AuthValue {
     await removeToken();
     setUser(null);
     setNeedsPinSetup(false);
+    setWelcome(null);
     // Limpia el estado en memoria de la app (filtros, plantilla pendiente) y
     // fuerza un refresh para que las pantallas no muestren datos del anterior.
     const appStore = useAppStore.getState();
@@ -82,6 +97,10 @@ function useProvideAuth(): AuthValue {
 
   const completePinSetup = useCallback(() => {
     setNeedsPinSetup(false);
+  }, []);
+
+  const dismissWelcome = useCallback(() => {
+    setWelcome(null);
   }, []);
 
   const refreshUser = useCallback(async () => {
@@ -158,11 +177,13 @@ function useProvideAuth(): AuthValue {
     isLoading,
     isAuthenticated: !!user,
     needsPinSetup,
+    welcome,
     login,
     register,
     logout,
     refreshUser,
     completePinSetup,
+    dismissWelcome,
   };
 }
 

@@ -11,6 +11,7 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { LockScreen } from './src/screens/LockScreen';
 import { SetupPinScreen } from './src/screens/SetupPinScreen';
 import { Sidebar } from './src/components/Sidebar';
+import { WelcomeOverlay } from './src/components/WelcomeOverlay';
 import { createToastConfig } from './src/components/toastConfig';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { AppLockProvider, useAppLock } from './src/hooks/useAppLock';
@@ -56,7 +57,7 @@ const eb = StyleSheet.create({
 function ThemedApp() {
   const { theme, isDark } = useTheme();
   const { ready, locked, unlock } = useAppLock();
-  const { isAuthenticated, needsPinSetup, completePinSetup } = useAuth();
+  const { isAuthenticated, needsPinSetup, completePinSetup, welcome, dismissWelcome } = useAuth();
   const toastConfig = useMemo(() => createToastConfig(theme), [theme]);
 
   // Programa el recordatorio diario y reprograma alertas de deudas/metas SOLO
@@ -79,6 +80,8 @@ function ThemedApp() {
       {/* Onboarding obligatorio de PIN tras el primer login/registro (overlay
           one-way: sin back ni gesto de swipe). Tiene prioridad sobre el lock. */}
       {isAuthenticated && needsPinSetup && <SetupPinScreen onDone={completePinSetup} />}
+      {/* Bienvenida épica tras el login para usuarios con rol especial (se desvanece sola). */}
+      {isAuthenticated && welcome && <WelcomeOverlay role={welcome.role} onDone={dismissWelcome} />}
       <Toast config={toastConfig} />
     </>
   );
