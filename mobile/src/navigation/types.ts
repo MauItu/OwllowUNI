@@ -50,6 +50,11 @@ export type AuthStackParamList = {
 
 export type TabParamList = {
   Home: undefined;
+  // Tab "Cuentas": renderiza AccountsScreen como raíz del tab (distinto del screen
+  // 'Accounts' del RootStack, que se sigue usando para navegación profunda).
+  AccountsTab: undefined;
   AddTab: undefined;
   Stats: undefined;
+  // Tab "Más": menú de navegación (antes vivía en el Sidebar).
+  More: undefined;
 };

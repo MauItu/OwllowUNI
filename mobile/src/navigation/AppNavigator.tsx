@@ -77,6 +77,7 @@ const BudgetsScreen = lazyScreen(() => import('../screens/BudgetsScreen').then((
 const RecurringRulesScreen = lazyScreen(() => import('../screens/RecurringRulesScreen').then((m) => ({ default: m.RecurringRulesScreen })));
 const AddRecurringRuleScreen = lazyScreen(() => import('../screens/AddRecurringRuleScreen').then((m) => ({ default: m.AddRecurringRuleScreen })));
 const SearchScreen = lazyScreen(() => import('../screens/SearchScreen').then((m) => ({ default: m.SearchScreen })));
+const MoreScreen = lazyScreen(() => import('../screens/MoreScreen').then((m) => ({ default: m.MoreScreen })));
 const SettingsNotificationsScreen = lazyScreen(() => import('../screens/SettingsNotificationsScreen').then((m) => ({ default: m.SettingsNotificationsScreen })));
 const SecurityScreen = lazyScreen(() => import('../screens/SecurityScreen').then((m) => ({ default: m.SecurityScreen })));
 const AppearanceScreen = lazyScreen(() => import('../screens/AppearanceScreen').then((m) => ({ default: m.AppearanceScreen })));
@@ -87,8 +88,10 @@ const Tab = createBottomTabNavigator<TabParamList>();
 
 const TAB_META: Record<keyof TabParamList, { icon: string; label: string }> = {
   Home: { icon: 'house', label: 'Inicio' },
+  AccountsTab: { icon: 'wallet', label: 'Cuentas' },
   AddTab: { icon: 'plus', label: '' },
   Stats: { icon: 'bar-chart-3', label: 'Estadísticas' },
+  More: { icon: 'layout-grid', label: 'Más' },
 };
 
 /**
@@ -158,8 +161,10 @@ function Tabs() {
       tabBar={(props) => <CustomTabBar {...props} />}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="AccountsTab" component={AccountsScreen} />
       <Tab.Screen name="AddTab" component={Noop} />
       <Tab.Screen name="Stats" component={StatsScreen} />
+      <Tab.Screen name="More" component={MoreScreen} />
     </Tab.Navigator>
   );
 }
