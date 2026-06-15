@@ -172,9 +172,11 @@ server/
 │   │   ├── budgets.ts
 │   │   ├── splits.ts
 │   │   ├── insights.ts        ← insights financieros (agregación SQL determinística)
-│   │   └── rates.ts           ← tasas de cambio (GET /, PUT/DELETE /manual)
+│   │   ├── rates.ts           ← tasas de cambio (GET /, PUT/DELETE /manual)
+│   │   └── recurring.ts       ← CRUD /api/recurring-rules + toggle + /api/recurring/catch-up
 │   ├── services/
-│   │   └── exchangeRates.ts    ← Frankfurter + open.er-api.com, cache 24h, stale, manuales
+│   │   ├── exchangeRates.ts    ← Frankfurter + open.er-api.com, cache 24h, stale, manuales
+│   │   └── recurring.ts        ← materializeRecurringCharges (idempotente, cursor + saga + lock por-usuario en-proceso)
 │   ├── middleware/
 │   │   ├── errorHandler.ts
 │   │   ├── auth.ts            ← authenticate/userId/requireAdmin + signToken (JWT)
@@ -186,6 +188,8 @@ server/
 │       ├── parseId.ts        ← parseId(req.params.*) → entero > 0 o ApiError(400)
 │       ├── creditCardDebt.ts ← buildFifoCardDebtPayment: abono FIFO a las deudas automáticas de una tarjeta
 │       ├── installments.ts   ← cuotas a crédito: frenchInstallment (amortización francesa) + computeDueInfo (mora/próximo pago)
+│       ├── balance.ts        ← balanceStatements (UPDATE de saldos por tx; extraído de transactions.ts, reusado por recurring)
+│       ├── recurrence.ts     ← computeOccurrences/nextOccurrence (fechas de cobro PURAS por frecuencia, testeable)
 │       └── constants.ts      ← números mágicos centralizados (BCRYPT_ROUNDS, PAGINATION_*, IMPORT_BATCH_SIZE, CACHE_TTL_*)
 └── drizzle/                    ← migraciones generadas por drizzle-kit
 ```
@@ -206,7 +210,7 @@ mobile/
     ├── services/security.ts    ← Bloqueo con PIN (hash SHA-256+salt en SecureStore) + biometría + lockout
     ├── hooks/                  ← useAccounts, useTransactions, useCategories, useTemplates,
     │                              useStats, useTags, useSavings, useDebts, useBudgets, useSplits, useGlobalSearch,
-    │                              useNotificationSettings, useInsights, useAccountsSummary,
+    │                              useNotificationSettings, useInsights, useAccountsSummary, useRecurringRules,
     │                              useAppLock (provider de bloqueo + AppState)
     ├── stores/appStore.ts      ← Zustand (filtros, refresh triggers, plantilla seleccionada)
     ├── stores/settingsStore.ts ← Zustand + persist/AsyncStorage (mainCurrency)
@@ -215,6 +219,7 @@ mobile/
     │                              Categories, Templates, Stats, Tags, Savings, AddSavingsGoal,
     │                              SavingsDetail, Debts, AddDebt, DebtDetail, Budgets, Splits,
     │                              AddSplitGroup, SplitGroupDetail, AddSplitExpense,
+    │                              RecurringRules, AddRecurringRule,
     │                              SettingsNotifications, ImportExport, Insights, Rates, Security, LockScreen, SetupPin, Search
     │                              (More.tsx fue eliminado: el Sidebar lo reemplaza)
     ├── components/             ← Calculator, CalculatorSheet, TransactionCard, AccountCard,
@@ -247,6 +252,11 @@ mobile/
 · **Solo tarjetas de crédito** (nullable en el resto; migración `0013_unique_thor.sql`, aditiva):
   `credit_limit` decimal(15,2) nullable (tope; null = no es tarjeta) · `billing_cycle_day` int nullable (día de corte 1-28)
   · `payment_due_day` int nullable (día de pago 1-28) · `allow_overdraft` bool def false (permitir gastar por encima del cupo).
+· **Congelar tarjeta (migración `0019_jazzy_microchip.sql`, aditiva):** `is_frozen` bool def false NN — solo tarjetas;
+  bloquea gastos nuevos (POST/PUT transactions y el motor recurrente) pero permite pagos de deuda. `is_frozen` ≠ `is_active`.
+· **Cuota de manejo (migración `0018_shallow_robbie_robertson.sql`, aditiva, nullable):** `management_fee_amount` decimal(15,2)
+  (monto; null = sin cuota) · `management_fee_day` int (día de cobro 1-28) · `management_fee_rule_id` int FK→recurring_rules
+  (ON DELETE SET NULL) — regla recurrente mensual vinculada que materializa la cuota (ver "Cuota de manejo").
 > **Tarjeta de crédito (modelo NUEVO — migración `0014`):** el `current_balance` representa el **CRÉDITO DISPONIBLE
 > (positivo)**, NO la deuda. Empieza igual al `credit_limit` y BAJA al gastar (`current_balance -= amount`). En el alta,
 > el `initial_balance` que envía el usuario se interpreta como **deuda preexistente** y el saldo guardado es el
@@ -280,6 +290,9 @@ mobile/
   automática**, no en la transacción.
 > **No se admiten ingresos en tarjetas de crédito** (corrección C1): `POST`/`PUT` con `type='income'` y cuenta origen
 > `credit_card` → **400**. En mobile la pestaña "Ingreso" se oculta cuando la cuenta es una tarjeta.
+· **Pagos recurrentes (migración `0017_sudden_veda.sql`, aditiva):** `recurring_rule_id` int FK→recurring_rules
+  (ON DELETE **SET NULL**) — la regla que generó esta transacción (worker de materialización). NUNCA se borra el vínculo
+  en los registros auto-generados; al eliminar la regla queda NULL pero la transacción se conserva. null en registros manuales.
 · `created_at` / `updated_at` timestamp def now()
 > **Multi-moneda:** cada transacción se guarda SIEMPRE en la moneda de su cuenta. En transferencias entre
 > cuentas de distinta moneda, la cuenta origen se mueve por `amount` (su moneda) y la destino por `to_amount`
@@ -407,6 +420,22 @@ mobile/
 > secreto opaco que la app obtiene al verificar el código y usa para cambiar la contraseña. Códigos/tokens de un
 > solo uso, expiran a los 15 min. Migración `0010_sour_slayback.sql` (aditiva).
 
+### recurring_rules
+`id` serial PK · `user_id` int FK→users NN · `account_id` int FK→accounts NN · `type` varchar(10) NN (`expense|income`)
+· `amount` decimal(15,2) NN · `description` varchar(255) · `category_id` int FK→categories (nullable)
+· `frequency` varchar(10) NN (`daily|weekly|biweekly|monthly|yearly`) · `day_of_month` int (1-31, nullable; monthly/yearly)
+· `day_of_week` int (0-6, domingo=0, nullable; weekly/biweekly) · `start_date` date NN · `end_date` date (nullable, null = indefinida)
+· `last_generated_date` date NN (**cursor de idempotencia**) · `is_active` bool def true NN · `created_at` / `updated_at` timestamp def now()
+· INDEX(`user_id`,`is_active`). Migración `0017_sudden_veda.sql` (aditiva).
+> Reglas de pagos/ingresos recurrentes. El worker (`services/recurring.ts`, node-cron + catch-up) materializa transacciones
+> a partir de estas reglas de forma **idempotente** usando `last_generated_date` como cursor. La **cuota de manejo** de una
+> cuenta es un caso especial de regla recurrente (no un sistema aparte). Ver "Pagos recurrentes" en la API.
+
+### recurring_rule_tags
+`id` serial PK · `rule_id` int FK→recurring_rules ON DELETE CASCADE NN · `tag_id` int FK→tags ON DELETE CASCADE NN
+· UNIQUE(rule_id, tag_id) · INDEX(tag_id). Migración `0017_sudden_veda.sql`.
+> Espejo de `transaction_tags`: las etiquetas de una regla se copian a cada transacción que genera.
+
 ### Reglas de balance (atómicas, dentro de una misma transacción SQL)
 - `income`  → `account.current_balance += amount`
 - `expense` → `account.current_balance -= amount`
@@ -456,8 +485,12 @@ mobile/
 ## API REST
 
 ### Accounts
-- `GET    /api/accounts` — cuentas activas. Para `credit_card` agrega campos calculados (ver Tarjetas de crédito);
-  para el resto OMITE las columnas de tarjeta (no contamina la respuesta).
+- `GET    /api/accounts[?includeInactive=true]` — cuentas activas (con `includeInactive=true` también las desactivadas,
+  ordenadas activas primero; lo usa SOLO la pantalla de lista). Para `credit_card` agrega campos calculados (ver Tarjetas
+  de crédito); para el resto OMITE las columnas de tarjeta. Siempre devuelve `is_active`, `is_frozen`, los `management_fee_*`
+  y **`reservedSavings`** (ahorro reservado por metas vinculadas a la cuenta = suma de `savings_goals.current_amount`; earmark).
+  `GET /:id` también lo incluye. El mobile muestra "Disp." (`current_balance − reservedSavings`) y "Ahorro X" en la card. El
+  dinero NO se mueve: el ahorro queda reservado dentro del saldo (no afecta el patrimonio del `/summary`).
 - `GET    /api/accounts/summary?displayCurrency=COP[&refresh=true]` — balance consolidado convertido a
   `displayCurrency`, **separando débito y crédito**: `{ displayCurrency, total (=debitTotal−creditUsed, patrimonio
   neto líquido), debitTotal (cuentas no-tarjeta = el "Saldo"), creditTotal (=−creditUsed, contribución neta de tarjetas),
@@ -469,8 +502,18 @@ mobile/
   `paymentDueDay` opcionales (default 1 y 20, rango 1-28) y el `initialBalance` (deuda preexistente) se guarda como
   **disponible = `creditLimit − initialBalance`**.
 - `PUT    /api/accounts/:id` — permite editar `creditLimit` (>0), `billingCycleDay`/`paymentDueDay` (1-28) y
-  `allowOverdraft`. El cambio de límite es inmediato (no afecta cortes pasados).
+  `allowOverdraft`. El cambio de límite es inmediato (no afecta cortes pasados). Acepta `managementFeeAmount`/
+  `managementFeeDay` (ver "Cuota de manejo"; `managementFeeAmount: null` la desactiva).
 - `DELETE /api/accounts/:id` — soft delete (`is_active=false`)
+- `PATCH  /api/accounts/:id/toggle-active` — desactiva/reactiva (flip `is_active`). Desactivada: NO aparece en selectores
+  (GET sin `includeInactive`), SÍ en lista/historial/reportes. `is_active` significa "fuera de selectores", **no** un bloqueo
+  duro: el backend (`assertAccountsOwned`) no impide crear transacciones contra una cuenta inactiva si el cliente ya tiene el id.
+- `PATCH  /api/accounts/:id/toggle-frozen` — congela/descongela (flip `is_frozen`); **solo `credit_card`** (400 si no). Congelada:
+  bloquea gastos nuevos en `POST`/`PUT /api/transactions` (400) y en el motor recurrente; **permite pagos de deuda** (transfer hacia la tarjeta).
+- **Cuota de manejo (POST/PUT):** activar (`managementFeeAmount>0` + `managementFeeDay`) crea/actualiza una `recurring_rule`
+  mensual vinculada (categoría "Comisiones bancarias", `management_fee_rule_id`); desactivar (`managementFeeAmount: null`) la
+  **pausa** (`is_active=false`) sin borrar las transacciones generadas y conserva el vínculo para reutilizarla. Saga: si el
+  UPDATE de la cuenta falla tras crear una regla nueva, se borra la regla (compensación).
 
 ### Tarjetas de crédito (estados de cuenta)
 > Campos calculados que `GET /api/accounts` y `/:id` agregan para `credit_card` (modelo `0014`: `current_balance` ES el
@@ -556,6 +599,16 @@ mobile/
 - `PUT    /api/savings/:id`
 - `DELETE /api/savings/:id`
 - `POST   /api/savings/:id/contribute` — `{ amount, type: deposit|withdrawal, date, description? }`; marca `is_completed` al llegar al objetivo. El saldo se ajusta con un UPDATE condicional (retiro: guard `current_amount >= amount`, 0 filas → 400) y se compensa si falla el insert de la contribución (anti-TOCTOU)
+- `PUT    /api/savings/:id/contribute/:contributionId` — **edita una contribución**: revierte su efecto viejo y aplica el
+  nuevo (`current_amount − viejoConSigno + nuevoConSigno`, 400 si quedaría negativo), recalcula `is_completed`/`completed_at`
+  y actualiza la contribución (batch atómico). Devuelve la meta con `contributions[]`.
+- `DELETE /api/savings/:id/contribute/:contributionId` — **elimina una contribución** revirtiendo su efecto sobre
+  `current_amount` (400 si dejaría el ahorro negativo, p.ej. borrar un depósito ya retirado). Devuelve la meta con `contributions[]`.
+> **Earmark cuenta↔ahorro:** una meta puede asociarse a una cuenta (`accountId`) "donde estará el ahorro". El modelo es de
+> **reserva, no de movimiento**: contribuir NO crea transacciones ni cambia `current_balance`; solo sube `current_amount` (lo
+> reservado). La cuenta expone `reservedSavings` (ver Accounts) y el mobile muestra el disponible (saldo − ahorro). El campo de
+> cuenta en la meta usa el placeholder "Cuenta donde estará el ahorro". Editar/eliminar contribuciones desde `SavingsDetailScreen`
+> (tap = editar, long-press = eliminar).
 
 ### Debts (deudas y préstamos)
 > Aceptan `cutoffDate` (fecha de corte, C6), `installments` (2–60) + `monthlyInterestRate`/`lateInterestRate` (cuotas con
@@ -568,6 +621,9 @@ mobile/
   (no `credit_card`)** registra el desembolso inicial como `income` (debt: me prestaron) / `expense` (loan: yo presté),
   ajusta el saldo de la cuenta y **enlaza la tx en `debts.initial_transaction_id`** (saga: inserta la deuda y la tx, luego
   batch saldo+enlace con compensación que borra la tx; C8). Si la cuenta es una tarjeta se omite el desembolso.
+  **Mobile (`AddDebtScreen`):** al asociar una cuenta NORMAL a una deuda **nueva**, el switch "Registrar el movimiento en la
+  cuenta" arranca **activado** por defecto, de modo que la deuda se refleje de una vez en el saldo (suma en "Yo debo" /
+  resta en "Me deben") sin tener que activarlo a mano. Al editar se respeta lo que ya tenía la deuda.
 - `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado; recalcula `installment_amount`
   con los valores efectivos (lo enviado o lo previo). **Desembolso inicial EDITABLE (C8):** acepta `registerInitialTransaction`
   y mantiene el `initial_transaction_id` en sincronía con el switch del mobile y con el monto/cuenta efectivos —
@@ -611,12 +667,38 @@ mobile/
 - `GET    /api/splits/summary` — `{ totalOwedToMe, totalIOwe, netBalance, groups[] }` (solo miembro `is_me`)
 - `GET    /api/splits/:id` — grupo con miembros
 - `POST   /api/splits` — acepta `members[]` inline (exactamente un `isMe`, nombres únicos)
-- `PUT    /api/splits/:id` · `DELETE /api/splits/:id` (CASCADE)
+- `PUT    /api/splits/:id` — edita nombre/descripción/color/icono del grupo (mobile: `AddSplitGroupScreen` en modo edición
+  con `groupId`; en edición los miembros se agregan/eliminan en el acto vía los endpoints de members).
+- `DELETE /api/splits/:id[?settle=true]` (CASCADE) — **dos modos**: *Eliminar* (default) revierte las transacciones de cuenta
+  que el grupo generó (saldo como si nunca hubiera existido); *Liquidar* (`settle=true`) borra el grupo pero **conserva** esas
+  transacciones (el FK las referencia desde los gastos, no al revés → sobreviven al borrado) como registro de mi parte, sin
+  revertir el saldo. El mobile (`SplitGroupDetailScreen`) ofrece elegir entre Liquidar y Eliminar.
 - `POST   /api/splits/:groupId/members` · `DELETE /api/splits/:groupId/members/:id` (solo sin gastos asociados)
 - `GET    /api/splits/:groupId/expenses` — con shares y `accountName`; `POST` acepta `accountId?` (solo si paga `is_me` → transacción `expense`), valida que los shares sumen el total (±0.01). Saga: si paga `is_me` se crea primero la tx+balance (batch); el gasto y sus shares van dentro de un `try` que, ante fallo, borra el gasto (CASCADE en shares) y revierte la tx (no deja movimientos huérfanos).
+- `PUT    /api/splits/:groupId/expenses/:expenseId` — **edita un gasto y sus shares**: reemplaza por completo los shares
+  (delete+insert; el self-share del pagador nace liquidado) y reconcilia la transacción de cuenta y el saldo igual que la edición
+  de deudas — (A) sin tx y ahora con cuenta → crea la tx, descuenta y enlaza (saga con compensación); (B) tenía tx y ahora sin
+  cuenta → revierte saldo, desenlaza y borra la tx; (C) sigue con cuenta → actualiza la tx en sitio revirtiendo el saldo viejo y
+  aplicando el nuevo. **Rechaza editar (400)** si alguna parte de TERCEROS ya está liquidada (rompería el historial de
+  liquidaciones; el self-share liquidado del pagador no cuenta). Mobile: tocar un gasto abre `AddSplitExpense` en modo edición.
 - `GET    /api/splits/:groupId/balances` — balance por miembro + `transfers[]` simplificadas (greedy: mayor deudor paga al mayor acreedor)
 - `POST   /api/splits/:groupId/settle` — `{ fromMemberId, toMemberId, amount, date?, accountId? }`; **liquidación TOTAL o PARCIAL**. El `amount` se valida contra la **deuda total real** = la transferencia SIMPLIFICADA from→to (`computeBalances` + `simplifyTransfers`, lo mismo que ve el mobile en `/balances`): `amount <= 0` → 400, `amount > totalDeuda` → 400, sin deuda entre ambos → 400. Marca shares pareados como settled (antiguos primero) **solo los que quepan completos** dentro de `amount` (los shares son atómicos); el remanente (`amount − suma de shares completos`) se registra como gasto **"Liquidación"** (contra-gasto: `from` paga, share para `to`). **Opción elegida para el parcial: contra-gasto de Liquidación** (no se parte la fila de `split_shares`) — es la que ya existía para deudas redirigidas y mantiene `computeBalances` EXACTO porque éste se basa solo en shares no liquidados: el contra-gasto reduce el balance neto justo en el remanente, sin mutar el historial de shares por gasto (que es la auditoría de quién debía qué). Persiste en `split_settlements` con el `amount` real liquidado (puede ser < totalDeuda) y, si involucra a `is_me` con `accountId`, crea transacción `income`(me pagan)/`expense`(yo pago). **Respuesta:** `{ success, settled: amount, remaining: totalDeuda − amount, settledShares, totalShares }`. **Saga de 2 batches:** Batch A aplica todo (shares settled + gasto Liquidación + tx + balance, con `.returning()` de los ids); Batch B inserta lo dependiente (share de la Liquidación + fila de settlement con su `transactionId`). Si Batch B falla, un batch de compensación revierte **todo** el Batch A. **El mobile** (`SplitGroupDetailScreen`) pre-llena el monto con el total adeudado, permite editarlo (`CalculatorSheet`, validación `0 < monto <= total`), muestra "Total adeudado: $X", avisa "Liquidación parcial: quedarán $Y pendientes" y al terminar hace toast con el resultado ("Liquidado $X. Pendiente: $Y" o "Deuda liquidada completamente").
 - `GET    /api/splits/:groupId/settlements` — historial de liquidaciones del grupo
+
+### Recurring (pagos/ingresos recurrentes)
+> Router `routes/recurring.ts`, montado con `authenticate` + `invalidateOnMutation`. La materialización vive en
+> `services/recurring.ts`; el cálculo de fechas es puro en `utils/recurrence.ts` (testeable). Ver "Pagos recurrentes (motor)".
+- `GET    /api/recurring-rules` — reglas del usuario (activas e inactivas, `.limit(200)`), con `tags[]`, `accountName`,
+  `categoryName/Color/Icon` y `nextDate` (próxima fecha de cobro; null si está pausada).
+- `POST   /api/recurring-rules` — `{ accountId, type('expense'|'income'), amount, description?, categoryId?, frequency,
+  dayOfMonth?, dayOfWeek?, startDate, endDate?, tagIds? }`. Valida ownership de cuenta/categoría/tags, `income`+tarjeta → 400,
+  `endDate≥startDate`. Normaliza día según frecuencia. Inicializa el cursor `last_generated_date = startDate − 1 día`.
+- `PUT    /api/recurring-rules/:id` — edita. NO toca el cursor ni los registros generados (mover `startDate` atrás no hace backfill).
+- `DELETE /api/recurring-rules/:id` — borra la regla; **NO** borra las transacciones generadas (FK `recurring_rule_id` SET NULL);
+  borra `recurring_rule_tags` por CASCADE.
+- `PATCH  /api/recurring-rules/:id/toggle` — pausa/activa (`is_active`).
+- `POST   /api/recurring/catch-up` (router aparte, montado en `/api/recurring`) — materializa los cargos pendientes del usuario
+  del JWT → `{ generatedCount }`. Idempotente. Lo llama el mobile UNA vez al abrir la app (background, errores silenciados).
 
 ### Insights (análisis automático)
 - `GET /api/insights` — devuelve `Insight[]` del mes actual, calculados por **agregación SQL determinística**
@@ -649,7 +731,8 @@ mobile/
 zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1, **bcryptjs ^3** (hash de contraseñas),
 **jsonwebtoken ^9** (JWT de sesión), **nodemailer ^8** (envío de emails de recuperación vía Gmail SMTP),
 **express-rate-limit ^8** (rate limiting por IP en `/api/auth/login` y `/register`),
-**helmet ^8** (headers HTTP de seguridad; traen sus propios tipos), **compression ^1.8** (gzip de respuestas) ·
+**helmet ^8** (headers HTTP de seguridad; traen sus propios tipos), **compression ^1.8** (gzip de respuestas),
+**node-cron ^4** (scheduler de pagos recurrentes; **trae sus propios tipos** — NO instalar `@types/node-cron`, que es v3) ·
 dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6, @types/bcryptjs, @types/jsonwebtoken, @types/nodemailer,
 @types/compression (compression no trae tipos propios).
 Requiere **`JWT_SECRET`** en el `.env` raíz; **`GMAIL_USER`** y **`GMAIL_APP_PASSWORD`** son obligatorias solo
@@ -1115,6 +1198,12 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
     `refetchStatements(true)` en paralelo, y se agregó el botón "Generar estado de cuenta" (visible solo si
     no hay ningún corte) que llama a `generateStatement()`.
 
+27. **Pagos recurrentes, cuota de manejo y desactivar/congelar cuentas:** motor de cargos recurrentes idempotente
+    (cron horario + catch-up al abrir la app), pantalla de gestión de reglas (`RecurringRulesScreen`/`AddRecurringRuleScreen`,
+    Sidebar → "Pagos recurrentes"); cuota de manejo por cuenta como regla recurrente especial (sección en `AddAccountScreen`);
+    desactivar cuentas (fuera de selectores, visibles en lista con indicador) y congelar tarjetas (❄️, bloquea gastos, permite
+    pagos de deuda). Detalle completo en la sección "PAGOS RECURRENTES, CUOTA DE MANEJO Y DESACTIVAR/CONGELAR".
+
 ---
 
 ## SEED DATA
@@ -1326,16 +1415,64 @@ pnpm build:apk      # eas build -p android --profile preview
 > amortización verificada (500k/10=50k; 1M/10@2%=111 326,53; mora 100k@3%×2 meses → próximo pago 106 000).
 > C7 sin migración (solo lógica + endpoint nuevo); ejemplo de cupo: límite 1M, compra 200k (disponible 800k), abono 50k → disponible 850k.
 
-### PENDIENTE — Próxima rama (funciones nuevas, derivar de la actual)
-> Acordado con el usuario: implementar en una rama nueva creada a partir de esta, con commits detallados + push.
-1. **Cuota de manejo por cuenta.** Cada cuenta puede definir una cuota de manejo (monto + día/periodicidad de cobro)
-   y registrarla automáticamente. Requiere columnas en `accounts` + generación automática (ver punto 2).
-2. **Pagos automáticos por fecha.** Cargos recurrentes con cuenta, monto, categoría, etiquetas y demás propiedades de
-   un registro normal. Ejecución decidida: **cron en el servidor + catch-up al abrir la app** (Render free puede dormir).
-   Necesita tabla nueva (reglas recurrentes) + materialización idempotente (no duplicar cargos ya generados).
-3. **Desactivar cuentas y congelar tarjetas.** Toggle para desactivar una cuenta y para **congelar** una tarjeta de
-   crédito (bloquea nuevos gastos sin borrarla). Probablemente un flag `is_frozen`/estado en `accounts` + validación
-   en `POST /api/transactions`.
+### PENDIENTE — Próxima rama (funciones nuevas) ✅ IMPLEMENTADO
+> Las 3 funciones que estaban pendientes ya están implementadas en la rama `Prestamo-Correcciones`
+> (5 fases, 1 commit por fase). Ver "PAGOS RECURRENTES, CUOTA DE MANEJO Y DESACTIVAR/CONGELAR" abajo.
+> 1. ✅ Cuota de manejo por cuenta · 2. ✅ Pagos recurrentes (cron + catch-up) · 3. ✅ Desactivar cuentas + congelar tarjetas.
+
+---
+
+## PAGOS RECURRENTES, CUOTA DE MANEJO Y DESACTIVAR/CONGELAR (rama `Prestamo-Correcciones`, jun 2026)
+
+> 3 features en 5 fases. Migraciones **`0017_sudden_veda.sql`** (recurring_rules + recurring_rule_tags +
+> `transactions.recurring_rule_id`), **`0018_shallow_robbie_robertson.sql`** (`accounts.management_fee_*`),
+> **`0019_jazzy_microchip.sql`** (`accounts.is_frozen`). Todas aditivas. Archivos nuevos: `services/recurring.ts`,
+> `routes/recurring.ts`, `utils/recurrence.ts`, `utils/balance.ts` (server); `screens/RecurringRulesScreen.tsx`,
+> `screens/AddRecurringRuleScreen.tsx`, `hooks/useRecurringRules.ts` (mobile).
+
+### Pagos recurrentes (motor)
+- **`materializeRecurringCharges(userId)` (`services/recurring.ts`)**: por cada regla activa con `start_date<=hoy` y
+  (`end_date` null o `>=hoy`), calcula las ocurrencias en `(last_generated_date, hoy]` con `computeOccurrences`
+  (`utils/recurrence.ts`, función PURA) y, en UN `db.batch` atómico, inserta las transacciones (con `recurring_rule_id`,
+  tipo/monto/categoría de la regla), ajusta el saldo (`balanceStatements` agregado) y **avanza el cursor** `last_generated_date`.
+  Post-batch (saga + `safeCompensate`): copia las tags de la regla y, para gasto con tarjeta, crea la deuda automática.
+- **Idempotencia**: el cursor garantiza que llamar N veces = mismo resultado. Bajo CONCURRENCIA se serializa con un **lock
+  por usuario EN PROCESO** (`Set` en `recurring.ts`) + `noOverlap` en el cron — **asume un solo proceso Express** (igual que
+  la caché en memoria). Si se escala a varias instancias, mover el lock a la DB (UPDATE condicional del cursor).
+- **Frecuencias** (`computeOccurrences`): `daily` (cada día), `weekly`/`biweekly` (por `day_of_week`; biweekly cada 14 días
+  anclado en `start_date`), `monthly` (`day_of_month`, último día del mes si no existe), `yearly` (el `day_of_month` del mes
+  de `start_date`, 1×/año). Tope defensivo `MAX_OCCURRENCES=1000`. Soporta **gasto e ingreso** (income en tarjeta → se salta).
+- **Cron (Fase 2, `index.ts`)**: `node-cron` cada hora (`'0 * * * *'`, `noOverlap:true`), recorre `usersWithActiveRules()` y
+  materializa por usuario en try/catch aislado; se detiene en el graceful shutdown (`recurringTask.stop()`). Render free duerme,
+  así que el mobile también dispara `POST /api/recurring/catch-up` **una vez al autenticarse**, en background y silenciando
+  errores (`hooks/useAuth.tsx`); si generó cargos hace `triggerRefresh()`.
+- **UI (Fase 3)**: `RecurringRulesScreen` (lista con frecuencia legible, cuenta, estado, próxima fecha; toggle pausar/activar y
+  eliminar con aviso de que las tx generadas no se borran) + `AddRecurringRuleScreen` (crear/editar reutilizando
+  AccountPicker/CategoryPicker/TagPicker/DayPickerSheet/DateRangePicker/CalculatorSheet; toggle gasto/ingreso oculto en tarjetas).
+  Entrada "Pagos recurrentes" en el Sidebar (Finanzas).
+
+### Cuota de manejo por cuenta (Fase 4)
+- Caso ESPECIAL de regla recurrente. Activar (`managementFeeAmount>0` + `managementFeeDay` en POST/PUT account) crea/actualiza
+  una `recurring_rule` mensual vinculada (categoría "Comisiones bancarias" vía `getOrCreateExpenseCategory`, guardada en
+  `accounts.management_fee_rule_id`). Modificar = actualiza esa regla. Desactivar (`managementFeeAmount: null`) la **pausa**
+  (`is_active=false`) sin borrar las transacciones generadas y conserva el vínculo para reutilizarla (no acumula reglas huérfanas).
+  Saga: si el UPDATE de la cuenta falla tras crear una regla nueva, se borra la regla. UI: sección "Cuota de manejo" en `AddAccountScreen`.
+
+### Desactivar cuentas + congelar tarjetas (Fase 5)
+- **Desactivar** (`PATCH /api/accounts/:id/toggle-active`, flip `is_active`): NO aparece en selectores (`GET /api/accounts` sin
+  `includeInactive`), SÍ en lista (`?includeInactive=true`), historial y reportes. `is_active` = "fuera de selectores", **no**
+  bloqueo duro de operaciones (documentado en `assertAccountsOwned`). Al desactivar, el mobile ofrece pausar las reglas
+  recurrentes activas asociadas (Alert de 3 caminos). El `summary` sigue siendo solo-activas.
+- **Congelar** (`PATCH /api/accounts/:id/toggle-frozen`, solo `credit_card`, flip `is_frozen`): bloquea gastos nuevos en
+  `POST`/`PUT /api/transactions` (400) y en el motor recurrente (salta sin avanzar el cursor → se recuperan al descongelar),
+  pero **permite pagos de deuda** (transfer hacia la tarjeta). UI: ícono ❄️ + indicador "Inactiva" en `AccountCard`, switches
+  en `AddAccountScreen` (edición). Estados: activa+no congelada=normal; activa+congelada=solo pagos; desactivada=fuera de selectores.
+
+> **Validación:** `pnpm typecheck` limpio en server y mobile en cada fase; @tester verificó CRUD + idempotencia (materializar 2×
+> = mismo conteo), cuota (crear/modificar/materializar/desactivar), y congelado (gasto→400, pago de deuda→201). @reviewer por fase,
+> CRÍTICOS corregidos. **Limitación conocida:** editar/borrar desde "Pagos recurrentes" la regla de una cuota de manejo puede
+> desincronizar `accounts.management_fee_*` (la regla y la cuenta se gestionan por separado). **Pendiente menor:** índice único
+> en `categories(user_id,type,lower(name))` para blindar `getOrCreateExpenseCategory` de carreras.
 
 ---
 
