@@ -134,17 +134,17 @@ export function AddSavingsGoalScreen() {
         )}
 
         <SelectRow
-          label="Cuenta asociada (opcional)"
+          label="Cuenta por defecto (opcional)"
           value={selectedAccount?.name ?? null}
-          placeholder="Cuenta donde estará el ahorro"
+          placeholder="Cuenta sugerida al aportar"
           icon={selectedAccount?.icon ?? 'wallet'}
           iconColor={selectedAccount?.color ?? theme.colors.primary}
           onPress={() => setShowAccount(true)}
         />
         {selectedAccount && (
           <Text style={styles.accountHint}>
-            Lo que ahorres quedará reservado dentro de "{selectedAccount.name}": su saldo no cambia, pero verás el
-            disponible (saldo − ahorro).
+            "{selectedAccount.name}" se sugerirá al aportar. Cada aporte resta de la cuenta que elijas y el ahorro se
+            mostrará aparte en ella.
           </Text>
         )}
 
@@ -202,7 +202,7 @@ export function AddSavingsGoalScreen() {
       <AccountPicker
         visible={showAccount}
         accounts={accounts}
-        title="Cuenta donde estará el ahorro"
+        title="Cuenta por defecto del ahorro"
         onSelect={(a) => {
           setAccountId(a.id);
           setShowAccount(false);

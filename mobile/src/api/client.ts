@@ -29,6 +29,7 @@ import type {
   SavingsGoalInput,
   ContributionInput,
   SavingsSummary,
+  AccountSavingsBreakdown,
   Debt,
   DebtInput,
   DebtPaymentInput,
@@ -159,6 +160,9 @@ export const accountsApi = {
       .get<Account[]>('/accounts', { params: { includeInactive: includeInactive || undefined } })
       .then((r) => r.data),
   get: (id: number) => api.get<Account>(`/accounts/${id}`).then((r) => r.data),
+  // Desglose del ahorro de la cuenta por meta (en qué metas está ese dinero).
+  savings: (id: number) =>
+    api.get<AccountSavingsBreakdown[]>(`/accounts/${id}/savings`).then((r) => r.data),
   create: (data: AccountInput) => api.post<Account>('/accounts', data).then((r) => r.data),
   update: (id: number, data: Partial<AccountInput>) =>
     api.put<Account>(`/accounts/${id}`, data).then((r) => r.data),

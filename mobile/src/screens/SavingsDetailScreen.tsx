@@ -8,7 +8,9 @@ import { Screen, ScreenHeader, EmptyState, ErrorState, Loading, SectionTitle } f
 import { SavingsGoalCard } from '../components/SavingsGoalCard';
 import { BottomSheet } from '../components/BottomSheet';
 import { Calculator } from '../components/Calculator';
+import { AccountChips } from '../components/AccountChips';
 import { Icon } from '../components/Icon';
+import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
 import { savingsApi, getErrorMessage } from '../api/client';
 import { rescheduleGoalNotifications, cancelGoalNotifications } from '../services/notifications';
@@ -26,6 +28,7 @@ export function SavingsDetailScreen() {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const triggerRefresh = useAppStore((s) => s.triggerRefresh);
+  const { accounts } = useAccounts();
 
   const [goal, setGoal] = useState<SavingsGoal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +37,8 @@ export function SavingsDetailScreen() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [contribType, setContribType] = useState<ContributionType>('deposit');
+  // Cuenta de la que sale (depósito) o a la que vuelve (retiro) el dinero. Obligatoria.
+  const [contribAccountId, setContribAccountId] = useState<number | null>(null);
   // Contribución en edición (null = nueva contribución).
   const [editingContrib, setEditingContrib] = useState<SavingsContribution | null>(null);
 
@@ -61,12 +66,15 @@ export function SavingsDetailScreen() {
   const openAdd = () => {
     setEditingContrib(null);
     setContribType('deposit');
+    // Por defecto, la cuenta asociada a la meta (si tiene).
+    setContribAccountId(goal?.accountId ?? null);
     setSheetOpen(true);
   };
 
   const openEdit = (c: SavingsContribution) => {
     setEditingContrib(c);
     setContribType(c.type);
+    setContribAccountId(c.accountId ?? goal?.accountId ?? null);
     setSheetOpen(true);
   };
 
@@ -75,21 +83,27 @@ export function SavingsDetailScreen() {
       showError('El monto debe ser mayor a 0');
       return;
     }
+    if (contribAccountId == null) {
+      showError('Elige la cuenta del aporte');
+      return;
+    }
     try {
       let updated: SavingsGoal;
       if (editingContrib) {
-        // Edición: se conserva la fecha y descripción originales; cambia monto/tipo.
+        // Edición: se conserva la fecha y descripción originales; cambia monto/tipo/cuenta.
         updated = await savingsApi.updateContribution(goalId, editingContrib.id, {
           amount,
           type: contribType,
           date: editingContrib.date,
           description: editingContrib.description,
+          accountId: contribAccountId,
         });
       } else {
         updated = await savingsApi.contribute(goalId, {
           amount,
           type: contribType,
           date: todayISO(),
+          accountId: contribAccountId,
         });
       }
       setSheetOpen(false);
@@ -251,6 +265,11 @@ export function SavingsDetailScreen() {
                 </Pressable>
               ))}
             </View>
+            {/* Cuenta del aporte (obligatoria): el depósito sale de ella, el retiro vuelve a ella. */}
+            <Text style={styles.accountLabel}>
+              {contribType === 'deposit' ? '¿De qué cuenta sale?' : '¿A qué cuenta vuelve?'}
+            </Text>
+            <AccountChips accounts={accounts} selectedId={contribAccountId} onSelect={setContribAccountId} />
             {editingContrib && (
               <Pressable style={styles.deleteContribBtn} onPress={() => removeContrib(editingContrib)}>
                 <Icon name="trash-2" size={16} color={theme.colors.expense} />
@@ -308,6 +327,7 @@ const createStyles = (theme: Theme) =>
       elevation: 10,
     },
     fabText: { color: '#FFFFFF', fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
+    accountLabel: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginBottom: theme.spacing.xs },
     toggle: { flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.md },
     toggleBtn: {
       flex: 1,

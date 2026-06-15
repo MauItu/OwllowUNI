@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo } from 'react';
-import { View, Text, SectionList, RefreshControl, Pressable, StyleSheet } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, SectionList, RefreshControl, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { formatDistanceToNow } from 'date-fns';
@@ -8,12 +8,15 @@ import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, EmptyState, ErrorState, Loading } from '../components/common';
 import { AccountCard } from '../components/AccountCard';
+import { BottomSheet } from '../components/BottomSheet';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAccountsSummary } from '../hooks/useAccountsSummary';
 import { useSettingsStore } from '../stores/settingsStore';
+import { accountsApi, getErrorMessage } from '../api/client';
+import { showError } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
-import type { Account } from '../types';
+import type { Account, AccountSavingsBreakdown } from '../types';
 
 export function AccountsScreen() {
   const navigation = useNavigation<any>();
@@ -40,9 +43,28 @@ export function AccountsScreen() {
     [navigation],
   );
   const keyExtractor = useCallback((a: Account) => String(a.id), []);
+
+  // Desglose del ahorro de una cuenta (en qué metas está ese dinero).
+  const [savingsAccount, setSavingsAccount] = useState<Account | null>(null);
+  const [breakdown, setBreakdown] = useState<AccountSavingsBreakdown[]>([]);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+
+  const openSavings = useCallback(async (a: Account) => {
+    setSavingsAccount(a);
+    setBreakdown([]);
+    setBreakdownLoading(true);
+    try {
+      setBreakdown(await accountsApi.savings(a.id));
+    } catch (err) {
+      showError(getErrorMessage(err));
+    } finally {
+      setBreakdownLoading(false);
+    }
+  }, []);
+
   const renderItem = useCallback(
-    ({ item }: { item: Account }) => <AccountCard account={item} onPress={openAccount} />,
-    [openAccount],
+    ({ item }: { item: Account }) => <AccountCard account={item} onPress={openAccount} onPressSavings={openSavings} />,
+    [openAccount, openSavings],
   );
 
   // Dos secciones: cuentas de débito (bank/cash/digital_wallet) y tarjetas de crédito.
@@ -160,6 +182,39 @@ export function AccountsScreen() {
           ListEmptyComponent={<EmptyState icon="wallet" text="No tienes cuentas. Crea la primera." />}
         />
       )}
+
+      <BottomSheet
+        visible={savingsAccount != null}
+        title={savingsAccount ? `Ahorro en ${savingsAccount.name}` : 'Ahorro'}
+        onClose={() => setSavingsAccount(null)}
+      >
+        <Text style={styles.sheetSubtitle}>Este dinero salió de la cuenta hacia tus metas de ahorro.</Text>
+        {breakdownLoading ? (
+          <ActivityIndicator color={theme.colors.primary} style={{ marginVertical: theme.spacing.lg }} />
+        ) : breakdown.length === 0 ? (
+          <Text style={styles.sheetEmpty}>No hay ahorro asociado a esta cuenta.</Text>
+        ) : (
+          breakdown.map((b) => (
+            <Pressable
+              key={b.goalId}
+              style={({ pressed }) => [styles.goalRow, pressed && { opacity: 0.7 }]}
+              onPress={() => {
+                setSavingsAccount(null);
+                navigation.navigate('SavingsDetail', { goalId: b.goalId });
+              }}
+            >
+              <View style={[styles.goalIcon, { backgroundColor: `${b.color}26` }]}>
+                <Icon name={b.icon} size={18} color={b.color} />
+              </View>
+              <Text style={styles.goalName} numberOfLines={1}>
+                {b.goalName}
+              </Text>
+              <Text style={styles.goalAmount}>{formatCurrency(b.amount, savingsAccount?.currency)}</Text>
+              <Icon name="chevron-right" size={16} color={theme.colors.textMuted} />
+            </Pressable>
+          ))
+        )}
+      </BottomSheet>
     </Screen>
   );
 }
@@ -209,4 +264,20 @@ const createStyles = (theme: Theme) =>
     flexShrink: 1,
     textAlign: 'right',
   },
+  sheetSubtitle: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, marginBottom: theme.spacing.md },
+  sheetEmpty: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, textAlign: 'center', marginVertical: theme.spacing.lg },
+  goalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+  },
+  goalIcon: { width: 38, height: 38, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },
+  goalName: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.medium },
+  goalAmount: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
 });

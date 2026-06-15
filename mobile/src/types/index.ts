@@ -67,8 +67,9 @@ export interface Account {
   isActive: boolean;
   /** Tarjeta congelada: bloquea gastos nuevos, permite pagos de deuda. */
   isFrozen: boolean;
-  /** Ahorro reservado (earmark) por metas vinculadas a esta cuenta. */
-  reservedSavings?: number;
+  /** Dinero que salió de esta cuenta hacia metas de ahorro (neto dep − ret). Se
+   * muestra debajo del saldo como "Ahorro"; tocarlo abre el desglose por meta. */
+  savingsBalance?: number;
   createdAt: string;
   updatedAt: string;
   // Solo presentes cuando type === 'credit_card' (GET /api/accounts los calcula)
@@ -336,8 +337,19 @@ export interface SavingsContribution {
   type: ContributionType;
   description: string | null;
   date: string;
+  /** Cuenta que financió el aporte / recibió el retiro (null en aportes viejos). */
+  accountId: number | null;
   transactionId: number | null;
   createdAt: string;
+}
+
+/** Desglose del ahorro de una cuenta por meta (GET /accounts/:id/savings). */
+export interface AccountSavingsBreakdown {
+  goalId: number;
+  goalName: string;
+  color: string;
+  icon: string;
+  amount: number;
 }
 
 export interface SavingsGoalInput {
@@ -355,6 +367,8 @@ export interface ContributionInput {
   type: ContributionType;
   description?: string | null;
   date: string;
+  /** Cuenta de la que sale (depósito) o a la que vuelve (retiro) el dinero. */
+  accountId: number;
 }
 
 export interface SavingsSummary {

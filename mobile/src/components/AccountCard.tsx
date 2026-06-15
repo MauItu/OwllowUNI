@@ -23,7 +23,16 @@ function utilizationColor(theme: Theme, pct: number) {
   return theme.colors.income; // verde
 }
 
-function AccountCardComponent({ account, onPress }: { account: Account; onPress?: (a: Account) => void }) {
+function AccountCardComponent({
+  account,
+  onPress,
+  onPressSavings,
+}: {
+  account: Account;
+  onPress?: (a: Account) => void;
+  /** Toca la línea "Ahorro" para ver en qué metas está ese dinero. */
+  onPressSavings?: (a: Account) => void;
+}) {
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
 
@@ -78,11 +87,10 @@ function AccountCardComponent({ account, onPress }: { account: Account; onPress?
   }
 
   const balance = parseFloat(account.currentBalance);
-  // Ahorro reservado (earmark): el dinero sigue en la cuenta pero está apartado
-  // para metas. Disponible = saldo − ahorro reservado.
-  const reserved = account.reservedSavings ?? 0;
-  const hasReserved = reserved > 0;
-  const available = balance - reserved;
+  // Ahorro: dinero que ya salió de esta cuenta hacia metas (no es earmark, el
+  // saldo ya está descontado). Se muestra aparte y al tocarlo abre el desglose.
+  const savings = account.savingsBalance ?? 0;
+  const hasSavings = savings > 0;
   return (
     <Pressable
       onPress={() => onPress?.(account)}
@@ -109,15 +117,18 @@ function AccountCardComponent({ account, onPress }: { account: Account; onPress?
         <Text style={[styles.balance, { color: balance < 0 ? theme.colors.expense : theme.colors.text }]} numberOfLines={1}>
           {formatCurrency(balance, account.currency)}
         </Text>
-        {hasReserved && (
-          <>
-            <Text style={styles.availableLine} numberOfLines={1}>
-              Disp. {formatCurrency(available, account.currency)}
+        {hasSavings && (
+          <Pressable
+            onPress={() => onPressSavings?.(account)}
+            hitSlop={6}
+            style={({ pressed }) => [styles.savingsChip, pressed && { opacity: 0.6 }]}
+          >
+            <Icon name="piggy-bank" size={11} color={account.color} />
+            <Text style={[styles.savingsLine, { color: account.color }]} numberOfLines={1}>
+              Ahorro {formatCurrency(savings, account.currency)}
             </Text>
-            <Text style={[styles.reservedLine, { color: account.color }]} numberOfLines={1}>
-              <Icon name="piggy-bank" size={11} color={account.color} /> Ahorro {formatCurrency(reserved, account.currency)}
-            </Text>
-          </>
+            <Icon name="chevron-right" size={12} color={account.color} />
+          </Pressable>
         )}
       </View>
     </Pressable>
@@ -146,8 +157,8 @@ const createStyles = (theme: Theme) =>
   type: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, marginTop: 2 },
   balance: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },
   amountCol: { alignItems: 'flex-end', flexShrink: 1 },
-  availableLine: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs, marginTop: 2 },
-  reservedLine: { fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold, marginTop: 1 },
+  savingsChip: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3 },
+  savingsLine: { fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold },
   // Tarjeta de crédito: layout vertical (header + barra + montos).
   creditCard: { flexDirection: 'column', alignItems: 'stretch', gap: theme.spacing.sm },
   creditHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
