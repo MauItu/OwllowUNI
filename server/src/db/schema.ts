@@ -278,10 +278,21 @@ export const debts = pgTable('debts', {
   type: varchar('type', { length: 10 }).notNull(), // debt (yo debo) | loan (me deben)
   totalAmount: decimal('total_amount', { precision: 15, scale: 2 }).notNull(),
   remainingAmount: decimal('remaining_amount', { precision: 15, scale: 2 }).notNull(),
-  interestRate: decimal('interest_rate', { precision: 5, scale: 2 }), // % anual, informativo
+  interestRate: decimal('interest_rate', { precision: 5, scale: 2 }), // % anual, informativo (deudas sin cuotas)
   creditorDebtor: varchar('creditor_debtor', { length: 100 }),
   startDate: date('start_date').notNull(),
-  dueDate: date('due_date'),
+  dueDate: date('due_date'), // fecha límite de pago
+  // Fecha de corte (statement) de la deuda/crédito; informativa, nullable.
+  cutoffDate: date('cutoff_date'),
+  // ── Cuotas / crédito con interés (nullable; null = deuda de un solo pago) ──
+  // Nº de cuotas del plan (2–60).
+  installments: integer('installments'),
+  // Valor de cada cuota ya amortizada (incluye el interés del crédito).
+  installmentAmount: decimal('installment_amount', { precision: 15, scale: 2 }),
+  // Interés del crédito, % MENSUAL (amortización francesa sobre saldo).
+  monthlyInterestRate: decimal('monthly_interest_rate', { precision: 5, scale: 2 }),
+  // Interés de mora, % MENSUAL sobre la cuota cuando el pago está vencido.
+  lateInterestRate: decimal('late_interest_rate', { precision: 5, scale: 2 }),
   color: varchar('color', { length: 7 }).default('#C1437A').notNull(),
   icon: varchar('icon', { length: 50 }).default('landmark').notNull(),
   isPaidOff: boolean('is_paid_off').default(false).notNull(),
