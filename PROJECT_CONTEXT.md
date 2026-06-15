@@ -569,7 +569,12 @@ mobile/
   ajusta el saldo de la cuenta y **enlaza la tx en `debts.initial_transaction_id`** (saga: inserta la deuda y la tx, luego
   batch saldo+enlace con compensación que borra la tx; C8). Si la cuenta es una tarjeta se omite el desembolso.
 - `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado; recalcula `installment_amount`
-  con los valores efectivos (lo enviado o lo previo)
+  con los valores efectivos (lo enviado o lo previo). **Desembolso inicial EDITABLE (C8):** acepta `registerInitialTransaction`
+  y mantiene el `initial_transaction_id` en sincronía con el switch del mobile y con el monto/cuenta efectivos —
+  (A) si pasa de OFF→ON crea la tx, ajusta saldo y enlaza (saga con compensación); (B) ON→OFF (o se quita la cuenta / es
+  tarjeta) revierte el saldo, desenlaza y borra la tx (batch atómico); (C) sigue ON reconcilia la tx (monto/cuenta/tipo/fecha)
+  revirtiendo el saldo viejo y aplicando el nuevo. Si el flag no viene, conserva el estado actual. Solo cuentas NORMALES (las
+  `credit_card` nunca llevan desembolso).
 - `DELETE /api/debts/:id` — CASCADE en pagos + revierte balances y borra las transacciones de los abonos vinculados **y la
   del desembolso inicial (`initial_transaction_id`)** si la hubo (db.batch; borra la deuda antes que las tx para liberar los FK). C8
 - `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante (UPDATE condicional `remaining_amount >= amount`, 0 filas → 400, anti-TOCTOU) y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch); compensa el decremento + la tx si falla el registro del pago. **Rechaza pagar con cuenta `credit_card` (400, C3).** Si la deuda es de una tarjeta (deuda automática), **restaura el crédito disponible** de la tarjeta (`current_balance += monto`, C7) en el mismo batch (revertido en la compensación).
@@ -1321,7 +1326,7 @@ pnpm build:apk      # eas build -p android --profile preview
 > amortización verificada (500k/10=50k; 1M/10@2%=111 326,53; mora 100k@3%×2 meses → próximo pago 106 000).
 > C7 sin migración (solo lógica + endpoint nuevo); ejemplo de cupo: límite 1M, compra 200k (disponible 800k), abono 50k → disponible 850k.
 
-### PENDIENTE — Próxima rama (funciones nuevas, derivar de `Prestamo-Correcciones`)
+### PENDIENTE — Próxima rama (funciones nuevas, derivar de la actual)
 > Acordado con el usuario: implementar en una rama nueva creada a partir de esta, con commits detallados + push.
 1. **Cuota de manejo por cuenta.** Cada cuenta puede definir una cuota de manejo (monto + día/periodicidad de cobro)
    y registrarla automáticamente. Requiere columnas en `accounts` + generación automática (ver punto 2).

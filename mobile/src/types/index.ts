@@ -385,6 +385,8 @@ export interface Debt {
   paidOffAt: string | null;
   notes: string | null;
   accountId: number | null;
+  /** Tx del desembolso inicial registrado en la cuenta (null = no registrado). */
+  initialTransactionId?: number | null;
   createdAt: string;
   updatedAt: string;
   accountName?: string | null;

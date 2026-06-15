@@ -80,6 +80,8 @@ export function AddDebtScreen() {
         setCutoffDate(d.cutoffDate);
         setDueDate(d.dueDate);
         setAccountId(d.accountId);
+        // El switch del desembolso refleja si ya hay una tx registrada.
+        setRegisterInitial(d.initialTransactionId != null);
         setColor(d.color);
         setIcon(d.icon);
         setNotes(d.notes ?? '');
@@ -151,7 +153,10 @@ export function AddDebtScreen() {
     try {
       setSaving(true);
       if (debtId) {
-        const updated = await debtsApi.update(debtId, payload);
+        const updated = await debtsApi.update(debtId, {
+          ...payload,
+          registerInitialTransaction: registerInitial && canRegisterInitial,
+        });
         showSuccess(isDebt ? 'Deuda actualizada' : 'Préstamo actualizado');
         rescheduleDebtNotifications(updated).catch(() => {});
       } else {
@@ -325,15 +330,16 @@ export function AddDebtScreen() {
           onPress={() => setShowAccount(true)}
         />
 
-        {/* Solo al crear y con cuenta NORMAL (no tarjeta): registrar el desembolso inicial */}
-        {!debtId && canRegisterInitial && (
+        {/* Con cuenta NORMAL (no tarjeta): registrar el desembolso. Editable también
+            al editar la deuda (prende/apaga la transacción del movimiento). */}
+        {canRegisterInitial && (
           <View style={styles.switchRow}>
             <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
               <Text style={styles.switchTitle}>Registrar el movimiento en la cuenta</Text>
               <Text style={styles.switchHint}>
                 {isDebt
-                  ? `Se sumará ${formatCurrency(totalAmount)} a "${selectedAccount?.name}" como ingreso (te lo prestaron).`
-                  : `Se descontará ${formatCurrency(totalAmount)} de "${selectedAccount?.name}" como gasto (lo prestaste).`}
+                  ? `Suma ${formatCurrency(totalAmount)} a "${selectedAccount?.name}" como ingreso (te lo prestaron).`
+                  : `Descuenta ${formatCurrency(totalAmount)} de "${selectedAccount?.name}" como gasto (lo prestaste).`}
               </Text>
             </View>
             <Switch

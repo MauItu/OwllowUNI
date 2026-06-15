@@ -346,12 +346,13 @@ debtsRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = parseId(req.params.id);
+    const uid = userId(req);
     const data = debtSchema.partial().parse(req.body);
 
     const [old] = await db
       .select()
       .from(debts)
-      .where(and(eq(debts.id, id), eq(debts.userId, userId(req))));
+      .where(and(eq(debts.id, id), eq(debts.userId, uid)));
     if (!old) throw new ApiError(404, 'Deuda no encontrada');
 
     // Si cambia el total, ajustar el restante manteniendo lo ya pagado
@@ -379,35 +380,152 @@ debtsRouter.put(
           ? Number(old.lateInterestRate)
           : null;
 
-    const [row] = await db
-      .update(debts)
-      .set({
-        ...installmentColumns(effTotal, effInstallments, effMonthly, effLate),
-        ...(data.name !== undefined && { name: data.name }),
-        ...(data.type !== undefined && { type: data.type }),
-        ...(data.totalAmount !== undefined && {
-          totalAmount: data.totalAmount.toFixed(2),
-          remainingAmount: remaining.toFixed(2),
-        }),
-        ...(data.interestRate !== undefined && {
-          interestRate: data.interestRate != null ? data.interestRate.toFixed(2) : null,
-        }),
-        ...(data.creditorDebtor !== undefined && { creditorDebtor: data.creditorDebtor }),
-        ...(data.startDate !== undefined && { startDate: data.startDate }),
-        ...(data.dueDate !== undefined && { dueDate: data.dueDate }),
-        ...(data.cutoffDate !== undefined && { cutoffDate: data.cutoffDate }),
-        ...(data.color !== undefined && { color: data.color }),
-        ...(data.icon !== undefined && { icon: data.icon }),
-        ...(data.notes !== undefined && { notes: data.notes }),
-        ...(data.accountId !== undefined && { accountId: data.accountId }),
-        ...(data.totalAmount !== undefined && {
-          isPaidOff: paidOff,
-          paidOffAt: paidOff ? old.paidOffAt ?? new Date() : null,
-        }),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(debts.id, id), eq(debts.userId, userId(req))))
-      .returning();
+    // Campos del UPDATE de la deuda (el `initial_transaction_id` se decide abajo
+    // según el switch del desembolso).
+    const debtSet = {
+      ...installmentColumns(effTotal, effInstallments, effMonthly, effLate),
+      ...(data.name !== undefined && { name: data.name }),
+      ...(data.type !== undefined && { type: data.type }),
+      ...(data.totalAmount !== undefined && {
+        totalAmount: data.totalAmount.toFixed(2),
+        remainingAmount: remaining.toFixed(2),
+      }),
+      ...(data.interestRate !== undefined && {
+        interestRate: data.interestRate != null ? data.interestRate.toFixed(2) : null,
+      }),
+      ...(data.creditorDebtor !== undefined && { creditorDebtor: data.creditorDebtor }),
+      ...(data.startDate !== undefined && { startDate: data.startDate }),
+      ...(data.dueDate !== undefined && { dueDate: data.dueDate }),
+      ...(data.cutoffDate !== undefined && { cutoffDate: data.cutoffDate }),
+      ...(data.color !== undefined && { color: data.color }),
+      ...(data.icon !== undefined && { icon: data.icon }),
+      ...(data.notes !== undefined && { notes: data.notes }),
+      ...(data.accountId !== undefined && { accountId: data.accountId }),
+      ...(data.totalAmount !== undefined && {
+        isPaidOff: paidOff,
+        paidOffAt: paidOff ? old.paidOffAt ?? new Date() : null,
+      }),
+      updatedAt: new Date(),
+    };
+    const debtWhere = and(eq(debts.id, id), eq(debts.userId, uid));
+
+    // ── Desembolso inicial EDITABLE (switch del mobile, C8) ──────────────
+    // Solo deuda NORMAL (no tarjeta). Permite prender/apagar el registro del
+    // movimiento en la cuenta también al editar, y mantenerlo en sincronía con
+    // el monto/cuenta efectivos.
+    const effType = (data.type ?? old.type) as 'debt' | 'loan';
+    const effName = data.name !== undefined ? data.name : old.name;
+    const effStartDate = data.startDate !== undefined ? data.startDate : old.startDate;
+    const effAccountId = data.accountId !== undefined ? data.accountId : old.accountId;
+
+    // Transacción del desembolso anterior (si la había).
+    let oldTx: { id: number; type: string; amount: string; accountId: number | null } | null = null;
+    if (old.initialTransactionId != null) {
+      const [t] = await db
+        .select({
+          id: transactions.id,
+          type: transactions.type,
+          amount: transactions.amount,
+          accountId: transactions.accountId,
+        })
+        .from(transactions)
+        .where(and(eq(transactions.id, old.initialTransactionId), eq(transactions.userId, uid)));
+      oldTx = t ?? null;
+    }
+
+    // Si el cliente manda el flag, manda; si no, se conserva el estado actual.
+    const wantRegister =
+      data.registerInitialTransaction !== undefined
+        ? data.registerInitialTransaction
+        : oldTx != null;
+
+    // Tipo de la cuenta efectiva (las tarjetas de crédito no llevan desembolso).
+    let effAccountType: string | null = null;
+    if (effAccountId != null) effAccountType = (await assertAccountOwned(uid, effAccountId)).type;
+    const canRegister = wantRegister && effAccountId != null && effAccountType !== 'credit_card';
+
+    const txType = effType === 'debt' ? 'income' : 'expense';
+    const disbursementDesc =
+      effType === 'debt' ? `Préstamo recibido: ${effName}` : `Préstamo otorgado: ${effName}`;
+    // UPDATE de saldo que revierte el efecto de la tx vieja (income suma → restar).
+    const revertOldTx = oldTx
+      ? balanceUpdate(
+          uid,
+          oldTx.accountId!,
+          oldTx.type === 'income' ? -Number(oldTx.amount) : Number(oldTx.amount),
+        )
+      : null;
+
+    let row: typeof old | undefined;
+    if (canRegister && oldTx == null) {
+      // (A) No había desembolso y ahora sí: crear la tx, ajustar saldo y enlazar (saga).
+      const delta = txType === 'income' ? effTotal : -effTotal;
+      const [tx] = await db
+        .insert(transactions)
+        .values({
+          userId: uid,
+          type: txType,
+          amount: effTotal.toFixed(2),
+          description: disbursementDesc,
+          date: effStartDate,
+          time: nowTime(),
+          accountId: effAccountId!,
+        })
+        .returning({ id: transactions.id });
+      try {
+        const r = await db.batch([
+          db.update(debts).set({ ...debtSet, initialTransactionId: tx.id }).where(debtWhere).returning(),
+          balanceUpdate(uid, effAccountId!, delta),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ] as any);
+        row = (r[0] as (typeof old)[])[0];
+      } catch (err) {
+        await safeCompensate([db.delete(transactions).where(eq(transactions.id, tx.id))], {
+          endpoint: 'PUT /api/debts/:id',
+          operation: 'edit-add-disbursement',
+          userId: uid,
+          entityId: id,
+          txId: tx.id,
+        });
+        throw err;
+      }
+    } else if (!canRegister && oldTx != null) {
+      // (B) Había desembolso y ahora no (switch off / sin cuenta / tarjeta):
+      // revertir el saldo, desenlazar y borrar la tx (atómico).
+      const r = await db.batch([
+        db.update(debts).set({ ...debtSet, initialTransactionId: null }).where(debtWhere).returning(),
+        revertOldTx!,
+        db.delete(transactions).where(and(eq(transactions.id, oldTx.id), eq(transactions.userId, uid))),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any);
+      row = (r[0] as (typeof old)[])[0];
+    } else if (canRegister && oldTx != null) {
+      // (C) Sigue registrado: reconciliar la tx (monto/cuenta/tipo/fecha) y el saldo.
+      const newDelta = txType === 'income' ? effTotal : -effTotal;
+      const r = await db.batch([
+        db.update(debts).set({ ...debtSet, initialTransactionId: oldTx.id }).where(debtWhere).returning(),
+        revertOldTx!,
+        balanceUpdate(uid, effAccountId!, newDelta),
+        db
+          .update(transactions)
+          .set({
+            type: txType,
+            amount: effTotal.toFixed(2),
+            description: disbursementDesc,
+            date: effStartDate,
+            accountId: effAccountId!,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(transactions.id, oldTx.id), eq(transactions.userId, uid))),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any);
+      row = (r[0] as (typeof old)[])[0];
+    } else {
+      // (D) Sin desembolso involucrado.
+      const [r] = await db.update(debts).set(debtSet).where(debtWhere).returning();
+      row = r;
+    }
+
     res.json(row);
   }),
 );
