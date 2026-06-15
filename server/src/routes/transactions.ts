@@ -563,6 +563,12 @@ transactionsRouter.post(
     const srcAcc = accs.find((a) => a.id === data.accountId);
     const dstAcc = data.toAccountId != null ? accs.find((a) => a.id === data.toAccountId) : undefined;
 
+    // Las tarjetas de crédito no reciben ingresos directos: lo único que entra a la
+    // tarjeta es un pago (transferencia hacia ella). Bloquear income con tarjeta origen.
+    if (data.type === 'income' && srcAcc?.type === 'credit_card') {
+      throw new ApiError(400, 'No puedes registrar un ingreso en una tarjeta de crédito');
+    }
+
     // ¿Gasto con tarjeta de crédito? Reduce el crédito disponible y genera una deuda
     // (1 por compra). NO afecta el saldo de débito del usuario.
     const isCardExpense = data.type === 'expense' && srcAcc?.type === 'credit_card';
@@ -701,6 +707,9 @@ transactionsRouter.put(
       .select({ type: accounts.type })
       .from(accounts)
       .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, uid)));
+    if (data.type === 'income' && srcAcc?.type === 'credit_card') {
+      throw new ApiError(400, 'No puedes registrar un ingreso en una tarjeta de crédito');
+    }
     const newCardExpense = data.type === 'expense' && srcAcc?.type === 'credit_card';
     const installments = newCardExpense && data.installments && data.installments > 1 ? data.installments : null;
     const installmentAmount = installments ? data.amount / installments : null;

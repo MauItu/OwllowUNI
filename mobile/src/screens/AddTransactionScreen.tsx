@@ -121,6 +121,16 @@ export function AddTransactionScreen() {
   const [showTime, setShowTime] = useState(false);
   const [showTags, setShowTags] = useState(false);
 
+  // Las tarjetas de crédito no admiten ingresos directos: solo gasto (genera deuda)
+  // y transferencia (pago de la tarjeta). Ocultamos la pestaña "Ingreso" en ese caso.
+  const isCard = account?.type === 'credit_card';
+  const visibleTabs = isCard ? TYPE_TABS.filter((t) => t.key !== 'income') : TYPE_TABS;
+
+  // Si la cuenta seleccionada es una tarjeta y quedó "Ingreso" activo, forzar "Gasto".
+  useEffect(() => {
+    if (isCard && type === 'income') setType('expense');
+  }, [isCard, type]);
+
   // Gasto con tarjeta de crédito → habilita la opción de cuotas.
   const isCardExpense = type === 'expense' && account?.type === 'credit_card';
   const installmentCountNum = Math.min(60, Math.max(0, parseInt(installmentCount || '0', 10) || 0));
@@ -377,7 +387,7 @@ export function AddTransactionScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         {/* Tabs de tipo (pills) */}
         <View style={styles.tabs}>
-          {TYPE_TABS.map((t) => {
+          {visibleTabs.map((t) => {
             const active = type === t.key;
             return (
               <Pressable
