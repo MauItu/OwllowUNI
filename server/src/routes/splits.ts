@@ -362,14 +362,30 @@ splitsRouter.put(
   }),
 );
 
-// DELETE /api/splits/:id — cascade en miembros, gastos, shares y liquidaciones;
-// además revierte las transacciones de cuenta que el grupo hubiera generado.
+// DELETE /api/splits/:id — cascade en miembros, gastos, shares y liquidaciones.
+//
+// Dos modos:
+//  - Eliminar (default): además REVIERTE las transacciones de cuenta que el grupo
+//    hubiera generado (el saldo vuelve a como si el grupo no hubiera existido).
+//  - Liquidar (?settle=true): borra el grupo pero CONSERVA las transacciones ya
+//    generadas por mis gastos/liquidaciones (quedan en el historial como registro
+//    de mi parte) y NO revierte el saldo.
 splitsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const uid = userId(req);
     const id = parseId(req.params.id);
     await getOwnedGroup(uid, id);
+
+    const settle = req.query.settle === 'true' || req.query.settle === '1';
+    if (settle) {
+      // Solo se borra el grupo (CASCADE limpia miembros/gastos/shares/liquidaciones).
+      // Las transacciones de cuenta NO se tocan: el FK las referencia desde los
+      // gastos (no al revés), así que sobreviven al borrado y conservan el registro.
+      await db.delete(splitGroups).where(and(eq(splitGroups.id, id), eq(splitGroups.userId, uid)));
+      res.json({ success: true });
+      return;
+    }
 
     // Transacciones generadas por gastos pagados por mí y por liquidaciones.
     const exps = await db

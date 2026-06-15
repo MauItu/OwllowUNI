@@ -303,7 +303,10 @@ export const splitsApi = {
   create: (data: SplitGroupInput) => api.post<SplitGroup>('/splits', data).then((r) => r.data),
   update: (id: number, data: Partial<Omit<SplitGroupInput, 'members'>>) =>
     api.put<SplitGroup>(`/splits/${id}`, data).then((r) => r.data),
-  remove: (id: number) => api.delete(`/splits/${id}`).then((r) => r.data),
+  // settle=true: borra el grupo conservando las transacciones ya generadas
+  // (registro de mi parte). false (default): revierte todo como si no existiera.
+  remove: (id: number, settle = false) =>
+    api.delete(`/splits/${id}`, { params: { settle: settle || undefined } }).then((r) => r.data),
   addMember: (groupId: number, data: SplitMemberInput) =>
     api.post<SplitMember>(`/splits/${groupId}/members`, data).then((r) => r.data),
   removeMember: (groupId: number, memberId: number) =>

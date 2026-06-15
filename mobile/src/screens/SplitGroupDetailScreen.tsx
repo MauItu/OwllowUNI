@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, RefreshControl, Alert, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useIsFocused, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -133,15 +133,30 @@ export function SplitGroupDetailScreen() {
     }
   };
 
-  const removeGroup = async () => {
+  const closeGroup = async (settle: boolean) => {
     try {
-      await splitsApi.remove(groupId);
-      showSuccess('Grupo eliminado');
+      await splitsApi.remove(groupId, settle);
+      showSuccess(settle ? 'Grupo liquidado' : 'Grupo eliminado');
       triggerRefresh();
       navigation.goBack();
     } catch (err) {
       showError(getErrorMessage(err));
     }
+  };
+
+  // Dos formas de cerrar el grupo:
+  //  - Liquidar: conserva en el historial las transacciones de los gastos que pagué.
+  //  - Eliminar: revierte todo como si el grupo no hubiera existido.
+  const promptCloseGroup = () => {
+    Alert.alert(
+      'Cerrar grupo',
+      '¿Cómo quieres cerrar este grupo?\n\n• Liquidar: borra el grupo pero conserva en tu historial las transacciones de los gastos que pagaste.\n• Eliminar: revierte todo como si nunca hubiera existido.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Liquidar', onPress: () => closeGroup(true) },
+        { text: 'Eliminar', style: 'destructive', onPress: () => closeGroup(false) },
+      ],
+    );
   };
 
   const transfers = balances?.transfers ?? [];
@@ -158,7 +173,7 @@ export function SplitGroupDetailScreen() {
               <Pressable hitSlop={8} onPress={() => navigation.navigate('AddSplitGroup', { groupId })}>
                 <Icon name="pencil" size={20} color="#FFFFFF" />
               </Pressable>
-              <Pressable hitSlop={8} onPress={removeGroup}>
+              <Pressable hitSlop={8} onPress={promptCloseGroup}>
                 <Icon name="trash-2" size={20} color="#FFFFFF" />
               </Pressable>
             </View>
