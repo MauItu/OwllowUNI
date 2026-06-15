@@ -269,6 +269,8 @@ export const debtsApi = {
   remove: (id: number) => api.delete(`/debts/${id}`).then((r) => r.data),
   pay: (id: number, data: DebtPaymentInput) =>
     api.post<Debt>(`/debts/${id}/pay`, data).then((r) => r.data),
+  updatePayment: (id: number, paymentId: number, data: DebtPaymentInput) =>
+    api.put<Debt>(`/debts/${id}/payments/${paymentId}`, data).then((r) => r.data),
   summary: () => api.get<DebtsSummary>('/debts/summary').then((r) => r.data),
 };
 

@@ -32,7 +32,9 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
   const styles = useThemedStyles(createStyles);
   const [state, dispatch] = useReducer(
     reducer,
-    initialValue > 0 ? initialState(String(initialValue)) : initialState('0'),
+    // Con un monto pre-llenado (cuota sugerida / edición), arranca en estado
+    // `prefilled`: el primer dígito que teclee el usuario lo reemplaza por completo.
+    initialValue > 0 ? initialState(String(initialValue), true) : initialState('0'),
   );
 
   const accentColor = type === 'income' ? theme.colors.income : type === 'transfer' ? theme.colors.transfer : theme.colors.expense;

@@ -330,6 +330,10 @@ mobile/
 `id` serial PK · `debt_id` int FK→debts ON DELETE CASCADE NN · `amount` decimal(15,2) NN · `date` date NN
 · `description` varchar(255) · `account_id` int FK→accounts (nullable; cuenta del abono) · `transaction_id` int FK→transactions · `created_at` timestamp def now()
 > Un abono con `account_id` genera una transacción `income` (loan) / `expense` (debt) en esa cuenta y enlaza `transaction_id`.
+> **Abono a deuda de tarjeta (C7):** si la deuda está asociada a una tarjeta de crédito (deuda automática de una compra,
+> `debts.account_id` = la tarjeta), cada abono **restaura el crédito disponible** de la tarjeta (`current_balance += monto`),
+> tanto en pagos parciales como al saldar. Aplica en `POST /api/debts/:id/pay` y en la edición `PUT /api/debts/:id/payments/:paymentId`.
+> Los abonos son **editables** desde el historial (ver Debts API).
 
 ### budgets
 `id` serial PK · `user_id` int FK→users NN · `category_id` int FK→categories (**nullable**; NULL = presupuesto GLOBAL)
@@ -561,7 +565,8 @@ mobile/
 - `PUT    /api/debts/:id` — si cambia el total, ajusta el restante conservando lo pagado; recalcula `installment_amount`
   con los valores efectivos (lo enviado o lo previo)
 - `DELETE /api/debts/:id` — CASCADE en pagos + revierte balances y borra las transacciones de los abonos vinculados (db.batch)
-- `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante (UPDATE condicional `remaining_amount >= amount`, 0 filas → 400, anti-TOCTOU) y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch); compensa el decremento + la tx si falla el registro del pago. **Rechaza pagar con cuenta `credit_card` (400, C3).**
+- `POST   /api/debts/:id/pay` — `{ amount, date, description?, accountId? }`; resta del restante (UPDATE condicional `remaining_amount >= amount`, 0 filas → 400, anti-TOCTOU) y marca `is_paid_off` si llega a 0; con `accountId` crea transacción `income`(loan)/`expense`(debt) y enlaza (db.batch); compensa el decremento + la tx si falla el registro del pago. **Rechaza pagar con cuenta `credit_card` (400, C3).** Si la deuda es de una tarjeta (deuda automática), **restaura el crédito disponible** de la tarjeta (`current_balance += monto`, C7) en el mismo batch (revertido en la compensación).
+- `PUT    /api/debts/:id/payments/:paymentId` — `{ amount, date, description?, accountId? }`; **edita un abono existente** (C7). Revierte por completo el efecto del pago viejo y aplica el nuevo dejando consistentes: el restante de la deuda (recalculado: `restante + viejo − nuevo`, 400 si <0), la **transacción enlazada** (actualiza en sitio si seguía con cuenta; la borra si se quitó la cuenta; la inserta vía saga si antes no tenía y ahora sí — desenlaza el FK `transaction_id` antes de borrar la tx) y el **crédito de la tarjeta** (ajuste por la diferencia de monto). Recalcula `is_paid_off`/`paid_off_at`. Devuelve la deuda con su historial actualizado (igual que `GET /:id`). Rechaza cuenta `credit_card` (400, C3).
 
 ### Budgets (presupuestos mensuales)
 > Router `routes/budgets.ts`, montado en `index.ts` con `authenticate` + `invalidateOnMutation`; los **GET están cacheados**
@@ -908,6 +913,11 @@ Números fondo `surfaceLight`; operadores fondo `primaryDark` / texto `primaryLi
 confirmar `✓` ancho doble en color semántico (`income`/`expense`/`transfer`), `borderRadius.xl`.
 Display: expresión (`textMuted`, `fontSize.lg`) + resultado (`fontSize.hero`, coloreado por tipo).
 Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Maneja edge cases.
+> **Auto-fill inteligente (C7):** cuando la `Calculator` se monta con `initialValue > 0` (cuota sugerida de un pago,
+> o monto de un registro al **editar**), el estado arranca con el flag `prefilled: true`. El **primer dígito o punto** que
+> teclee el usuario **reemplaza por completo** el monto pre-llenado (no concatena) y baja el flag; los siguientes se
+> concatenan normal. Comparte rama con `justEvaluated` (el comportamiento tras `=`). Aplica al modal de pago/edición de
+> deudas y a la edición de transacciones (ambos pasan el monto por `initialValue`).
 > Sin haptic feedback: `expo-haptics` fue removido (incompatible con Node 22).
 
 **Dependencia añadida:** `expo-linear-gradient` (~15.0.8, bundled en Expo Go SDK 54) para los gradientes.
@@ -925,7 +935,7 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
 8. Montos siempre formateados (separador de miles + símbolo). Pull-to-refresh en listas. Errores vía toasts (mobile) y middleware (backend).
 9. **Etiquetas (tags):** etiquetas libres con color/ícono, asignables a transacciones (`TagPicker` en AddTransaction, `TagChip`), CRUD en `TagsScreen` ("Más"), filtro por tag en Movimientos.
 10. **Metas de ahorro:** `SavingsScreen` con card total gradiente, `AddSavingsGoal` (Calculator, fecha límite, cuenta, color/ícono), `SavingsDetail` con contribuciones (depósito/retiro vía BottomSheet+Calculator), card resumen en Home (`HomeSummaryCard`).
-11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben", card de balance neto y sección **"Historial"** colapsable para las saldadas (con borrado definitivo); `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, **fecha de corte + fecha límite de pago** (C6), cuenta + switch "registrar desembolso inicial en la cuenta", y **toggle "¿A cuotas / crédito?"** (C4) con nº de cuotas + interés mensual del crédito + mora + preview en vivo de la cuota por amortización francesa; el interés anual informativo solo se muestra sin cuotas); `DebtDetail` con historial de pagos (muestra la cuenta), metaRow con Corte/Límite de pago, y FAB "Registrar pago" (BottomSheet con `AccountChips` **sin tarjetas de crédito** (C3) + Calculator **prellenada con la cuota/`nextPaymentAmount`**, más mora si está vencida — C5). Cada abono con cuenta mueve el balance real (income/expense). Card en Home si hay activas.
+11. **Deudas y préstamos:** `DebtsScreen` con toggle "Mis deudas"/"Me deben", card de balance neto y sección **"Historial"** colapsable para las saldadas (con borrado definitivo); `DebtCard` con barra invertida (cuánto falta), indicador de vencimiento urgente (≤7 días); `AddDebt` (tipo, persona/entidad, **fecha de corte + fecha límite de pago** (C6), cuenta + switch "registrar desembolso inicial en la cuenta", y **toggle "¿A cuotas / crédito?"** (C4) con nº de cuotas + interés mensual del crédito + mora + preview en vivo de la cuota por amortización francesa; el interés anual informativo solo se muestra sin cuotas); `DebtDetail` con historial de pagos (muestra la cuenta), metaRow con Corte/Límite de pago, y FAB "Registrar pago" (BottomSheet con `AccountChips` **sin tarjetas de crédito** (C3) + selector de fecha (`DateRangePicker`) + nota + Calculator **prellenada con la cuota/`nextPaymentAmount`**, más mora si está vencida — C5). **Cada pago del historial es tappable → reabre el mismo BottomSheet en modo edición** prellenado con sus datos (`PUT /debts/:id/payments/:paymentId`, C7); tras editar/crear se hace `triggerRefresh()` + `load(true)` para reflejar el restante, el historial y los saldos de cuentas/tarjeta. Cada abono con cuenta mueve el balance real (income/expense). Card en Home si hay activas.
 12. **Gastos compartidos (splits):** `SplitsScreen` lista grupos con mi balance ("Te deben"/"Debes"/"Estás a mano"); `AddSplitGroup` con miembros (uno marcado "Yo", mínimo 2); `SplitGroupDetail` con balances simplificados (greedy) + botón "Liquidar" por transferencia (con `AccountChips` cuando me involucra, como confirmación explícita del movimiento), lista cronológica de gastos y FAB; `AddSplitExpense` con división en partes iguales o personalizada (valida la suma), pagador, categoría opcional y **cuenta cuando pago yo** (descuenta de la cuenta real). Card en Home si hay balances pendientes.
 13. **Hora editable** en gastos/ingresos (`TimePicker` propio, BottomSheet de 2 columnas 24h) junto al chip de fecha en `AddTransaction`.
 14. **Íconos y colores ampliados:** `ACCOUNT_ICONS` (25) y `CATEGORY_ICONS` (60) en `Icon.tsx`, `PALETTE` (24) en `theme/index.ts` (los 12 originales primero). Selectores en grilla (`flexWrap`). `components/AccountChips.tsx` = selector inline de cuenta para BottomSheets.
@@ -1275,9 +1285,18 @@ pnpm build:apk      # eas build -p android --profile preview
   con `nextPaymentAmount` y muestra la cuota (+ mora si vencida).
 - **C6 — Fecha de corte + fecha límite de pago.** Columna `cutoff_date` en `debts`; `due_date` se reetiqueta como
   "fecha límite de pago". `AddDebt` tiene ambos selectores; `DebtDetail` los muestra en la metaRow.
+- **C7 — Pagos de deuda: restauración de cupo, auto-fill y edición.** (1) **Restaura el cupo** de la tarjeta al abonar
+  una deuda automática (lo que C2 documentaba pero el código NO hacía): `POST /api/debts/:id/pay` ahora suma el monto al
+  `current_balance` de la tarjeta de la deuda (parcial y total), revertido en la compensación; el frontend ya refrescaba
+  cuentas vía `triggerRefresh`. (2) **Auto-fill inteligente** en la `Calculator`: con monto pre-llenado, el primer dígito
+  lo reemplaza por completo (flag `prefilled` en `calculatorEngine.ts`); aplica a pagos de deuda y edición de transacciones.
+  (3) **Edición de pagos** desde el historial: endpoint nuevo `PUT /api/debts/:id/payments/:paymentId` que revierte el pago
+  viejo y aplica el nuevo (restante, transacción enlazada, cupo de tarjeta) y `DebtDetail` con cada pago tappable → mismo
+  BottomSheet en modo edición (monto/fecha/cuenta/nota), con refetch + `triggerRefresh` tras guardar.
 
 > **Validación:** `pnpm typecheck` limpio en server y mobile; migración solo `ADD COLUMN` (count `debts`=7 intacto);
 > amortización verificada (500k/10=50k; 1M/10@2%=111 326,53; mora 100k@3%×2 meses → próximo pago 106 000).
+> C7 sin migración (solo lógica + endpoint nuevo); ejemplo de cupo: límite 1M, compra 200k (disponible 800k), abono 50k → disponible 850k.
 
 ### PENDIENTE — Próxima rama (funciones nuevas, derivar de `Prestamo-Correcciones`)
 > Acordado con el usuario: implementar en una rama nueva creada a partir de esta, con commits detallados + push.

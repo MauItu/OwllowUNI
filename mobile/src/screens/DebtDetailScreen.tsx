@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -9,6 +9,7 @@ import { DebtCard } from '../components/DebtCard';
 import { BottomSheet } from '../components/BottomSheet';
 import { Calculator } from '../components/Calculator';
 import { AccountChips } from '../components/AccountChips';
+import { DateRangePicker } from '../components/DateRangePicker';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAppStore } from '../stores/appStore';
@@ -16,9 +17,9 @@ import { debtsApi, getErrorMessage } from '../api/client';
 import { rescheduleDebtNotifications, cancelDebtNotifications } from '../services/notifications';
 import { showError, showSuccess } from '../components/toastConfig';
 import { formatCurrency } from '../utils/formatCurrency';
-import { formatShortDate, todayISO } from '../utils/formatDate';
+import { formatShortDate, todayISO, parseISOSafe } from '../utils/formatDate';
 import type { RootStackParamList } from '../navigation/types';
-import type { Debt } from '../types';
+import type { Debt, DebtPayment } from '../types';
 
 export function DebtDetailScreen() {
   const navigation = useNavigation<any>();
@@ -36,6 +37,11 @@ export function DebtDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [payAccountId, setPayAccountId] = useState<number | null>(null);
+  const [payDate, setPayDate] = useState<string>(todayISO());
+  const [payDescription, setPayDescription] = useState<string>('');
+  const [showDate, setShowDate] = useState(false);
+  // Pago en edición; null = registrar uno nuevo.
+  const [editingPayment, setEditingPayment] = useState<DebtPayment | null>(null);
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -61,17 +67,45 @@ export function DebtDetailScreen() {
   const isDebt = debt?.type === 'debt';
   const semanticColor = isDebt ? theme.colors.expense : theme.colors.income;
 
-  const registerPayment = async (amount: number) => {
+  // Abre la hoja para registrar un pago nuevo (prellenada con la cuota sugerida).
+  const openNewPayment = () => {
+    setEditingPayment(null);
+    setPayAccountId(accounts.find((a) => a.id === debt?.accountId && a.type !== 'credit_card')?.id ?? null);
+    setPayDate(todayISO());
+    setPayDescription('');
+    setSheetOpen(true);
+  };
+
+  // Abre la hoja para editar un pago existente (prellenada con sus datos).
+  const openEditPayment = (p: DebtPayment) => {
+    setEditingPayment(p);
+    setPayAccountId(p.accountId);
+    setPayDate(p.date);
+    setPayDescription(p.description ?? '');
+    setSheetOpen(true);
+  };
+
+  const submitPayment = async (amount: number) => {
     if (amount <= 0) {
       showError('El monto debe ser mayor a 0');
       return;
     }
     try {
-      const updated = await debtsApi.pay(debtId, { amount, date: todayISO(), accountId: payAccountId });
+      const payload = {
+        amount,
+        date: payDate,
+        accountId: payAccountId,
+        description: payDescription.trim() || null,
+      };
+      const updated = editingPayment
+        ? await debtsApi.updatePayment(debtId, editingPayment.id, payload)
+        : await debtsApi.pay(debtId, payload);
       setSheetOpen(false);
       // Si quedó saldada, las alertas se cancelan; si no, se mantienen.
       rescheduleDebtNotifications(updated).catch(() => {});
-      if (updated.isPaidOff) {
+      if (editingPayment) {
+        showSuccess('Pago actualizado');
+      } else if (updated.isPaidOff) {
         showSuccess(isDebt ? '🎉 ¡Deuda saldada por completo!' : '🎉 ¡Préstamo recuperado por completo!');
       } else {
         showSuccess('Pago registrado');
@@ -168,7 +202,10 @@ export function DebtDetailScreen() {
               />
             }
             renderItem={({ item }) => (
-              <View style={styles.payRow}>
+              <Pressable
+                style={({ pressed }) => [styles.payRow, pressed && { opacity: 0.6 }]}
+                onPress={() => openEditPayment(item)}
+              >
                 <View style={[styles.payIcon, { backgroundColor: `${theme.colors.income}26` }]}>
                   <Icon name="hand-coins" size={18} color={theme.colors.income} />
                 </View>
@@ -184,13 +221,14 @@ export function DebtDetailScreen() {
                 <Text style={[styles.payAmount, { color: theme.colors.income }]}>
                   -{formatCurrency(item.amount)}
                 </Text>
-              </View>
+                <Icon name="pencil" size={15} color={theme.colors.textMuted} />
+              </Pressable>
             )}
           />
 
           {/* FAB Registrar pago */}
           {!debt.isPaidOff && (
-            <Pressable style={[styles.fab, { backgroundColor: semanticColor, shadowColor: semanticColor, bottom: insets.bottom + theme.spacing.lg }]} onPress={() => { setPayAccountId(accounts.find((a) => a.id === debt.accountId && a.type !== 'credit_card')?.id ?? null); setSheetOpen(true); }}>
+            <Pressable style={[styles.fab, { backgroundColor: semanticColor, shadowColor: semanticColor, bottom: insets.bottom + theme.spacing.lg }]} onPress={openNewPayment}>
               <Icon name="hand-coins" size={20} color="#FFFFFF" strokeWidth={2.4} />
               <Text style={styles.fabText}>{isDebt ? 'Registrar pago' : 'Registrar abono'}</Text>
             </Pressable>
@@ -198,14 +236,22 @@ export function DebtDetailScreen() {
 
           <BottomSheet
             visible={sheetOpen}
-            title={isDebt ? 'Registrar pago' : 'Registrar abono'}
+            title={
+              editingPayment
+                ? isDebt
+                  ? 'Editar pago'
+                  : 'Editar abono'
+                : isDebt
+                  ? 'Registrar pago'
+                  : 'Registrar abono'
+            }
             onClose={() => setSheetOpen(false)}
-            maxHeight="85%"
+            maxHeight="90%"
           >
             <Text style={styles.sheetHint}>
               Restante: <Text style={{ color: semanticColor, fontWeight: theme.fontWeight.bold }}>{formatCurrency(debt.remainingAmount)}</Text>
             </Text>
-            {debt.installmentAmount != null && (
+            {!editingPayment && debt.installmentAmount != null && (
               <Text style={styles.sheetHint}>
                 Cuota: <Text style={{ color: theme.colors.text, fontWeight: theme.fontWeight.bold }}>{formatCurrency(debt.installmentAmount)}</Text>
                 {debt.isOverdue && debt.lateFee ? (
@@ -217,13 +263,36 @@ export function DebtDetailScreen() {
               {isDebt ? '¿De qué cuenta pagaste?' : '¿En qué cuenta te depositaron?'}
             </Text>
             <AccountChips accounts={accounts.filter((a) => a.type !== 'credit_card')} selectedId={payAccountId} onSelect={setPayAccountId} allowNone noneLabel="No registrar" />
+            <Text style={styles.accountLabel}>Fecha</Text>
+            <Pressable style={styles.dateChip} onPress={() => setShowDate(true)}>
+              <Icon name="calendar" size={16} color={theme.colors.textSecondary} />
+              <Text style={styles.dateChipText}>{formatShortDate(payDate)}</Text>
+            </Pressable>
+            <Text style={styles.accountLabel}>Nota (opcional)</Text>
+            <TextInput
+              style={styles.noteInput}
+              value={payDescription}
+              onChangeText={setPayDescription}
+              placeholder={isDebt ? 'Ej: pago de cuota' : 'Ej: abono recibido'}
+              placeholderTextColor={theme.colors.textMuted}
+            />
             <Calculator
-              key={sheetOpen ? 'open' : 'closed'}
-              initialValue={Number(debt.nextPaymentAmount ?? 0)}
+              key={editingPayment ? `edit-${editingPayment.id}` : sheetOpen ? 'new' : 'closed'}
+              initialValue={editingPayment ? Number(editingPayment.amount) : Number(debt.nextPaymentAmount ?? 0)}
               type={isDebt ? 'expense' : 'income'}
-              onConfirm={registerPayment}
+              onConfirm={submitPayment}
             />
           </BottomSheet>
+
+          <DateRangePicker
+            visible={showDate}
+            initialFrom={parseISOSafe(payDate)}
+            onConfirm={({ from }) => {
+              setPayDate(from);
+              setShowDate(false);
+            }}
+            onClose={() => setShowDate(false)}
+          />
         </>
       ) : null}
     </Screen>
@@ -288,5 +357,30 @@ const createStyles = (theme: Theme) =>
       fontSize: theme.fontSize.sm,
       fontWeight: theme.fontWeight.medium,
       marginBottom: theme.spacing.xs,
+      marginTop: theme.spacing.sm,
+    },
+    dateChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: theme.spacing.xs,
+      backgroundColor: theme.colors.surfaceLight,
+      borderRadius: theme.borderRadius.full,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+    },
+    dateChipText: { color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+    noteInput: {
+      backgroundColor: theme.colors.surfaceLight,
+      borderRadius: theme.borderRadius.lg,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+      color: theme.colors.text,
+      fontSize: theme.fontSize.md,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+      marginBottom: theme.spacing.sm,
     },
   });

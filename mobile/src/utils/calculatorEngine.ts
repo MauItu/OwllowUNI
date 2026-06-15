@@ -17,6 +17,12 @@ export interface CalcState {
   current: string;
   /** true tras '='; la próxima tecla numérica reinicia */
   justEvaluated: boolean;
+  /**
+   * true cuando `current` es un monto pre-llenado (cuota sugerida o edición de un
+   * registro): el primer dígito o punto lo reemplaza por completo en vez de
+   * concatenar. Baja a false en cuanto el usuario teclea.
+   */
+  prefilled: boolean;
 }
 
 export type CalcKey =
@@ -27,8 +33,8 @@ export type CalcKey =
   | { kind: 'clear' }
   | { kind: 'equals' };
 
-export function initialState(value = '0'): CalcState {
-  return { tokens: [], current: value, justEvaluated: false };
+export function initialState(value = '0', prefilled = false): CalcState {
+  return { tokens: [], current: value, justEvaluated: false, prefilled };
 }
 
 function isOperator(t: string): t is Operator {
@@ -107,12 +113,16 @@ export function currentValue(state: CalcState): number {
 export function reduce(state: CalcState, key: CalcKey): CalcState {
   switch (key.kind) {
     case 'digit': {
-      if (state.justEvaluated) return { tokens: [], current: key.value, justEvaluated: false };
+      // `justEvaluated` (tras '=') y `prefilled` (monto sugerido/edición) comparten
+      // comportamiento: el primer dígito reinicia el operando en vez de concatenar.
+      if (state.justEvaluated || state.prefilled)
+        return { tokens: [], current: key.value, justEvaluated: false, prefilled: false };
       const current = state.current === '0' ? key.value : state.current + key.value;
       return { ...state, current };
     }
     case 'dot': {
-      if (state.justEvaluated) return { tokens: [], current: '0.', justEvaluated: false };
+      if (state.justEvaluated || state.prefilled)
+        return { tokens: [], current: '0.', justEvaluated: false, prefilled: false };
       if (state.current.includes('.')) return state; // evita múltiples puntos
       return { ...state, current: state.current + '.' };
     }
@@ -122,32 +132,32 @@ export function reduce(state: CalcState, key: CalcKey): CalcState {
       // Si el último token ya es operador, reemplázalo.
       if (state.current === '' && tokens.length && isOperator(tokens[tokens.length - 1])) {
         tokens[tokens.length - 1] = key.value;
-        return { tokens, current: '', justEvaluated: false };
+        return { tokens, current: '', justEvaluated: false, prefilled: false };
       }
       tokens.push(state.current);
       tokens.push(key.value);
-      return { tokens, current: '', justEvaluated: false };
+      return { tokens, current: '', justEvaluated: false, prefilled: false };
     }
     case 'backspace': {
-      if (state.justEvaluated) return { ...state, justEvaluated: false };
+      if (state.justEvaluated) return { ...state, justEvaluated: false, prefilled: false };
       if (state.current.length > 0) {
         const current = state.current.slice(0, -1);
-        return { ...state, current };
+        return { ...state, current, prefilled: false };
       }
       // sin operando actual: quita el último operador y reabre el número previo
       const tokens = [...state.tokens];
       const op = tokens.pop();
       const num = tokens.pop();
-      if (num !== undefined) return { tokens, current: num, justEvaluated: false };
-      if (op !== undefined) return { tokens, current: '0', justEvaluated: false };
-      return { ...state, current: '0' };
+      if (num !== undefined) return { tokens, current: num, justEvaluated: false, prefilled: false };
+      if (op !== undefined) return { tokens, current: '0', justEvaluated: false, prefilled: false };
+      return { ...state, current: '0', prefilled: false };
     }
     case 'clear':
       return initialState('0');
     case 'equals': {
       const result = evaluateTokens([...state.tokens, state.current]);
-      if (result === null) return { tokens: [], current: 'Error', justEvaluated: true };
-      return { tokens: [], current: formatNumber(result), justEvaluated: true };
+      if (result === null) return { tokens: [], current: 'Error', justEvaluated: true, prefilled: false };
+      return { tokens: [], current: formatNumber(result), justEvaluated: true, prefilled: false };
     }
     default:
       return state;

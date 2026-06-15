@@ -48,6 +48,59 @@ async function assertAccountOwned(uid: number, accountId: number): Promise<{ typ
 }
 
 /**
+ * Si la deuda está asociada a una tarjeta de crédito (deuda automática de una
+ * compra), devuelve el id de esa tarjeta; null en cualquier otro caso. Abonar a
+ * estas deudas restaura el crédito disponible de la tarjeta (`current_balance`).
+ */
+async function creditCardOfDebt(uid: number, debtAccountId: number | null): Promise<number | null> {
+  if (debtAccountId == null) return null;
+  const [acc] = await db
+    .select({ id: accounts.id, type: accounts.type })
+    .from(accounts)
+    .where(and(eq(accounts.id, debtAccountId), eq(accounts.userId, uid)));
+  return acc?.type === 'credit_card' ? acc.id : null;
+}
+
+/** Deuda + historial de pagos (cap 200) + derivados de vencimiento. null si no existe. */
+async function loadDebtDetail(uid: number, id: number) {
+  const [debt] = await db
+    .select()
+    .from(debts)
+    .where(and(eq(debts.id, id), eq(debts.userId, uid)));
+  if (!debt) return null;
+
+  const payments = await db
+    .select({
+      id: debtPayments.id,
+      debtId: debtPayments.debtId,
+      amount: debtPayments.amount,
+      date: debtPayments.date,
+      description: debtPayments.description,
+      accountId: debtPayments.accountId,
+      transactionId: debtPayments.transactionId,
+      createdAt: debtPayments.createdAt,
+      accountName: accounts.name,
+    })
+    .from(debtPayments)
+    .leftJoin(accounts, eq(debtPayments.accountId, accounts.id))
+    .where(eq(debtPayments.debtId, id))
+    .orderBy(desc(debtPayments.date), desc(debtPayments.id))
+    // Cap defensivo del peor caso (sin cambiar contrato): los más recientes.
+    // TODO: paginar con load-more en mobile
+    .limit(200);
+
+  const due = computeDueInfo({
+    remaining: Number(debt.remainingAmount),
+    installmentAmount: debt.installmentAmount != null ? Number(debt.installmentAmount) : null,
+    lateRatePct: debt.lateInterestRate != null ? Number(debt.lateInterestRate) : null,
+    dueDate: debt.dueDate,
+    isPaidOff: debt.isPaidOff,
+  });
+
+  return { ...debt, payments, ...due };
+}
+
+/**
  * Columnas de cuotas derivadas para insert/update de `debts`. Sin `installments`
  * válidos (>=2), todas quedan null (deuda de un solo pago). `installmentAmount` se
  * calcula por amortización francesa con la tasa mensual del crédito.
@@ -201,41 +254,9 @@ debtsRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = parseId(req.params.id);
-    const [debt] = await db
-      .select()
-      .from(debts)
-      .where(and(eq(debts.id, id), eq(debts.userId, userId(req))));
-    if (!debt) throw new ApiError(404, 'Deuda no encontrada');
-
-    const payments = await db
-      .select({
-        id: debtPayments.id,
-        debtId: debtPayments.debtId,
-        amount: debtPayments.amount,
-        date: debtPayments.date,
-        description: debtPayments.description,
-        accountId: debtPayments.accountId,
-        transactionId: debtPayments.transactionId,
-        createdAt: debtPayments.createdAt,
-        accountName: accounts.name,
-      })
-      .from(debtPayments)
-      .leftJoin(accounts, eq(debtPayments.accountId, accounts.id))
-      .where(eq(debtPayments.debtId, id))
-      .orderBy(desc(debtPayments.date), desc(debtPayments.id))
-      // Cap defensivo del peor caso (sin cambiar contrato): los más recientes.
-      // TODO: paginar con load-more en mobile
-      .limit(200);
-
-    const due = computeDueInfo({
-      remaining: Number(debt.remainingAmount),
-      installmentAmount: debt.installmentAmount != null ? Number(debt.installmentAmount) : null,
-      lateRatePct: debt.lateInterestRate != null ? Number(debt.lateInterestRate) : null,
-      dueDate: debt.dueDate,
-      isPaidOff: debt.isPaidOff,
-    });
-
-    res.json({ ...debt, payments, ...due });
+    const detail = await loadDebtDetail(userId(req), id);
+    if (!detail) throw new ApiError(404, 'Deuda no encontrada');
+    res.json(detail);
   }),
 );
 
@@ -439,6 +460,10 @@ debtsRouter.post(
       }
     }
 
+    // Si la deuda es de una tarjeta de crédito (deuda automática de una compra),
+    // abonarla libera/restaura el crédito disponible de esa tarjeta.
+    const cardAccountId = await creditCardOfDebt(uid, debt.accountId);
+
     // Decremento CONDICIONAL del restante (elimina el TOCTOU: dos pagos concurrentes
     // que leyeran el mismo `remaining` pasarían ambos una validación en memoria y
     // sobre-pagarían). El guard `remaining_amount >= amount` va en el WHERE y es
@@ -481,9 +506,15 @@ debtsRouter.post(
           accountId: data.accountId,
         })
         .returning();
+      const stmts: unknown[] = [insertTx, balanceUpdate(uid, data.accountId, delta)];
+      // Restaurar el crédito disponible de la tarjeta (en el mismo batch atómico).
+      if (cardAccountId != null) stmts.push(balanceUpdate(uid, cardAccountId, data.amount));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const txRes = await db.batch([insertTx, balanceUpdate(uid, data.accountId, delta)] as any);
+      const txRes = await db.batch(stmts as any);
       transactionId = (txRes[0] as Transaction[])[0].id;
+    } else if (cardAccountId != null) {
+      // Abono sin cuenta de pago, pero deuda de tarjeta: igual restaura el crédito.
+      await balanceUpdate(uid, cardAccountId, data.amount);
     }
 
     // Registrar el pago. Si falla (o ya falló la tx), compensar TODO lo aplicado:
@@ -514,6 +545,10 @@ debtsRouter.post(
         undo.push(db.delete(transactions).where(eq(transactions.id, transactionId)));
         undo.push(balanceUpdate(uid, data.accountId, debt.type === 'loan' ? -data.amount : data.amount));
       }
+      // Revertir la restauración de crédito de la tarjeta (se aplicó en ambas ramas).
+      if (cardAccountId != null) {
+        undo.push(balanceUpdate(uid, cardAccountId, -data.amount));
+      }
       await safeCompensate(undo, {
         endpoint: 'POST /api/debts/:id/pay',
         operation: 'pay',
@@ -523,5 +558,179 @@ debtsRouter.post(
       });
       throw err;
     }
+  }),
+);
+
+// PUT /api/debts/:id/payments/:paymentId — edita un abono existente
+//
+// Revierte por completo el efecto del pago viejo y aplica el nuevo, dejando
+// consistentes: el restante de la deuda (recalculado), la transacción enlazada
+// (su saldo de cuenta) y, si la deuda es de una tarjeta de crédito, el crédito
+// disponible de la tarjeta. Devuelve la deuda con su historial actualizado.
+debtsRouter.put(
+  '/:id/payments/:paymentId',
+  asyncHandler(async (req, res) => {
+    const uid = userId(req);
+    const id = parseId(req.params.id);
+    const paymentId = parseId(req.params.paymentId);
+    const data = paymentSchema.parse(req.body);
+
+    const [debt] = await db
+      .select()
+      .from(debts)
+      .where(and(eq(debts.id, id), eq(debts.userId, uid)));
+    if (!debt) throw new ApiError(404, 'Deuda no encontrada');
+
+    const [payment] = await db
+      .select()
+      .from(debtPayments)
+      .where(and(eq(debtPayments.id, paymentId), eq(debtPayments.debtId, id)));
+    if (!payment) throw new ApiError(404, 'Pago no encontrado');
+
+    if (data.accountId != null) {
+      const payAcc = await assertAccountOwned(uid, data.accountId);
+      if (payAcc.type === 'credit_card') {
+        throw new ApiError(400, 'No puedes pagar una deuda con una tarjeta de crédito');
+      }
+    }
+
+    const cardAccountId = await creditCardOfDebt(uid, debt.accountId);
+
+    const oldAmount = Number(payment.amount);
+    const newAmount = data.amount;
+
+    // Nuevo restante = restante actual + monto viejo (revertido) − monto nuevo.
+    // No puede quedar negativo (no se puede sobre-pagar la deuda).
+    const newRemaining = Number(debt.remainingAmount) + oldAmount - newAmount;
+    if (newRemaining < 0) {
+      throw new ApiError(400, 'El pago supera el monto restante de la deuda');
+    }
+    const paidOff = newRemaining <= 0;
+
+    // Efecto de un abono sobre su cuenta: loan (me pagan) = income (+); debt (yo
+    // pago) = expense (−).
+    const txType = debt.type === 'loan' ? 'income' : 'expense';
+    const signedDelta = (amount: number) => (txType === 'income' ? amount : -amount);
+
+    const oldAcc = payment.accountId;
+    const oldTxId = payment.transactionId;
+    const newAcc = data.accountId ?? null;
+    const description = data.description ?? null;
+    const txDescription = data.description ?? `Abono: ${debt.name}`;
+
+    const debtUpdate = db
+      .update(debts)
+      .set({
+        remainingAmount: newRemaining.toFixed(2),
+        isPaidOff: paidOff,
+        paidOffAt: paidOff ? debt.paidOffAt ?? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(debts.id, id), eq(debts.userId, uid)));
+
+    const cardDelta = newAmount - oldAmount; // crédito a restaurar por la diferencia
+
+    if (oldTxId == null && newAcc != null) {
+      // Antes no movía dinero y ahora sí: hay que insertar la transacción para
+      // obtener su id y enlazarla (saga de dos pasos con compensación).
+      const [tx] = await db
+        .insert(transactions)
+        .values({
+          userId: uid,
+          type: txType,
+          amount: newAmount.toFixed(2),
+          description: txDescription,
+          date: data.date,
+          time: nowTime(),
+          accountId: newAcc,
+        })
+        .returning({ id: transactions.id });
+      try {
+        const stmts: unknown[] = [
+          debtUpdate,
+          balanceUpdate(uid, newAcc, signedDelta(newAmount)),
+          db
+            .update(debtPayments)
+            .set({
+              amount: newAmount.toFixed(2),
+              date: data.date,
+              description,
+              accountId: newAcc,
+              transactionId: tx.id,
+            })
+            .where(eq(debtPayments.id, paymentId)),
+        ];
+        if (cardAccountId != null && cardDelta !== 0) {
+          stmts.push(balanceUpdate(uid, cardAccountId, cardDelta));
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await db.batch(stmts as any);
+      } catch (err) {
+        await safeCompensate([db.delete(transactions).where(eq(transactions.id, tx.id))], {
+          endpoint: 'PUT /api/debts/:id/payments/:paymentId',
+          operation: 'edit-payment',
+          userId: uid,
+          entityId: id,
+          txId: tx.id,
+        });
+        throw err;
+      }
+    } else {
+      // Resto de casos: no hace falta un id nuevo → todo en un único batch atómico.
+      const stmts: unknown[] = [debtUpdate];
+
+      // Revertir el saldo de la transacción vieja (si la había).
+      if (oldTxId != null && oldAcc != null) {
+        stmts.push(balanceUpdate(uid, oldAcc, -signedDelta(oldAmount)));
+      }
+
+      // Actualizar el registro del pago ANTES de borrar la transacción (desenlaza el
+      // FK transaction_id para no violar la restricción al eliminarla).
+      stmts.push(
+        db
+          .update(debtPayments)
+          .set({
+            amount: newAmount.toFixed(2),
+            date: data.date,
+            description,
+            accountId: newAcc,
+            transactionId: newAcc != null ? oldTxId : null,
+          })
+          .where(eq(debtPayments.id, paymentId)),
+      );
+
+      if (oldTxId != null && newAcc != null) {
+        // Sigue moviendo dinero: actualizar la transacción en sitio y aplicar el
+        // saldo nuevo (la cuenta puede haber cambiado).
+        stmts.push(
+          db
+            .update(transactions)
+            .set({
+              type: txType,
+              amount: newAmount.toFixed(2),
+              description: txDescription,
+              date: data.date,
+              accountId: newAcc,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(transactions.id, oldTxId), eq(transactions.userId, uid))),
+        );
+        stmts.push(balanceUpdate(uid, newAcc, signedDelta(newAmount)));
+      } else if (oldTxId != null && newAcc == null) {
+        // Ya no mueve dinero: borrar la transacción (ya desenlazada arriba).
+        stmts.push(db.delete(transactions).where(and(eq(transactions.id, oldTxId), eq(transactions.userId, uid))));
+      }
+
+      // Ajustar el crédito de la tarjeta por la diferencia de monto del abono.
+      if (cardAccountId != null && cardDelta !== 0) {
+        stmts.push(balanceUpdate(uid, cardAccountId, cardDelta));
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.batch(stmts as any);
+    }
+
+    const detail = await loadDebtDetail(uid, id);
+    res.json(detail);
   }),
 );
