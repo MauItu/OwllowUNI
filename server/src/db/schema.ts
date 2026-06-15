@@ -336,10 +336,16 @@ export const savingsContributions = pgTable('savings_contributions', {
   type: varchar('type', { length: 10 }).notNull(), // deposit | withdrawal
   description: varchar('description', { length: 255 }),
   date: date('date').notNull(),
+  // Cuenta de la que sale (depósito) o a la que vuelve (retiro) el dinero. El
+  // saldo de esa cuenta se mueve realmente; el ahorro deja de contar como saldo
+  // líquido y pasa a mostrarse como "Ahorro" en la cuenta. Nullable por las
+  // contribuciones del modelo viejo (earmark) que no movían dinero.
+  accountId: integer('account_id').references(() => accounts.id),
   transactionId: integer('transaction_id').references(() => transactions.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => ({
   goalIdx: index('savings_contributions_goal_id_idx').on(t.goalId),
+  accountIdx: index('savings_contributions_account_id_idx').on(t.accountId),
 }));
 
 // ─────────────────────────────── debts ──────────────────────────────

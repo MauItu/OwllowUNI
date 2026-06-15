@@ -11,6 +11,35 @@ import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 
 export const savingsRouter = Router();
 
+/**
+ * Efecto de una contribución sobre el SALDO de la cuenta que la financia.
+ * Un depósito saca dinero de la cuenta (−monto); un retiro lo devuelve (+monto).
+ * El ahorro deja de contar como saldo líquido y se muestra aparte como "Ahorro".
+ */
+function accountDelta(type: string, amount: number): number {
+  return type === 'deposit' ? -amount : amount;
+}
+
+/** UPDATE de balance relativo de una cuenta (delta ya con signo, scoped por usuario). */
+function balanceUpdate(uid: number, accountId: number, delta: number) {
+  return db
+    .update(accounts)
+    .set({
+      currentBalance: sql`${accounts.currentBalance} + ${delta.toFixed(2)}::numeric`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
+}
+
+/** Verifica que una cuenta pertenezca al usuario (404 si no). */
+async function assertAccountOwned(uid: number, accountId: number): Promise<void> {
+  const [acc] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
+  if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
+}
+
 const goalSchema = z.object({
   name: z.string().min(1).max(100),
   targetAmount: z.coerce.number().positive(),
@@ -33,6 +62,9 @@ const contributionSchema = z.object({
   type: z.enum(['deposit', 'withdrawal']),
   description: z.string().max(255).optional().nullable(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // Cuenta que financia el aporte (depósito) o recibe el retiro. Obligatoria:
+  // el dinero del ahorro siempre sale/entra de una cuenta real.
+  accountId: z.number().int(),
 });
 
 // GET /api/savings — metas (activas primero, luego completadas)
@@ -197,18 +229,21 @@ savingsRouter.post(
     const id = parseId(req.params.id);
     const data = contributionSchema.parse(req.body);
 
+    const uid = userId(req);
     const [goal] = await db
       .select()
       .from(savingsGoals)
-      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))));
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
     if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
+    await assertAccountOwned(uid, data.accountId);
 
-    const uid = userId(req);
     const isWithdrawal = data.type === 'withdrawal';
     // `signedStr` ya lleva el signo: suma en depósito, resta en retiro.
     const amountStr = data.amount.toFixed(2);
     const signedStr = (isWithdrawal ? -data.amount : data.amount).toFixed(2);
     const newAmountExpr = sql`${savingsGoals.currentAmount} + ${signedStr}::numeric`;
+    // El depósito saca dinero de la cuenta; el retiro lo devuelve.
+    const acctDelta = accountDelta(data.type, data.amount);
 
     // Update CONDICIONAL del saldo. En retiro, el guard `current_amount >= amount`
     // va en el WHERE y es atómico (elimina el TOCTOU de leer→validar→escribir): si
@@ -228,16 +263,23 @@ savingsRouter.post(
       .returning();
     if (!updated) throw new ApiError(400, 'No puedes retirar más de lo ahorrado');
 
-    // Registrar la contribución. Si falla, compensar el saldo (restar lo sumado y
-    // restaurar los flags previos) para no dejar la meta descuadrada.
+    // Registrar la contribución y mover el saldo de la cuenta en un batch atómico
+    // (neon-http envuelve db.batch en transacción). Si falla, compensar el saldo de
+    // la meta (restar lo sumado y restaurar los flags) para no dejarla descuadrada.
     try {
-      await db.insert(savingsContributions).values({
-        goalId: id,
-        amount: amountStr,
-        type: data.type,
-        description: data.description ?? null,
-        date: data.date,
-      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.batch([
+        db.insert(savingsContributions).values({
+          goalId: id,
+          amount: amountStr,
+          type: data.type,
+          description: data.description ?? null,
+          date: data.date,
+          accountId: data.accountId,
+        }),
+        balanceUpdate(uid, data.accountId, acctDelta),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any);
       res.status(201).json(updated);
     } catch (err) {
       await safeCompensate(
@@ -309,6 +351,8 @@ savingsRouter.put(
       .where(and(eq(savingsContributions.id, contributionId), eq(savingsContributions.goalId, id)));
     if (!contribution) throw new ApiError(404, 'Contribución no encontrada');
 
+    await assertAccountOwned(uid, data.accountId);
+
     const oldSigned = signedAmount(contribution.type, Number(contribution.amount));
     const newSigned = signedAmount(data.type, data.amount);
     const newCurrent = Number(goal.currentAmount) - oldSigned + newSigned;
@@ -318,8 +362,10 @@ savingsRouter.put(
     const rounded = Math.max(0, Math.round(newCurrent * 100) / 100);
     const completed = rounded >= Number(goal.targetAmount);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await db.batch([
+    // Reconciliar el saldo de las cuentas: revertir el efecto del aporte viejo en
+    // SU cuenta (las del modelo viejo no tenían cuenta → nada que revertir) y
+    // aplicar el del nuevo. Si la cuenta no cambió, ambos deltas se acumulan.
+    const stmts: unknown[] = [
       db
         .update(savingsGoals)
         .set({
@@ -336,10 +382,17 @@ savingsRouter.put(
           type: data.type,
           description: data.description ?? null,
           date: data.date,
+          accountId: data.accountId,
         })
         .where(eq(savingsContributions.id, contributionId)),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ] as any);
+    ];
+    if (contribution.accountId != null) {
+      stmts.push(balanceUpdate(uid, contribution.accountId, -accountDelta(contribution.type, Number(contribution.amount))));
+    }
+    stmts.push(balanceUpdate(uid, data.accountId, accountDelta(data.type, data.amount)));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.batch(stmts as any);
 
     res.json(await loadGoalDetail(uid, id));
   }),
@@ -376,8 +429,9 @@ savingsRouter.delete(
     const rounded = Math.max(0, Math.round(newCurrent * 100) / 100);
     const completed = rounded >= Number(goal.targetAmount);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await db.batch([
+    // Al borrar, devolver a su cuenta el efecto del aporte (los del modelo viejo no
+    // tenían cuenta → no mueven saldo).
+    const stmts: unknown[] = [
       db
         .update(savingsGoals)
         .set({
@@ -388,8 +442,12 @@ savingsRouter.delete(
         })
         .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid))),
       db.delete(savingsContributions).where(eq(savingsContributions.id, contributionId)),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ] as any);
+    ];
+    if (contribution.accountId != null) {
+      stmts.push(balanceUpdate(uid, contribution.accountId, -accountDelta(contribution.type, Number(contribution.amount))));
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.batch(stmts as any);
 
     res.json(await loadGoalDetail(uid, id));
   }),

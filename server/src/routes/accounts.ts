@@ -3,7 +3,7 @@ import { and, eq, gte, lte, sql, desc, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { format, addDays, subMonths } from 'date-fns';
 import { db } from '../db/connection.js';
-import { accounts, creditCardStatements, transactions, categories, recurringRules, savingsGoals, type Account } from '../db/schema.js';
+import { accounts, creditCardStatements, transactions, categories, recurringRules, savingsGoals, savingsContributions, type Account } from '../db/schema.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
@@ -176,13 +176,14 @@ async function syncManagementFee(
  * campos calculados (crédito usado/disponible, utilización, próximas fechas);
  * para el resto de cuentas OMITE las columnas de tarjeta para no contaminar.
  */
-// `reservedSavings`: monto de metas de ahorro vinculadas a esta cuenta (earmark).
-// El dinero no se mueve; queda reservado dentro del saldo. El mobile muestra
-// "disponible = saldo − ahorro reservado".
-function shapeAccount(row: Account, reservedSavings = 0) {
-  const reserved = Math.round(reservedSavings * 100) / 100;
+// `savingsBalance`: dinero que SALIÓ de esta cuenta hacia metas de ahorro (neto
+// depósitos − retiros de las contribuciones financiadas desde ella). Ya no es un
+// earmark: el dinero se restó del saldo real al aportar. El mobile muestra el
+// saldo líquido y, debajo, "Ahorro" = este valor (toca para ver en qué metas está).
+function shapeAccount(row: Account, savingsBalance = 0) {
+  const savings = Math.round(savingsBalance * 100) / 100;
   const { creditLimit, billingCycleDay, paymentDueDay, allowOverdraft, ...base } = row;
-  if (row.type !== 'credit_card') return { ...base, reservedSavings: reserved };
+  if (row.type !== 'credit_card') return { ...base, savingsBalance: savings };
 
   const limit = creditLimit != null ? Number(creditLimit) : 0;
   // Nuevo modelo: current_balance ES el crédito DISPONIBLE (positivo), no la deuda.
@@ -199,7 +200,7 @@ function shapeAccount(row: Account, reservedSavings = 0) {
 
   return {
     ...base,
-    reservedSavings: reserved,
+    savingsBalance: savings,
     allowOverdraft,
     creditLimit: limit,
     creditUsed: Math.round(creditUsed * 100) / 100,
@@ -212,18 +213,36 @@ function shapeAccount(row: Account, reservedSavings = 0) {
   };
 }
 
-/** Mapa accountId → ahorro reservado (suma de metas vinculadas) del usuario. */
-async function reservedSavingsByAccount(uid: number): Promise<Map<number, number>> {
-  const goals = await db
-    .select({ accountId: savingsGoals.accountId, currentAmount: savingsGoals.currentAmount })
-    .from(savingsGoals)
-    .where(and(eq(savingsGoals.userId, uid), isNotNull(savingsGoals.accountId)));
+/**
+ * Mapa accountId → ahorro neto que salió de esa cuenta (Σ depósitos − Σ retiros
+ * de las contribuciones financiadas desde ella). Es el dinero ahorrado que ya no
+ * está en el saldo líquido de la cuenta.
+ */
+async function savingsByAccount(uid: number): Promise<Map<number, number>> {
+  const rows = await db
+    .select({
+      accountId: savingsContributions.accountId,
+      net: sql<string>`COALESCE(SUM(CASE WHEN ${savingsContributions.type} = 'deposit' THEN ${savingsContributions.amount} ELSE -${savingsContributions.amount} END), 0)`,
+    })
+    .from(savingsContributions)
+    .innerJoin(savingsGoals, eq(savingsContributions.goalId, savingsGoals.id))
+    .where(and(eq(savingsGoals.userId, uid), isNotNull(savingsContributions.accountId)))
+    .groupBy(savingsContributions.accountId);
   const map = new Map<number, number>();
-  for (const g of goals) {
-    if (g.accountId == null) continue;
-    map.set(g.accountId, (map.get(g.accountId) ?? 0) + Number(g.currentAmount));
+  for (const r of rows) {
+    if (r.accountId == null) continue;
+    map.set(r.accountId, Math.round(Number(r.net) * 100) / 100);
   }
   return map;
+}
+
+/** Verifica que una cuenta pertenezca al usuario (404 si no). */
+async function assertAccountOwned(uid: number, accountId: number): Promise<void> {
+  const [acc] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
+  if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
 }
 
 // GET /api/accounts — cuentas activas. Con ?includeInactive=true devuelve también
@@ -244,8 +263,8 @@ accountsRouter.get(
       .orderBy(desc(accounts.isActive), accounts.id)
       // TODO: paginar con load-more en mobile
       .limit(200);
-    const reserved = await reservedSavingsByAccount(userId(req));
-    res.json(rows.map((r) => shapeAccount(r, reserved.get(r.id) ?? 0)));
+    const savings = await savingsByAccount(userId(req));
+    res.json(rows.map((r) => shapeAccount(r, savings.get(r.id) ?? 0)));
   }),
 );
 
@@ -340,8 +359,43 @@ accountsRouter.get(
       .from(accounts)
       .where(and(eq(accounts.id, id), eq(accounts.userId, userId(req))));
     if (!row) throw new ApiError(404, 'Cuenta no encontrada');
-    const reserved = await reservedSavingsByAccount(userId(req));
-    res.json(shapeAccount(row, reserved.get(row.id) ?? 0));
+    const savings = await savingsByAccount(userId(req));
+    res.json(shapeAccount(row, savings.get(row.id) ?? 0));
+  }),
+);
+
+// GET /api/accounts/:id/savings — desglose del ahorro de esta cuenta por meta.
+// Responde [{ goalId, goalName, color, icon, amount }] donde amount es el neto
+// (depósitos − retiros) financiado desde esta cuenta hacia cada meta.
+accountsRouter.get(
+  '/:id/savings',
+  asyncHandler(async (req, res) => {
+    const uid = userId(req);
+    const id = parseId(req.params.id);
+    await assertAccountOwned(uid, id);
+    const rows = await db
+      .select({
+        goalId: savingsGoals.id,
+        goalName: savingsGoals.name,
+        color: savingsGoals.color,
+        icon: savingsGoals.icon,
+        net: sql<string>`COALESCE(SUM(CASE WHEN ${savingsContributions.type} = 'deposit' THEN ${savingsContributions.amount} ELSE -${savingsContributions.amount} END), 0)`,
+      })
+      .from(savingsContributions)
+      .innerJoin(savingsGoals, eq(savingsContributions.goalId, savingsGoals.id))
+      .where(and(eq(savingsGoals.userId, uid), eq(savingsContributions.accountId, id)))
+      .groupBy(savingsGoals.id, savingsGoals.name, savingsGoals.color, savingsGoals.icon);
+    const result = rows
+      .map((r) => ({
+        goalId: r.goalId,
+        goalName: r.goalName,
+        color: r.color,
+        icon: r.icon,
+        amount: Math.round(Number(r.net) * 100) / 100,
+      }))
+      .filter((r) => r.amount > 0.009)
+      .sort((a, b) => b.amount - a.amount);
+    res.json(result);
   }),
 );
 
