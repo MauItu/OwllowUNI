@@ -136,11 +136,17 @@ export function AddSavingsGoalScreen() {
         <SelectRow
           label="Cuenta asociada (opcional)"
           value={selectedAccount?.name ?? null}
-          placeholder="Sin cuenta asociada"
+          placeholder="Cuenta donde estará el ahorro"
           icon={selectedAccount?.icon ?? 'wallet'}
           iconColor={selectedAccount?.color ?? theme.colors.primary}
           onPress={() => setShowAccount(true)}
         />
+        {selectedAccount && (
+          <Text style={styles.accountHint}>
+            Lo que ahorres quedará reservado dentro de "{selectedAccount.name}": su saldo no cambia, pero verás el
+            disponible (saldo − ahorro).
+          </Text>
+        )}
 
         <Text style={styles.fieldLabel}>Color</Text>
         <View style={styles.swatches}>
@@ -196,7 +202,7 @@ export function AddSavingsGoalScreen() {
       <AccountPicker
         visible={showAccount}
         accounts={accounts}
-        title="Cuenta asociada"
+        title="Cuenta donde estará el ahorro"
         onSelect={(a) => {
           setAccountId(a.id);
           setShowAccount(false);
@@ -238,4 +244,10 @@ const createStyles = (theme: Theme) =>
       marginBottom: theme.spacing.md,
     },
     clearText: { color: theme.colors.expense, fontSize: theme.fontSize.sm },
+    accountHint: {
+      color: theme.colors.textMuted,
+      fontSize: theme.fontSize.xs,
+      marginTop: -theme.spacing.sm,
+      marginBottom: theme.spacing.md,
+    },
   });

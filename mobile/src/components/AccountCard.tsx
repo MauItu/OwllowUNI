@@ -78,6 +78,11 @@ function AccountCardComponent({ account, onPress }: { account: Account; onPress?
   }
 
   const balance = parseFloat(account.currentBalance);
+  // Ahorro reservado (earmark): el dinero sigue en la cuenta pero está apartado
+  // para metas. Disponible = saldo − ahorro reservado.
+  const reserved = account.reservedSavings ?? 0;
+  const hasReserved = reserved > 0;
+  const available = balance - reserved;
   return (
     <Pressable
       onPress={() => onPress?.(account)}
@@ -100,9 +105,21 @@ function AccountCardComponent({ account, onPress }: { account: Account; onPress?
           {!account.isActive ? ' · Inactiva' : ''}
         </Text>
       </View>
-      <Text style={[styles.balance, { color: balance < 0 ? theme.colors.expense : theme.colors.text }]} numberOfLines={1}>
-        {formatCurrency(balance, account.currency)}
-      </Text>
+      <View style={styles.amountCol}>
+        <Text style={[styles.balance, { color: balance < 0 ? theme.colors.expense : theme.colors.text }]} numberOfLines={1}>
+          {formatCurrency(balance, account.currency)}
+        </Text>
+        {hasReserved && (
+          <>
+            <Text style={styles.availableLine} numberOfLines={1}>
+              Disp. {formatCurrency(available, account.currency)}
+            </Text>
+            <Text style={[styles.reservedLine, { color: account.color }]} numberOfLines={1}>
+              <Icon name="piggy-bank" size={11} color={account.color} /> Ahorro {formatCurrency(reserved, account.currency)}
+            </Text>
+          </>
+        )}
+      </View>
     </Pressable>
   );
 }
@@ -128,6 +145,9 @@ const createStyles = (theme: Theme) =>
   name: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
   type: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, marginTop: 2 },
   balance: { fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.semibold },
+  amountCol: { alignItems: 'flex-end', flexShrink: 1 },
+  availableLine: { color: theme.colors.textSecondary, fontSize: theme.fontSize.xs, marginTop: 2 },
+  reservedLine: { fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold, marginTop: 1 },
   // Tarjeta de crédito: layout vertical (header + barra + montos).
   creditCard: { flexDirection: 'column', alignItems: 'stretch', gap: theme.spacing.sm },
   creditHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },

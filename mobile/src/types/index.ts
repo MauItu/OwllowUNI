@@ -67,6 +67,8 @@ export interface Account {
   isActive: boolean;
   /** Tarjeta congelada: bloquea gastos nuevos, permite pagos de deuda. */
   isFrozen: boolean;
+  /** Ahorro reservado (earmark) por metas vinculadas a esta cuenta. */
+  reservedSavings?: number;
   createdAt: string;
   updatedAt: string;
   // Solo presentes cuando type === 'credit_card' (GET /api/accounts los calcula)

@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { and, eq, gte, lte, sql, desc } from 'drizzle-orm';
+import { and, eq, gte, lte, sql, desc, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { format, addDays, subMonths } from 'date-fns';
 import { db } from '../db/connection.js';
-import { accounts, creditCardStatements, transactions, categories, recurringRules, type Account } from '../db/schema.js';
+import { accounts, creditCardStatements, transactions, categories, recurringRules, savingsGoals, type Account } from '../db/schema.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
@@ -176,9 +176,13 @@ async function syncManagementFee(
  * campos calculados (crédito usado/disponible, utilización, próximas fechas);
  * para el resto de cuentas OMITE las columnas de tarjeta para no contaminar.
  */
-function shapeAccount(row: Account) {
+// `reservedSavings`: monto de metas de ahorro vinculadas a esta cuenta (earmark).
+// El dinero no se mueve; queda reservado dentro del saldo. El mobile muestra
+// "disponible = saldo − ahorro reservado".
+function shapeAccount(row: Account, reservedSavings = 0) {
+  const reserved = Math.round(reservedSavings * 100) / 100;
   const { creditLimit, billingCycleDay, paymentDueDay, allowOverdraft, ...base } = row;
-  if (row.type !== 'credit_card') return base;
+  if (row.type !== 'credit_card') return { ...base, reservedSavings: reserved };
 
   const limit = creditLimit != null ? Number(creditLimit) : 0;
   // Nuevo modelo: current_balance ES el crédito DISPONIBLE (positivo), no la deuda.
@@ -195,6 +199,7 @@ function shapeAccount(row: Account) {
 
   return {
     ...base,
+    reservedSavings: reserved,
     allowOverdraft,
     creditLimit: limit,
     creditUsed: Math.round(creditUsed * 100) / 100,
@@ -205,6 +210,20 @@ function shapeAccount(row: Account) {
     nextBillingDate: ymd(nextBilling),
     nextPaymentDueDate: ymd(nextPayment),
   };
+}
+
+/** Mapa accountId → ahorro reservado (suma de metas vinculadas) del usuario. */
+async function reservedSavingsByAccount(uid: number): Promise<Map<number, number>> {
+  const goals = await db
+    .select({ accountId: savingsGoals.accountId, currentAmount: savingsGoals.currentAmount })
+    .from(savingsGoals)
+    .where(and(eq(savingsGoals.userId, uid), isNotNull(savingsGoals.accountId)));
+  const map = new Map<number, number>();
+  for (const g of goals) {
+    if (g.accountId == null) continue;
+    map.set(g.accountId, (map.get(g.accountId) ?? 0) + Number(g.currentAmount));
+  }
+  return map;
 }
 
 // GET /api/accounts — cuentas activas. Con ?includeInactive=true devuelve también
@@ -225,7 +244,8 @@ accountsRouter.get(
       .orderBy(desc(accounts.isActive), accounts.id)
       // TODO: paginar con load-more en mobile
       .limit(200);
-    res.json(rows.map(shapeAccount));
+    const reserved = await reservedSavingsByAccount(userId(req));
+    res.json(rows.map((r) => shapeAccount(r, reserved.get(r.id) ?? 0)));
   }),
 );
 
@@ -320,7 +340,8 @@ accountsRouter.get(
       .from(accounts)
       .where(and(eq(accounts.id, id), eq(accounts.userId, userId(req))));
     if (!row) throw new ApiError(404, 'Cuenta no encontrada');
-    res.json(shapeAccount(row));
+    const reserved = await reservedSavingsByAccount(userId(req));
+    res.json(shapeAccount(row, reserved.get(row.id) ?? 0));
   }),
 );
 
