@@ -33,6 +33,8 @@ import type {
   DebtInput,
   DebtPaymentInput,
   DebtsSummary,
+  RecurringRule,
+  RecurringRuleInput,
   Budget,
   BudgetsSummary,
   BudgetHistoryMonth,
@@ -318,9 +320,16 @@ export const insightsApi = {
 
 // ────────────────────── Pagos recurrentes ───────────────────
 export const recurringApi = {
+  list: () => api.get<RecurringRule[]>('/recurring-rules').then((r) => r.data),
+  create: (data: RecurringRuleInput) =>
+    api.post<RecurringRule>('/recurring-rules', data).then((r) => r.data),
+  update: (id: number, data: RecurringRuleInput) =>
+    api.put<RecurringRule>(`/recurring-rules/${id}`, data).then((r) => r.data),
+  remove: (id: number) => api.delete(`/recurring-rules/${id}`).then((r) => r.data),
+  toggle: (id: number) =>
+    api.patch<RecurringRule>(`/recurring-rules/${id}/toggle`).then((r) => r.data),
   // Materializa los cargos recurrentes pendientes del usuario (idempotente).
-  // Se llama una vez al abrir la app, en background; el CRUD de reglas se agrega
-  // en la pantalla de gestión.
+  // Se llama una vez al abrir la app, en background (ver useAuth).
   catchUp: () =>
     api.post<{ generatedCount: number }>('/recurring/catch-up').then((r) => r.data),
 };

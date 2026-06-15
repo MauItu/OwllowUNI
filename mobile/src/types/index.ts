@@ -445,6 +445,54 @@ export interface DebtsSummary {
   activeLoans: number;
 }
 
+// ─────────────────────────── Pagos recurrentes ─────────────────────────
+
+export type Frequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
+
+export interface RecurringRule {
+  id: number;
+  accountId: number;
+  type: 'expense' | 'income';
+  amount: string;
+  description: string | null;
+  categoryId: number | null;
+  frequency: Frequency;
+  /** Día del mes (1-31) para monthly/yearly. */
+  dayOfMonth: number | null;
+  /** Día de la semana (0-6, domingo=0) para weekly/biweekly. */
+  dayOfWeek: number | null;
+  startDate: string;
+  endDate: string | null;
+  /** Cursor de idempotencia (última fecha materializada). */
+  lastGeneratedDate: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  // Enriquecidos por el backend (GET):
+  tags?: Pick<Tag, 'id' | 'name' | 'color' | 'icon'>[];
+  /** Próxima fecha de cobro (null si está pausada o ya venció). */
+  nextDate?: string | null;
+  accountName?: string | null;
+  accountType?: string | null;
+  categoryName?: string | null;
+  categoryColor?: string | null;
+  categoryIcon?: string | null;
+}
+
+export interface RecurringRuleInput {
+  accountId: number;
+  type: 'expense' | 'income';
+  amount: number;
+  description?: string | null;
+  categoryId?: number | null;
+  frequency: Frequency;
+  dayOfMonth?: number | null;
+  dayOfWeek?: number | null;
+  startDate: string;
+  endDate?: string | null;
+  tagIds?: number[];
+}
+
 // ──────────────────────── Presupuestos mensuales ───────────────────────
 
 export interface Budget {

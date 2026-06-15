@@ -40,6 +40,7 @@ const FINANZAS: NavItem[] = [
   { label: 'Metas de ahorro', icon: 'piggy-bank', route: 'Savings', color: (t) => t.colors.income },
   { label: 'Deudas y préstamos', icon: 'landmark', route: 'Debts', color: (t) => t.colors.expense },
   { label: 'Presupuestos', icon: 'pie-chart', route: 'Budgets', color: (t) => t.colors.primary },
+  { label: 'Pagos recurrentes', icon: 'repeat', route: 'Recurring', color: (t) => t.colors.secondary },
   { label: 'Gastos compartidos', icon: 'users', route: 'Splits', color: (t) => t.colors.accentLight },
 ];
 

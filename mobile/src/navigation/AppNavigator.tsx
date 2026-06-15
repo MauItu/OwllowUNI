@@ -74,6 +74,8 @@ const AddSplitGroupScreen = lazyScreen(() => import('../screens/AddSplitGroupScr
 const SplitGroupDetailScreen = lazyScreen(() => import('../screens/SplitGroupDetailScreen').then((m) => ({ default: m.SplitGroupDetailScreen })));
 const AddSplitExpenseScreen = lazyScreen(() => import('../screens/AddSplitExpenseScreen').then((m) => ({ default: m.AddSplitExpenseScreen })));
 const BudgetsScreen = lazyScreen(() => import('../screens/BudgetsScreen').then((m) => ({ default: m.BudgetsScreen })));
+const RecurringRulesScreen = lazyScreen(() => import('../screens/RecurringRulesScreen').then((m) => ({ default: m.RecurringRulesScreen })));
+const AddRecurringRuleScreen = lazyScreen(() => import('../screens/AddRecurringRuleScreen').then((m) => ({ default: m.AddRecurringRuleScreen })));
 const SearchScreen = lazyScreen(() => import('../screens/SearchScreen').then((m) => ({ default: m.SearchScreen })));
 const SettingsNotificationsScreen = lazyScreen(() => import('../screens/SettingsNotificationsScreen').then((m) => ({ default: m.SettingsNotificationsScreen })));
 const SecurityScreen = lazyScreen(() => import('../screens/SecurityScreen').then((m) => ({ default: m.SecurityScreen })));
@@ -222,6 +224,8 @@ export function AppNavigator() {
         <RootStack.Screen name="AddDebt" component={AddDebtScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="DebtDetail" component={DebtDetailScreen} />
         <RootStack.Screen name="Budgets" component={BudgetsScreen} />
+        <RootStack.Screen name="Recurring" component={RecurringRulesScreen} />
+        <RootStack.Screen name="AddRecurring" component={AddRecurringRuleScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="Search" component={SearchScreen} />
         <RootStack.Screen name="Splits" component={SplitsScreen} />
         <RootStack.Screen name="AddSplitGroup" component={AddSplitGroupScreen} options={{ presentation: 'modal' }} />

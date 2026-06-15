@@ -23,6 +23,8 @@ export type RootStackParamList = {
   AddDebt: { debtId?: number } | undefined;
   DebtDetail: { debtId: number };
   Budgets: undefined;
+  Recurring: undefined;
+  AddRecurring: { ruleId?: number } | undefined;
   Splits: undefined;
   AddSplitGroup: undefined;
   SplitGroupDetail: { groupId: number };
