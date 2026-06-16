@@ -3,7 +3,13 @@ import { transactionsApi, getErrorMessage } from '../api/client';
 import { useAppStore } from '../stores/appStore';
 import type { Transaction, TransactionFilters } from '../types';
 
-/** Hook de transacciones: lista paginada con filtros, refresh y loadMore. */
+/**
+ * Hook de transacciones: lista paginada con filtros, refresh y loadMore.
+ *
+ * NO usa `useResource`: tiene estado y modo extra (paginación con `page`/
+ * `totalPages`, `loadingMore` y acumulación de páginas en `loadMore`) que no
+ * encaja en el fetch de un solo recurso. Se mantiene el patrón manual.
+ */
 export function useTransactions(filters: TransactionFilters = {}, limit = 30) {
   const [data, setData] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);

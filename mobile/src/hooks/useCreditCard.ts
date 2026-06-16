@@ -1,56 +1,33 @@
-import { useCallback, useEffect, useState } from 'react';
-import { accountsApi, getErrorMessage } from '../api/client';
-import { useAppStore } from '../stores/appStore';
+import { useCallback } from 'react';
+import { accountsApi } from '../api/client';
+import { useResource } from './useResource';
 import type { CreditCardStatement } from '../types';
 
 /**
  * Estados de cuenta (cortes) de una tarjeta de crédito + acciones de pago y
- * generación de corte. Mismo patrón que useDebts: refetch en cambios de
- * refreshKey (appStore).
+ * generación de corte. El fetch sigue el patrón estándar (useResource: refetch
+ * en cambios de refreshKey); encima añade dos acciones que mutan y re-fetchean.
  */
 export function useCreditCard(accountId: number, limit = 12) {
-  const [statements, setStatements] = useState<CreditCardStatement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const refreshKey = useAppStore((s) => s.refreshKey);
-
-  const fetchStatements = useCallback(
-    async (isRefresh = false) => {
-      try {
-        if (isRefresh) setRefreshing(true);
-        else setLoading(true);
-        setError(null);
-        const rows = await accountsApi.statements(accountId, { limit, offset: 0 });
-        setStatements(rows);
-      } catch (err) {
-        setError(getErrorMessage(err));
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
+  const { data, loading, refreshing, error, refetch } = useResource<CreditCardStatement[]>(
+    () => accountsApi.statements(accountId, { limit, offset: 0 }),
     [accountId, limit],
   );
-
-  useEffect(() => {
-    fetchStatements();
-  }, [fetchStatements, refreshKey]);
 
   const payStatement = useCallback(
     async (statementId: number, amount: number, paymentAccountId: number) => {
       const result = await accountsApi.payStatement(accountId, statementId, { amount, paymentAccountId });
-      await fetchStatements(true);
+      await refetch(true);
       return result;
     },
-    [accountId, fetchStatements],
+    [accountId, refetch],
   );
 
   const generateStatement = useCallback(async () => {
     const result = await accountsApi.generateStatement(accountId);
-    await fetchStatements(true);
+    await refetch(true);
     return result;
-  }, [accountId, fetchStatements]);
+  }, [accountId, refetch]);
 
-  return { statements, loading, refreshing, error, refetch: fetchStatements, payStatement, generateStatement };
+  return { statements: data ?? [], loading, refreshing, error, refetch, payStatement, generateStatement };
 }

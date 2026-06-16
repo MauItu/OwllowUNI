@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { statsApi, getErrorMessage } from '../api/client';
-import { useAppStore } from '../stores/appStore';
+import { statsApi } from '../api/client';
+import { useResource } from './useResource';
 import type { StatsSummary, CategoryStat, TimelinePoint, BalancePoint } from '../types';
 
 interface StatsData {
@@ -24,38 +23,21 @@ export function useStats(
   group: 'day' | 'week' | 'month' = 'day',
   displayCurrency = 'COP',
 ) {
-  const [data, setData] = useState<StatsData>(EMPTY);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const refreshKey = useAppStore((s) => s.refreshKey);
-
-  const fetch = useCallback(
-    async (isRefresh = false) => {
-      try {
-        if (isRefresh) setRefreshing(true);
-        else setLoading(true);
-        setError(null);
-        const [summary, byCategory, timeline, balanceEvolution] = await Promise.all([
-          statsApi.summary(from, to, displayCurrency),
-          statsApi.byCategory(from, to, 'expense', displayCurrency),
-          statsApi.timeline(from, to, group, displayCurrency),
-          statsApi.balanceEvolution(from, to, displayCurrency),
-        ]);
-        setData({ summary, byCategory, timeline, balanceEvolution });
-      } catch (err) {
-        setError(getErrorMessage(err));
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
+  const { data, loading, refreshing, error, refetch } = useResource<StatsData>(
+    () =>
+      Promise.all([
+        statsApi.summary(from, to, displayCurrency),
+        statsApi.byCategory(from, to, 'expense', displayCurrency),
+        statsApi.timeline(from, to, group, displayCurrency),
+        statsApi.balanceEvolution(from, to, displayCurrency),
+      ]).then(([summary, byCategory, timeline, balanceEvolution]) => ({
+        summary,
+        byCategory,
+        timeline,
+        balanceEvolution,
+      })),
     [from, to, group, displayCurrency],
   );
 
-  useEffect(() => {
-    fetch();
-  }, [fetch, refreshKey]);
-
-  return { ...data, loading, refreshing, error, refetch: fetch };
+  return { ...(data ?? EMPTY), loading, refreshing, error, refetch };
 }
