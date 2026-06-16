@@ -227,6 +227,7 @@ mobile/
     │                              StatChart, TemplateCard, TagChip, TagPicker, SavingsGoalCard,
     │                              DebtCard, HomeSummaryCard, InsightCard, CurrencyPicker, Sidebar (drawer de perfil),
     │                              WelcomeOverlay (bienvenida épica al login), GlobalSearchBar,
+    │                              tour/ (TourProvider + useTourTarget + GuidedTour: tutorial guiado interactivo),
     │                              AccountTypeFilter (filtro Todas/Débito/Crédito), PinDots, PinKeypad, PinModal,
     │                              ReceiptViewer, BottomSheet, DayPickerSheet, Icon, common
     ├── navigation/AppNavigator.tsx  ← Bottom tabs + native stacks (NavigationContainer con navigationRef)
@@ -989,6 +990,46 @@ y `MoreScreen` son tabs con **carga diferida** (`lazyScreen`); su `ScreenHeader`
 > halo pulsante; entra con fade+escala, late ~1.6 s y se desvanece llamando `dismissWelcome` para seguir
 > usando la app. `useAuth` expone `welcome: { name, role } | null` y `dismissWelcome`; se renderiza en
 > `App.tsx` (overlay top-most, gated por `isAuthenticated && welcome`).
+
+> **Tutorial guiado interactivo (`components/tour/`, rama `Add-Tutorial`, jun 2026).** Reemplaza al
+> carrusel de diapositivas a pantalla completa (el viejo `TutorialOverlay.tsx`, **eliminado**) por un
+> **tour que navega la app de verdad y va resaltando los botones/secciones reales** con un foco
+> (spotlight) y un tooltip anclado al lado. Dos archivos:
+> - **`tour/TourContext.tsx`** — `TourProvider` (montado en `App.tsx`, envuelve `ThemedApp`) mantiene un
+>   registro de "objetivos" medibles. Las pantallas marcan un elemento con el hook **`useTourTarget('clave')`**
+>   (devuelve un `ref` que se pasa al `View`/`Pressable`). El overlay mide ese nodo con `measureInWindow`
+>   bajo demanda. También registra **scrollers** (`registerScroller`) para poder llevar a la vista objetivos
+>   que quedan bajo el fold.
+> - **`tour/GuidedTour.tsx`** — el overlay. Guion `STEPS[]`: cada paso indica a qué **tab** navegar
+>   (vía `navigationRef`), qué **objetivo** resaltar y, opcional, qué **scroller** usar. Mecánica clave:
+>   - **Foco/spotlight:** 4 rectángulos oscuros alrededor del objetivo dejan un "hueco" que muestra el
+>     elemento real iluminado, con un anillo pulsante. Una capa `Pressable` de fondo captura los toques
+>     (tocar = avanzar) y **bloquea la interacción real** con la app debajo.
+>   - **Corrección de coordenadas (Android):** `measureAdjusted` mide el objetivo Y el contenedor raíz del
+>     overlay con el MISMO `measureInWindow` y resta el origen del contenedor; así se **cancela el desfase**
+>     que meten las barras de estado/navegación y el foco cae exactamente sobre el icono.
+>   - **Responsive:** el tooltip mide su altura real (`onLayout`), se ancla arriba o abajo según la mitad de
+>     pantalla en la que esté el objetivo, se **clampa al área segura** (`insets`, `useWindowDimensions`) para
+>     no salirse nunca, y aplica un micro-ajuste de alineación `ALIGN_NUDGE` (±2px: baja en la mitad superior,
+>     sube en la inferior). **Auto-scroll**: si el objetivo cae fuera de la zona cómoda y el paso tiene scroller,
+>     pide `scrollBy` y re-mide (`MoreScreen` registra su `ScrollView` como scroller `'more'`).
+>   - **Nunca se atasca:** mide con reintentos (la pantalla puede estar en transición/lazy-load) y, si no logra
+>     medir, cae a una **tarjeta centrada** con el mismo texto.
+> - **Objetivos registrados:** `home-profile`/`home-search`/`home-balance` (`HomeScreen`),
+>   `tab-accounts`/`tab-add`/`tab-stats`/`tab-more` (`CustomTabBar` en `AppNavigator`),
+>   `more-finanzas`/`more-analisis`/`more-preferencias`/`more-help` (`MoreScreen`).
+> - **Guion:** bienvenida → perfil → saldo → búsqueda → pestaña Cuentas → botón **+** → Estadísticas →
+>   pestaña Más → **Finanzas** → **Análisis** → **Preferencias** → ítem **Tutorial** → cierre.
+> - **Persistencia / disparo:** sin cambios respecto al onboarding previo. Flag por usuario
+>   `wallet_tutorial_seen_<userId>` en AsyncStorage (`services/tutorial.ts`: `hasSeenTutorial`/`markTutorialSeen`).
+>   `useAuth` expone `needsTutorial`/`completeTutorial`/`startTutorial`. Se dispara UNA vez tras el primer
+>   login/registro (DESPUÉS del onboarding de PIN, gated `!needsPinSetup`), es **saltable**, y se relanza desde
+>   **Más → "Tutorial"** (sección "Ayuda"; antes "Cómo usar la app"). NO se reabre en el cold-start.
+> - **Falta / pendiente:** el tour solo cambia de **tab** y resalta tabs, el header de Inicio y encabezados de
+>   Más; **no entra a stack screens ni modales** (`AddTransaction`, `AddAccount`, detalles) ni resalta controles
+>   internos de esas pantallas. No hay tests (el posicionamiento depende del runtime nativo — verificar en
+>   dispositivo). `ALIGN_NUDGE`/la "zona cómoda" pueden requerir calibración fina por dispositivo. Mejora futura:
+>   permitir **interactuar** con el elemento resaltado (hoy el toque se intercepta para avanzar).
 
 **HomeScreen:** header con **botón de perfil** (`circle-user`, abre el drawer de perfil) a la izquierda,
 saludo por hora ("Buenos días/tardes/noches") + fecha al centro y atajos de búsqueda + Cuentas (wallet) a la derecha; `BalanceSummary`
