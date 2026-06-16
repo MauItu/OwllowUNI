@@ -26,6 +26,7 @@ import { useSplits } from '../hooks/useSplits';
 import { useBudgets } from '../hooks/useBudgets';
 import { useAppStore } from '../stores/appStore';
 import { useSidebarStore } from '../stores/sidebarStore';
+import { useTourTarget } from '../components/tour/TourContext';
 import { currentMonthRange } from '../utils/formatDate';
 import { formatCurrency } from '../utils/formatCurrency';
 import type { Template } from '../types';
@@ -58,6 +59,10 @@ export function HomeScreen() {
   const { budgets, refetch: refetchBudgets } = useBudgets();
   const setPendingTemplate = useAppStore((s) => s.setPendingTemplate);
   const openSidebar = useSidebarStore((s) => s.open);
+  // Objetivos del tour guiado: perfil, búsqueda y card de balance.
+  const profileTarget = useTourTarget('home-profile');
+  const searchTarget = useTourTarget('home-search');
+  const balanceTarget = useTourTarget('home-balance');
 
   const [refreshing, setRefreshing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -102,7 +107,7 @@ export function HomeScreen() {
         style={styles.topBar}
       >
         {/* Abre el drawer de perfil (nombre, correo, cerrar sesión). */}
-        <Pressable style={styles.iconBtn} onPress={openSidebar} hitSlop={8}>
+        <Pressable ref={profileTarget} style={styles.iconBtn} onPress={openSidebar} hitSlop={8}>
           <Icon name="circle-user" size={24} color="#FFFFFF" />
         </Pressable>
         <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
@@ -110,7 +115,7 @@ export function HomeScreen() {
           <Text style={styles.date}>{dateLabel}</Text>
         </View>
         <View style={styles.topActions}>
-          <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Search')} hitSlop={8}>
+          <Pressable ref={searchTarget} style={styles.iconBtn} onPress={() => navigation.navigate('Search')} hitSlop={8}>
             <Icon name="search" size={22} color="#FFFFFF" />
           </Pressable>
           <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Accounts')}>
@@ -124,16 +129,18 @@ export function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
-        <BalanceSummary
-          totalBalance={acctSummary?.total ?? totalBalance}
-          income={summary.income}
-          expense={summary.expense}
-          currency={mainCurrency}
-          debitTotal={acctSummary?.debitTotal ?? totalBalance}
-          creditAvailable={acctSummary?.creditAvailable ?? 0}
-          possibleMoney={acctSummary?.possibleMoney ?? (acctSummary?.debitTotal ?? totalBalance)}
-          showCredit={creditCards.length > 0}
-        />
+        <View ref={balanceTarget} collapsable={false}>
+          <BalanceSummary
+            totalBalance={acctSummary?.total ?? totalBalance}
+            income={summary.income}
+            expense={summary.expense}
+            currency={mainCurrency}
+            debitTotal={acctSummary?.debitTotal ?? totalBalance}
+            creditAvailable={acctSummary?.creditAvailable ?? 0}
+            possibleMoney={acctSummary?.possibleMoney ?? (acctSummary?.debitTotal ?? totalBalance)}
+            showCredit={creditCards.length > 0}
+          />
+        </View>
 
         {/* El crédito disponible ya se muestra en el balance; aquí solo alertas de utilización. */}
         {creditAlerts.length > 0 && (

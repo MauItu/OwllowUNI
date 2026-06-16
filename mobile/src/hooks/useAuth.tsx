@@ -26,8 +26,8 @@ interface AuthValue {
   welcome: { name: string; role: string } | null;
   /**
    * true cuando el usuario ve la app por primera vez (primer login/registro y
-   * aún no ha visto/saltado el tutorial): dispara el TutorialOverlay de "cómo se
-   * usa la app". Como `welcome`, NO se activa al restaurar sesión en cold-start.
+   * aún no ha visto/saltado el tutorial): dispara el GuidedTour de "cómo se usa
+   * la app". Como `welcome`, NO se activa al restaurar sesión en cold-start.
    */
   needsTutorial: boolean;
   login: (email: string, password: string) => Promise<void>;

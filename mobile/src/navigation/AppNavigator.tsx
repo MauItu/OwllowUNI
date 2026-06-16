@@ -8,6 +8,7 @@ import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from '../components/Icon';
 import { useAuth } from '../hooks/useAuth';
+import { useTourTarget } from '../components/tour/TourContext';
 import { navigationRef } from './navigationRef';
 import type { RootStackParamList, TabParamList, AuthStackParamList } from './types';
 
@@ -98,11 +99,31 @@ const TAB_META: Record<keyof TabParamList, { icon: string; label: string }> = {
  * Tab bar a medida que respeta el SafeArea inferior (botones de navegación
  * Android) y eleva el botón central "Agregar" tipo FAB integrado.
  */
+// Objetivos del tour guiado por nombre de ruta del tab (claves en GuidedTour).
+const TAB_TOUR_KEY: Partial<Record<keyof TabParamList, string>> = {
+  AccountsTab: 'tab-accounts',
+  AddTab: 'tab-add',
+  Stats: 'tab-stats',
+  More: 'tab-more',
+};
+
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
   const styles = useThemedStyles(createStyles);
   const paddingBottom = Math.max(insets.bottom, 12) + 8;
+
+  // Refs de objetivos del tour: uno por tab señalable (el hook exige orden fijo).
+  const accountsTarget = useTourTarget('tab-accounts');
+  const addTarget = useTourTarget('tab-add');
+  const statsTarget = useTourTarget('tab-stats');
+  const moreTarget = useTourTarget('tab-more');
+  const tourRefByKey: Record<string, React.RefObject<View | null>> = {
+    'tab-accounts': accountsTarget,
+    'tab-add': addTarget,
+    'tab-stats': statsTarget,
+    'tab-more': moreTarget,
+  };
 
   return (
     <View style={[styles.tabBar, { paddingBottom, height: 64 + paddingBottom }]}>
@@ -110,6 +131,8 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         const meta = TAB_META[route.name as keyof TabParamList];
         const isFocused = state.index === index;
         const isAdd = route.name === 'AddTab';
+        const tourKey = TAB_TOUR_KEY[route.name as keyof TabParamList];
+        const tourRef = tourKey ? tourRefByKey[tourKey] : undefined;
 
         const onPress = () => {
           if (isAdd) {
@@ -125,7 +148,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         if (isAdd) {
           return (
             <View key={route.key} style={styles.addSlot}>
-              <Pressable onPress={onPress} style={styles.addFab} hitSlop={8}>
+              <Pressable ref={tourRef} onPress={onPress} style={styles.addFab} hitSlop={8}>
                 <Icon name="plus" size={32} color={theme.colors.background} strokeWidth={2.5} />
               </Pressable>
             </View>
@@ -134,7 +157,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
         const color = isFocused ? theme.colors.tabActive : theme.colors.tabInactive;
         return (
-          <Pressable key={route.key} style={styles.tabItem} onPress={onPress} hitSlop={4}>
+          <Pressable ref={tourRef} key={route.key} style={styles.tabItem} onPress={onPress} hitSlop={4}>
             <Icon name={meta.icon} size={24} color={color} strokeWidth={isFocused ? 2.4 : 2} />
             <Text style={[styles.tabLabel, { color }]} numberOfLines={1}>
               {meta.label}

@@ -12,7 +12,8 @@ import { LockScreen } from './src/screens/LockScreen';
 import { SetupPinScreen } from './src/screens/SetupPinScreen';
 import { Sidebar } from './src/components/Sidebar';
 import { WelcomeOverlay } from './src/components/WelcomeOverlay';
-import { TutorialOverlay } from './src/components/TutorialOverlay';
+import { GuidedTour } from './src/components/tour/GuidedTour';
+import { TourProvider } from './src/components/tour/TourContext';
 import { createToastConfig } from './src/components/toastConfig';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { AppLockProvider, useAppLock } from './src/hooks/useAppLock';
@@ -82,9 +83,10 @@ function ThemedApp() {
       {/* Onboarding obligatorio de PIN tras el primer login/registro (overlay
           one-way: sin back ni gesto de swipe). Tiene prioridad sobre el lock. */}
       {isAuthenticated && needsPinSetup && <SetupPinScreen onDone={completePinSetup} />}
-      {/* Tutorial de "cómo se usa la app" tras el primer login. Va DESPUÉS del
-          onboarding de PIN (se gatea con !needsPinSetup) y es saltable. */}
-      {isAuthenticated && !needsPinSetup && needsTutorial && <TutorialOverlay onDone={completeTutorial} />}
+      {/* Tour guiado e interactivo de "cómo se usa la app" tras el primer login:
+          navega por la app y resalta los botones reales. Va DESPUÉS del onboarding
+          de PIN (se gatea con !needsPinSetup) y es saltable. */}
+      {isAuthenticated && !needsPinSetup && needsTutorial && <GuidedTour onDone={completeTutorial} />}
       {/* Bienvenida épica tras el login para usuarios con rol especial (se desvanece sola). */}
       {isAuthenticated && welcome && <WelcomeOverlay role={welcome.role} onDone={dismissWelcome} />}
       <Toast config={toastConfig} />
@@ -109,7 +111,9 @@ export default function App() {
             <AuthProvider>
               <ThemeProvider>
                 <AppLockProvider>
-                  <ThemedApp />
+                  <TourProvider>
+                    <ThemedApp />
+                  </TourProvider>
                 </AppLockProvider>
               </ThemeProvider>
             </AuthProvider>

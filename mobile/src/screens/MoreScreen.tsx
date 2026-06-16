@@ -8,6 +8,7 @@ import { CurrencyPicker } from '../components/CurrencyPicker';
 import { Icon } from '../components/Icon';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuth } from '../hooks/useAuth';
+import { useTourTarget } from '../components/tour/TourContext';
 import type { RootStackParamList } from '../navigation/types';
 
 type Route = keyof RootStackParamList;
@@ -50,6 +51,7 @@ export function MoreScreen() {
   const mainCurrency = useSettingsStore((s) => s.mainCurrency);
   const setMainCurrency = useSettingsStore((s) => s.setMainCurrency);
   const { startTutorial } = useAuth();
+  const helpTarget = useTourTarget('more-help');
   const [showCurrency, setShowCurrency] = useState(false);
 
   const renderItem = (item: NavItem) => {
@@ -101,6 +103,7 @@ export function MoreScreen() {
           <SectionTitle title="Ayuda" />
         </View>
         <Pressable
+          ref={helpTarget}
           style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.surfaceLight }]}
           onPress={startTutorial}
         >
