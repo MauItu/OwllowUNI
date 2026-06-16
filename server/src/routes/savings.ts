@@ -8,6 +8,7 @@ import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { assertDebitSufficient } from '../utils/balance.js';
+import { getOwnedAccount } from '../utils/ownership.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 
 export const savingsRouter = Router();
@@ -30,16 +31,6 @@ function balanceUpdate(uid: number, accountId: number, delta: number) {
       updatedAt: new Date(),
     })
     .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
-}
-
-/** Verifica que una cuenta pertenezca al usuario (404 si no). */
-async function assertAccountOwned(uid: number, accountId: number): Promise<{ type: string; currentBalance: string }> {
-  const [acc] = await db
-    .select({ id: accounts.id, type: accounts.type, currentBalance: accounts.currentBalance })
-    .from(accounts)
-    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
-  if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
-  return { type: acc.type, currentBalance: acc.currentBalance };
 }
 
 const goalSchema = z.object({
@@ -237,7 +228,7 @@ savingsRouter.post(
       .from(savingsGoals)
       .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
     if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
-    const acctInfo = await assertAccountOwned(uid, data.accountId);
+    const acctInfo = await getOwnedAccount(uid, data.accountId);
     if (data.type === 'deposit') {
       assertDebitSufficient(acctInfo, data.amount);
     }
@@ -356,7 +347,7 @@ savingsRouter.put(
       .where(and(eq(savingsContributions.id, contributionId), eq(savingsContributions.goalId, id)));
     if (!contribution) throw new ApiError(404, 'Contribución no encontrada');
 
-    const editAcctInfo = await assertAccountOwned(uid, data.accountId);
+    const editAcctInfo: { type: string; currentBalance: string } = await getOwnedAccount(uid, data.accountId);
     if (data.type === 'deposit') {
       let available = Number(editAcctInfo.currentBalance);
       if (contribution.accountId === data.accountId) {

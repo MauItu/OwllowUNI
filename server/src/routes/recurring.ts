@@ -13,6 +13,7 @@ import {
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
+import { getOwnedAccount, assertCategoryOwned, assertTagsOwned } from '../utils/ownership.js';
 import { nextOccurrence, parseYmd, ymd, type Frequency } from '../utils/recurrence.js';
 import { materializeRecurringCharges } from '../services/recurring.js';
 
@@ -51,39 +52,6 @@ const ruleSchema = z.object({
   tagIds: z.array(z.number().int()).optional(),
 });
 type RuleInput = z.infer<typeof ruleSchema>;
-
-/** Verifica que la cuenta sea del usuario y devuelve su tipo (404 si no existe). */
-async function assertAccountOwned(uid: number, accountId: number) {
-  const [acc] = await db
-    .select({ id: accounts.id, type: accounts.type })
-    .from(accounts)
-    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
-  if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
-  return acc;
-}
-
-/** Verifica que la categoría (si se envió) sea del usuario (400 si no). */
-async function assertCategoryOwned(uid: number, categoryId: number | null | undefined): Promise<void> {
-  if (categoryId == null) return;
-  const [cat] = await db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(and(eq(categories.id, categoryId), eq(categories.userId, uid)));
-  if (!cat) throw new ApiError(400, 'La categoría no existe');
-}
-
-/** Verifica que las etiquetas referenciadas pertenezcan al usuario (400 si no). */
-async function assertTagsOwned(uid: number, tagIds: number[] | undefined): Promise<void> {
-  if (!tagIds || tagIds.length === 0) return;
-  const unique = [...new Set(tagIds)];
-  const owned = await db
-    .select({ id: tags.id })
-    .from(tags)
-    .where(and(eq(tags.userId, uid), inArray(tags.id, unique)));
-  if (owned.length !== unique.length) {
-    throw new ApiError(400, 'Una o más etiquetas no existen');
-  }
-}
 
 /** Etiquetas de un conjunto de reglas, agrupadas por id de regla. */
 async function tagsByRule(ruleIds: number[]) {
@@ -200,7 +168,7 @@ recurringRouter.post(
     const uid = userId(req);
     const data = ruleSchema.parse(req.body);
 
-    const acc = await assertAccountOwned(uid, data.accountId);
+    const acc = await getOwnedAccount(uid, data.accountId);
     await assertCategoryOwned(uid, data.categoryId);
     await assertTagsOwned(uid, data.tagIds);
     if (data.type === 'income' && acc.type === 'credit_card') {
@@ -262,7 +230,7 @@ recurringRouter.put(
       .where(and(eq(recurringRules.id, id), eq(recurringRules.userId, uid)));
     if (!existing) throw new ApiError(404, 'Regla recurrente no encontrada');
 
-    const acc = await assertAccountOwned(uid, data.accountId);
+    const acc = await getOwnedAccount(uid, data.accountId);
     await assertCategoryOwned(uid, data.categoryId);
     await assertTagsOwned(uid, data.tagIds);
     if (data.type === 'income' && acc.type === 'credit_card') {

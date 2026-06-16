@@ -6,6 +6,7 @@ import { templates, accounts, categories } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
+import { assertAccountOwned, assertCategoryOwned } from '../utils/ownership.js';
 
 export const templatesRouter = Router();
 
@@ -17,26 +18,6 @@ const templateSchema = z.object({
   accountId: z.number().int().optional().nullable(),
   categoryId: z.number().int().optional().nullable(),
 });
-
-/** Verifica que la cuenta referenciada (si se envió) pertenezca al usuario (400 si no). */
-async function assertAccountOwned(uid: number, accountId: number | null | undefined): Promise<void> {
-  if (accountId == null) return;
-  const [acc] = await db
-    .select({ id: accounts.id })
-    .from(accounts)
-    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
-  if (!acc) throw new ApiError(400, 'La cuenta no existe');
-}
-
-/** Verifica que la categoría referenciada (si se envió) pertenezca al usuario (400 si no). */
-async function assertCategoryOwned(uid: number, categoryId: number | null | undefined): Promise<void> {
-  if (categoryId == null) return;
-  const [cat] = await db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(and(eq(categories.id, categoryId), eq(categories.userId, uid)));
-  if (!cat) throw new ApiError(400, 'La categoría no existe');
-}
 
 // GET /api/templates — orden por use_count DESC
 templatesRouter.get(
@@ -76,7 +57,7 @@ templatesRouter.post(
   asyncHandler(async (req, res) => {
     const uid = userId(req);
     const data = templateSchema.parse(req.body);
-    await assertAccountOwned(uid, data.accountId);
+    await assertAccountOwned(uid, data.accountId, { status: 400, message: 'La cuenta no existe' });
     await assertCategoryOwned(uid, data.categoryId);
     const [row] = await db
       .insert(templates)
@@ -101,7 +82,7 @@ templatesRouter.put(
     const uid = userId(req);
     const id = parseId(req.params.id);
     const data = templateSchema.partial().parse(req.body);
-    await assertAccountOwned(uid, data.accountId);
+    await assertAccountOwned(uid, data.accountId, { status: 400, message: 'La cuenta no existe' });
     await assertCategoryOwned(uid, data.categoryId);
     const [row] = await db
       .update(templates)

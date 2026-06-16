@@ -12,6 +12,7 @@ import { safeCompensate } from '../utils/safeCompensate.js';
 import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
 import { frenchInstallment } from '../utils/installments.js';
 import { balanceStatements, assertDebitSufficient } from '../utils/balance.js';
+import { assertAccountsOwned, assertCategoryOwned, assertTagsOwned } from '../utils/ownership.js';
 
 /** yyyy-MM-dd de una fecha local. */
 function ymd(d: Date): string {
@@ -123,48 +124,6 @@ async function tagsByTransaction(txIds: number[]) {
     map.get(r.transactionId)!.push({ id: r.id, name: r.name, color: r.color, icon: r.icon });
   }
   return map;
-}
-
-/**
- * Verifica que las cuentas referenciadas pertenezcan al usuario (404 si no).
- * NOTA de diseño (Fase 5): `is_active` significa "fuera de selectores", NO un bloqueo
- * duro de operaciones. Una cuenta desactivada puede seguir recibiendo transacciones si
- * el cliente ya tiene su id (p. ej. reglas recurrentes ya creadas), por eso aquí solo
- * se valida la propiedad, no `is_active`. Congelar tarjeta SÍ bloquea gastos (ver POST).
- */
-async function assertAccountsOwned(uid: number, ids: (number | null | undefined)[]): Promise<void> {
-  const unique = [...new Set(ids.filter((id): id is number => id != null))];
-  if (unique.length === 0) return;
-  const owned = await db
-    .select({ id: accounts.id })
-    .from(accounts)
-    .where(and(eq(accounts.userId, uid), inArray(accounts.id, unique)));
-  if (owned.length !== unique.length) {
-    throw new ApiError(404, 'Cuenta no encontrada');
-  }
-}
-
-/** Verifica que la categoría referenciada (si se envió) pertenezca al usuario (400 si no). */
-async function assertCategoryOwned(uid: number, categoryId: number | null | undefined): Promise<void> {
-  if (categoryId == null) return;
-  const [cat] = await db
-    .select({ id: categories.id })
-    .from(categories)
-    .where(and(eq(categories.id, categoryId), eq(categories.userId, uid)));
-  if (!cat) throw new ApiError(400, 'La categoría no existe');
-}
-
-/** Verifica que las etiquetas referenciadas pertenezcan al usuario (400 si no). */
-async function assertTagsOwned(uid: number, tagIds: number[] | undefined): Promise<void> {
-  if (!tagIds || tagIds.length === 0) return;
-  const unique = [...new Set(tagIds)];
-  const owned = await db
-    .select({ id: tags.id })
-    .from(tags)
-    .where(and(eq(tags.userId, uid), inArray(tags.id, unique)));
-  if (owned.length !== unique.length) {
-    throw new ApiError(400, 'Una o más etiquetas no existen');
-  }
 }
 
 // GET /api/transactions — lista con filtros + paginación

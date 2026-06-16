@@ -9,6 +9,7 @@ import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { assertDebitSufficient } from '../utils/balance.js';
+import { assertAccountOwned } from '../utils/ownership.js';
 import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
 import { getConversionMap } from '../services/exchangeRates.js';
 import { cacheResponse, ACCOUNTS_SUMMARY_TTL_MS } from '../services/cache.js';
@@ -235,15 +236,6 @@ async function savingsByAccount(uid: number): Promise<Map<number, number>> {
     map.set(r.accountId, Math.round(Number(r.net) * 100) / 100);
   }
   return map;
-}
-
-/** Verifica que una cuenta pertenezca al usuario (404 si no). */
-async function assertAccountOwned(uid: number, accountId: number): Promise<void> {
-  const [acc] = await db
-    .select({ id: accounts.id })
-    .from(accounts)
-    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
-  if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
 }
 
 // GET /api/accounts — cuentas activas. Con ?includeInactive=true devuelve también
