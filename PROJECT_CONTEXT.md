@@ -981,7 +981,7 @@ y `MoreScreen` son tabs con **carga diferida** (`lazyScreen`); su `ScreenHeader`
 > `rgba(0,0,0,0.5)` que al tocarlo cierra; se desmonta al terminar el cierre. Ancho `min(80%, 320px)`.
 
 > **Roles especiales (`utils/roles.ts`).** `getUserRole(email)` mapea correos a un rol SOLO informativo
-> (no otorga permisos): `cymslucas4@gmail.com → 'Alpha Tester'`. Se usa en el drawer de perfil (insignia) y
+> (no otorga permisos): `cymslucas4@gmail.com` y `test@gmail.com` → `'Alpha Tester'`. Se usa en el drawer de perfil (insignia) y
 > para disparar la bienvenida.
 > **Bienvenida al login (`components/WelcomeOverlay.tsx`).** Overlay a pantalla completa que aparece UNA vez
 > tras un **login/registro** (en `useAuth.applySession`, NO en el cold-start que restaura sesión) cuando el
