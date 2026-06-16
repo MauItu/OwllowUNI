@@ -4,6 +4,7 @@ import { saveToken, getToken, removeToken } from '../services/auth';
 import { loadSettingsForUser } from '../stores/settingsStore';
 import { useAppStore } from '../stores/appStore';
 import { isPinEnabled } from '../services/security';
+import { hasSeenTutorial, markTutorialSeen } from '../services/tutorial';
 import { getUserRole } from '../utils/roles';
 import type { User } from '../types';
 
@@ -23,6 +24,12 @@ interface AuthValue {
    * null = no mostrar. Lo limpia `dismissWelcome` cuando termina la animación.
    */
   welcome: { name: string; role: string } | null;
+  /**
+   * true cuando el usuario ve la app por primera vez (primer login/registro y
+   * aún no ha visto/saltado el tutorial): dispara el TutorialOverlay de "cómo se
+   * usa la app". Como `welcome`, NO se activa al restaurar sesión en cold-start.
+   */
+  needsTutorial: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -31,6 +38,10 @@ interface AuthValue {
   completePinSetup: () => void;
   /** Oculta el mensaje de bienvenida (al terminar su animación). */
   dismissWelcome: () => void;
+  /** Marca el tutorial como visto/saltado y lo oculta (no vuelve a aparecer). */
+  completeTutorial: () => void;
+  /** Relanza el tutorial bajo demanda (p.ej. Más → Cómo usar la app). */
+  startTutorial: () => void;
 }
 
 const Ctx = createContext<AuthValue | null>(null);
@@ -40,6 +51,7 @@ function useProvideAuth(): AuthValue {
   const [isLoading, setIsLoading] = useState(true);
   const [needsPinSetup, setNeedsPinSetup] = useState(false);
   const [welcome, setWelcome] = useState<{ name: string; role: string } | null>(null);
+  const [needsTutorial, setNeedsTutorial] = useState(false);
 
   /**
    * Aplica una sesión nueva (login/registro): cachea el token, carga las
@@ -52,6 +64,10 @@ function useProvideAuth(): AuthValue {
     await loadSettingsForUser(u.id);
     const hasPin = await isPinEnabled();
     setNeedsPinSetup(!hasPin);
+    // Tutorial de "cómo se usa la app" la PRIMERA vez (login/registro). Como la
+    // bienvenida, el cold-start no pasa por aquí, así que no se reabre en cada
+    // arranque; el flag namespaceado por usuario evita repetirlo.
+    setNeedsTutorial(!(await hasSeenTutorial(u.id)));
     // Bienvenida épica SOLO en login/registro (applySession) y solo para usuarios
     // con rol especial. El cold-start NO pasa por aquí, así que no la dispara.
     const role = getUserRole(u.email);
@@ -66,6 +82,7 @@ function useProvideAuth(): AuthValue {
     setUser(null);
     setNeedsPinSetup(false);
     setWelcome(null);
+    setNeedsTutorial(false);
     // Limpia el estado en memoria de la app (filtros, plantilla pendiente) y
     // fuerza un refresh para que las pantallas no muestren datos del anterior.
     const appStore = useAppStore.getState();
@@ -101,6 +118,17 @@ function useProvideAuth(): AuthValue {
 
   const dismissWelcome = useCallback(() => {
     setWelcome(null);
+  }, []);
+
+  const completeTutorial = useCallback(() => {
+    setNeedsTutorial(false);
+    // Persiste el "ya visto" para el usuario activo (fire-and-forget).
+    const id = user?.id;
+    if (id != null) markTutorialSeen(id).catch(() => {});
+  }, [user?.id]);
+
+  const startTutorial = useCallback(() => {
+    setNeedsTutorial(true);
   }, []);
 
   const refreshUser = useCallback(async () => {
@@ -178,12 +206,15 @@ function useProvideAuth(): AuthValue {
     isAuthenticated: !!user,
     needsPinSetup,
     welcome,
+    needsTutorial,
     login,
     register,
     logout,
     refreshUser,
     completePinSetup,
     dismissWelcome,
+    completeTutorial,
+    startTutorial,
   };
 }
 

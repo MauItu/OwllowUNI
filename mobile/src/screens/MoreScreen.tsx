@@ -7,6 +7,7 @@ import { Screen, ScreenHeader, SectionTitle } from '../components/common';
 import { CurrencyPicker } from '../components/CurrencyPicker';
 import { Icon } from '../components/Icon';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useAuth } from '../hooks/useAuth';
 import type { RootStackParamList } from '../navigation/types';
 
 type Route = keyof RootStackParamList;
@@ -48,6 +49,7 @@ export function MoreScreen() {
   const navigation = useNavigation<any>();
   const mainCurrency = useSettingsStore((s) => s.mainCurrency);
   const setMainCurrency = useSettingsStore((s) => s.setMainCurrency);
+  const { startTutorial } = useAuth();
   const [showCurrency, setShowCurrency] = useState(false);
 
   const renderItem = (item: NavItem) => {
@@ -94,6 +96,20 @@ export function MoreScreen() {
           <Text style={styles.itemValue}>{mainCurrency}</Text>
         </Pressable>
         {AJUSTES.map(renderItem)}
+
+        <View style={{ marginTop: theme.spacing.md }}>
+          <SectionTitle title="Ayuda" />
+        </View>
+        <Pressable
+          style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.surfaceLight }]}
+          onPress={startTutorial}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.accentLight}22` }]}>
+            <Icon name="graduation-cap" size={20} color={theme.colors.accentLight} />
+          </View>
+          <Text style={styles.itemLabel}>Cómo usar la app</Text>
+          <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
+        </Pressable>
       </ScrollView>
 
       <CurrencyPicker
