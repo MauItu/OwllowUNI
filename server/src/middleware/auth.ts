@@ -35,9 +35,16 @@ declare global {
   }
 }
 
+// Algoritmo de firma fijado (secreto simétrico). Anclarlo en firma y verificación
+// evita la confusión de algoritmos y rechaza tokens con `alg` distinto (incl. "none").
+const JWT_ALGORITHM: jwt.Algorithm = 'HS256';
+
 /** Firma un JWT con los datos del usuario (expira según `JWT_EXPIRATION`, default 30d). */
 export function signToken(user: AuthUser): string {
-  return jwt.sign(user, SECRET, { expiresIn: JWT_EXPIRATION as jwt.SignOptions['expiresIn'] });
+  return jwt.sign(user, SECRET, {
+    algorithm: JWT_ALGORITHM,
+    expiresIn: JWT_EXPIRATION as jwt.SignOptions['expiresIn'],
+  });
 }
 
 /**
@@ -51,7 +58,9 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
   }
   const token = header.slice('Bearer '.length).trim();
   try {
-    const payload = jwt.verify(token, SECRET) as jwt.JwtPayload & Partial<AuthUser>;
+    const payload = jwt.verify(token, SECRET, {
+      algorithms: [JWT_ALGORITHM],
+    }) as jwt.JwtPayload & Partial<AuthUser>;
     if (typeof payload.id !== 'number' || typeof payload.email !== 'string') {
       throw new ApiError(401, 'Token inválido');
     }

@@ -7,6 +7,7 @@ import { db } from '../db/connection.js';
 import { users, passwordResets } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { assertEmailConfigured, sendResetCodeEmail } from '../services/email.js';
+import { passwordResetLimiter } from '../middleware/rateLimiter.js';
 import { BCRYPT_ROUNDS } from '../utils/constants.js';
 
 // Router público (sin JWT): se monta bajo /api/auth junto al authRouter.
@@ -41,6 +42,7 @@ function generateCode(): string {
 // POST /api/auth/forgot-password
 passwordResetRouter.post(
   '/forgot-password',
+  passwordResetLimiter,
   asyncHandler(async (req, res) => {
     // TEMPORALMENTE DESHABILITADO: el flujo de recuperación de contraseña está
     // bypaseado. El código de abajo se conserva intacto; quitar este return para
@@ -91,6 +93,7 @@ passwordResetRouter.post(
 // POST /api/auth/verify-reset-code
 passwordResetRouter.post(
   '/verify-reset-code',
+  passwordResetLimiter,
   asyncHandler(async (req, res) => {
     // TEMPORALMENTE DESHABILITADO (ver forgot-password). Quitar este return para reactivar.
     res.status(503).json({ error: 'Función temporalmente deshabilitada.' });
@@ -120,6 +123,7 @@ passwordResetRouter.post(
 // POST /api/auth/reset-password
 passwordResetRouter.post(
   '/reset-password',
+  passwordResetLimiter,
   asyncHandler(async (req, res) => {
     // TEMPORALMENTE DESHABILITADO (ver forgot-password). Quitar este return para reactivar.
     res.status(503).json({ error: 'Función temporalmente deshabilitada.' });

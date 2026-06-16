@@ -18,6 +18,16 @@ const categorySchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
+/** Verifica que la categoría padre (si se envió) pertenezca al usuario (400 si no). */
+async function assertParentOwned(uid: number, parentId: number | null | undefined): Promise<void> {
+  if (parentId == null) return;
+  const [parent] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(and(eq(categories.id, parentId), eq(categories.userId, uid)));
+  if (!parent) throw new ApiError(400, 'La categoría padre no existe');
+}
+
 type CategoryWithChildren = Category & { children: Category[] };
 
 /** Anida subcategorías dentro de su padre. */
@@ -73,11 +83,13 @@ categoriesRouter.get(
 categoriesRouter.post(
   '/',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const data = categorySchema.parse(req.body);
+    await assertParentOwned(uid, data.parentId);
     const [row] = await db
       .insert(categories)
       .values({
-        userId: userId(req),
+        userId: uid,
         name: data.name,
         type: data.type,
         icon: data.icon,
@@ -94,8 +106,10 @@ categoriesRouter.post(
 categoriesRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = parseId(req.params.id);
     const data = categorySchema.partial().parse(req.body);
+    await assertParentOwned(uid, data.parentId);
     const [row] = await db
       .update(categories)
       .set({

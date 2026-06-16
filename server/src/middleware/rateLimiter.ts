@@ -30,3 +30,35 @@ export const registerLimiter = rateLimit({
   legacyHeaders: false,
   message: DEMASIADOS,
 });
+
+// Flujo de recuperación de contraseña (forgot/verify/reset) → 10 intentos / 15 min
+// por IP. Acota la fuerza bruta del código de 6 dígitos en verify-reset-code (junto
+// con el TTL de 15 min y el límite por-usuario en forgot-password).
+export const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10 * factor,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: DEMASIADOS,
+});
+
+// PUT /api/auth/profile (cambio de contraseña: verifica la actual) → 10 / 15 min por IP.
+export const profileLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10 * factor,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: DEMASIADOS,
+});
+
+// Backstop GLOBAL por IP para toda la API: frena abuso/scripted-DoS sin estorbar el
+// uso normal de un cliente. Generoso a propósito porque varios usuarios móviles
+// pueden compartir IP tras un NAT de operador. Los endpoints sensibles tienen
+// además su propio limiter más estricto (login/register/reset/profile).
+export const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: isProd ? 1000 : 100_000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: DEMASIADOS,
+});

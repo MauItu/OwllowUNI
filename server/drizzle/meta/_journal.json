@@ -148,6 +148,13 @@
       "when": 1781548477172,
       "tag": "0020_handy_millenium_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781548477173,
+      "tag": "0021_balance_nonnegative_guard",
+      "breakpoints": true
     }
   ]
 }

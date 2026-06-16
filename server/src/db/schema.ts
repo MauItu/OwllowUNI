@@ -65,6 +65,11 @@ export const accounts = pgTable('accounts', {
   type: varchar('type', { length: 30 }).notNull(), // bank | cash | credit_card | digital_wallet
   currency: varchar('currency', { length: 3 }).default('COP').notNull(),
   initialBalance: decimal('initial_balance', { precision: 15, scale: 2 }).default('0').notNull(),
+  // INVARIANTE a nivel DB (migración 0021): una cuenta sin sobregiro nunca puede
+  // quedar con saldo negativo. La CHECK `accounts_balance_nonnegative`
+  // (allow_overdraft = true OR current_balance >= 0) cierra de forma atómica el
+  // TOCTOU de débitos concurrentes. Se mantiene como SQL crudo (no `check()` de
+  // drizzle-kit) para no desincronizar los snapshots de meta/.
   currentBalance: decimal('current_balance', { precision: 15, scale: 2 }).default('0').notNull(),
   color: varchar('color', { length: 7 }).default('#4F46E5').notNull(),
   icon: varchar('icon', { length: 50 }).default('wallet').notNull(),

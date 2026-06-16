@@ -144,6 +144,16 @@ async function assertAccountsOwned(uid: number, ids: (number | null | undefined)
   }
 }
 
+/** Verifica que la categoría referenciada (si se envió) pertenezca al usuario (400 si no). */
+async function assertCategoryOwned(uid: number, categoryId: number | null | undefined): Promise<void> {
+  if (categoryId == null) return;
+  const [cat] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(and(eq(categories.id, categoryId), eq(categories.userId, uid)));
+  if (!cat) throw new ApiError(400, 'La categoría no existe');
+}
+
 /** Verifica que las etiquetas referenciadas pertenezcan al usuario (400 si no). */
 async function assertTagsOwned(uid: number, tagIds: number[] | undefined): Promise<void> {
   if (!tagIds || tagIds.length === 0) return;
@@ -524,6 +534,7 @@ transactionsRouter.post(
     // Las cuentas y etiquetas referenciadas deben pertenecer al usuario.
     await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
     await assertTagsOwned(uid, data.tagIds);
+    await assertCategoryOwned(uid, data.categoryId);
 
     // Datos de las cuentas involucradas (origen y, si transfer, destino).
     const involvedIds = [data.accountId, data.toAccountId].filter((x): x is number => x != null);
@@ -700,6 +711,7 @@ transactionsRouter.put(
     }
     await assertAccountsOwned(uid, [data.accountId, data.toAccountId]);
     await assertTagsOwned(uid, data.tagIds);
+    await assertCategoryOwned(uid, data.categoryId);
 
     // ¿La transacción editada sigue siendo un gasto con tarjeta de crédito?
     const [srcAcc] = await db

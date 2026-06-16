@@ -9,18 +9,31 @@ import { getRates, setManualRate } from '../services/exchangeRates.js';
 
 export const ratesRouter = Router();
 
+/** Código de moneda ISO-4217: exactamente 3 letras (ya normalizado a mayúsculas). */
+const CURRENCY_RE = /^[A-Z]{3}$/;
+
+/** Valida y normaliza un código de moneda; lanza 400 si no es 3 letras. */
+function parseCurrency(raw: string, field: string): string {
+  const code = raw.trim().toUpperCase();
+  if (!CURRENCY_RE.test(code)) {
+    throw new ApiError(400, `Código de moneda inválido en "${field}": debe ser de 3 letras`);
+  }
+  return code;
+}
+
 // GET /api/rates?base=COP&targets=USD,EUR,VES[&refresh=true]
 // Si no se pasan targets, devuelve las tasas cacheadas para esa base (sin refrescar).
 ratesRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const base = ((req.query.base as string) || 'COP').toUpperCase();
+    const base = parseCurrency((req.query.base as string) || 'COP', 'base');
     const targetsParam = (req.query.targets as string) || '';
     const force = req.query.refresh === 'true' || req.query.refresh === '1';
     const targets = targetsParam
       .split(',')
-      .map((t) => t.trim().toUpperCase())
-      .filter(Boolean);
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) => parseCurrency(t, 'targets'));
 
     if (targets.length === 0) {
       // Sin targets explícitos: devolver lo cacheado para esa base.
@@ -71,9 +84,9 @@ ratesRouter.put(
 ratesRouter.delete(
   '/manual',
   asyncHandler(async (req, res) => {
-    const base = ((req.query.base as string) || '').toUpperCase();
-    const target = ((req.query.target as string) || '').toUpperCase();
-    if (!base || !target) throw new ApiError(400, 'Faltan base y target');
+    if (!req.query.base || !req.query.target) throw new ApiError(400, 'Faltan base y target');
+    const base = parseCurrency(req.query.base as string, 'base');
+    const target = parseCurrency(req.query.target as string, 'target');
     await db
       .delete(exchangeRates)
       .where(

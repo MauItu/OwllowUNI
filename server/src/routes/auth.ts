@@ -7,7 +7,7 @@ import { users, type User } from '../db/schema.js';
 import { provisionUserDefaults } from '../db/defaults.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { authenticate, signToken, userId } from '../middleware/auth.js';
-import { loginLimiter, registerLimiter } from '../middleware/rateLimiter.js';
+import { loginLimiter, registerLimiter, profileLimiter } from '../middleware/rateLimiter.js';
 import { BCRYPT_ROUNDS } from '../utils/constants.js';
 
 export const authRouter = Router();
@@ -109,6 +109,7 @@ authRouter.get(
 authRouter.put(
   '/profile',
   authenticate,
+  profileLimiter,
   asyncHandler(async (req, res) => {
     const data = profileSchema.parse(req.body);
     const [user] = await db.select().from(users).where(eq(users.id, userId(req)));

@@ -18,6 +18,26 @@ const templateSchema = z.object({
   categoryId: z.number().int().optional().nullable(),
 });
 
+/** Verifica que la cuenta referenciada (si se envió) pertenezca al usuario (400 si no). */
+async function assertAccountOwned(uid: number, accountId: number | null | undefined): Promise<void> {
+  if (accountId == null) return;
+  const [acc] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
+  if (!acc) throw new ApiError(400, 'La cuenta no existe');
+}
+
+/** Verifica que la categoría referenciada (si se envió) pertenezca al usuario (400 si no). */
+async function assertCategoryOwned(uid: number, categoryId: number | null | undefined): Promise<void> {
+  if (categoryId == null) return;
+  const [cat] = await db
+    .select({ id: categories.id })
+    .from(categories)
+    .where(and(eq(categories.id, categoryId), eq(categories.userId, uid)));
+  if (!cat) throw new ApiError(400, 'La categoría no existe');
+}
+
 // GET /api/templates — orden por use_count DESC
 templatesRouter.get(
   '/',
@@ -54,11 +74,14 @@ templatesRouter.get(
 templatesRouter.post(
   '/',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const data = templateSchema.parse(req.body);
+    await assertAccountOwned(uid, data.accountId);
+    await assertCategoryOwned(uid, data.categoryId);
     const [row] = await db
       .insert(templates)
       .values({
-        userId: userId(req),
+        userId: uid,
         name: data.name,
         type: data.type,
         amount: data.amount != null ? data.amount.toFixed(2) : null,
@@ -75,8 +98,11 @@ templatesRouter.post(
 templatesRouter.put(
   '/:id',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = parseId(req.params.id);
     const data = templateSchema.partial().parse(req.body);
+    await assertAccountOwned(uid, data.accountId);
+    await assertCategoryOwned(uid, data.categoryId);
     const [row] = await db
       .update(templates)
       .set({

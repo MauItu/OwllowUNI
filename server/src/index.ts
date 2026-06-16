@@ -26,6 +26,7 @@ import cron from 'node-cron';
 import { authRouter } from './routes/auth.js';
 import { passwordResetRouter } from './routes/password-reset.js';
 import { authenticate } from './middleware/auth.js';
+import { globalLimiter } from './middleware/rateLimiter.js';
 import {
   invalidateOnMutation,
   cacheResponse,
@@ -53,13 +54,28 @@ app.use(requestLogger);
 // payloads grandes (export, listas largas, insights). Después de helmet, antes de rutas.
 app.use(compression());
 
-// CORS: si `CORS_ORIGINS` (lista separada por comas) está definida, se restringe
-// a esos orígenes; si no, se permite cualquiera (default de dev). Las apps nativas
-// no envían header Origin, así que el móvil no se ve afectado en ningún caso.
+// CORS: si `CORS_ORIGINS` (lista separada por comas) está definida, se restringe a
+// esos orígenes. Si NO está definida: en desarrollo se refleja cualquier origen
+// (comodidad de testing); en PRODUCCIÓN se NIEGA el cross-origin de navegador
+// (`origin: false`, sin header ACAO) en vez de abrir a cualquiera. Las apps nativas
+// NO envían header Origin, así que CORS no las afecta: el móvil sigue funcionando
+// igual; solo se cierra la puerta a webs de terceros que intenten usar la API.
+const isProd = process.env.NODE_ENV === 'production';
 const corsOrigins = process.env.CORS_ORIGINS?.split(',')
   .map((s) => s.trim())
   .filter(Boolean);
-app.use(cors(corsOrigins && corsOrigins.length ? { origin: corsOrigins } : {}));
+if (isProd && !(corsOrigins && corsOrigins.length)) {
+  console.warn('⚠️  CORS_ORIGINS no definida en producción: se niega el CORS de navegador (las apps nativas no se ven afectadas).');
+}
+app.use(
+  cors(
+    corsOrigins && corsOrigins.length
+      ? { origin: corsOrigins }
+      : isProd
+        ? { origin: false }
+        : {},
+  ),
+);
 app.use(express.json());
 
 app.get('/', (_req, res) => {
@@ -78,6 +94,11 @@ app.get('/api/health', async (_req, res) => {
     res.status(503).json({ status: 'degraded', error: 'Database unreachable' });
   }
 });
+
+// Backstop global de rate limiting por IP para toda la API (después de /api/health
+// para no contar los health checks de Render). Los endpoints sensibles añaden su
+// propio limiter más estricto encima de este.
+app.use('/api', globalLimiter);
 
 // Autenticación (público).
 app.use('/api/auth', authRouter);
