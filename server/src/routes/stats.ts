@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { and, gte, lte, eq, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { transactions, categories, accounts } from '../db/schema.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -8,23 +9,32 @@ import { getConversionMap } from '../services/exchangeRates.js';
 
 export const statsRouter = Router();
 
-/** Lee from/to de la query; si faltan usa un rango amplio. */
-function range(req: { query: Record<string, unknown> }) {
-  const from = (req.query.from as string) || '1900-01-01';
-  const to = (req.query.to as string) || '2999-12-31';
-  return { from, to };
-}
-
-function displayCurrencyOf(req: { query: Record<string, unknown> }) {
-  return ((req.query.displayCurrency as string) || 'COP').toUpperCase();
-}
+/**
+ * Validación de los query params compartidos por los endpoints de stats. Antes se
+ * leían con casts `as string` y defaults silenciosos; ahora un valor inesperado
+ * (fecha mal formada, group/type fuera de rango) devuelve 400 vía el errorHandler
+ * (mismo patrón que el resto de rutas con Zod). Los defaults replican EXACTAMENTE
+ * el comportamiento previo: rango amplio si faltan from/to, COP en mayúsculas,
+ * group='day' y type='expense'.
+ */
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+const statsQuerySchema = z.object({
+  from: z.string().regex(YMD, 'from debe tener formato YYYY-MM-DD').default('1900-01-01'),
+  to: z.string().regex(YMD, 'to debe tener formato YYYY-MM-DD').default('2999-12-31'),
+  displayCurrency: z
+    .string()
+    .regex(/^[A-Za-z]{3}$/, 'displayCurrency debe ser un código ISO 4217 de 3 letras')
+    .transform((s) => s.toUpperCase())
+    .default('COP'),
+  group: z.enum(['day', 'week', 'month']).default('day'),
+  type: z.enum(['income', 'expense']).default('expense'),
+});
 
 // GET /api/stats/summary — totales ingresos, gastos, balance (en displayCurrency)
 statsRouter.get(
   '/summary',
   asyncHandler(async (req, res) => {
-    const { from, to } = range(req);
-    const display = displayCurrencyOf(req);
+    const { from, to, displayCurrency: display } = statsQuerySchema.parse(req.query);
 
     // Sumas por moneda de la cuenta + tipo. Cada transacción está en la moneda
     // de su cuenta; se convierten a la moneda de visualización en memoria.
@@ -63,9 +73,7 @@ statsRouter.get(
 statsRouter.get(
   '/by-category',
   asyncHandler(async (req, res) => {
-    const { from, to } = range(req);
-    const display = displayCurrencyOf(req);
-    const type = (req.query.type as string) || 'expense';
+    const { from, to, displayCurrency: display, type } = statsQuerySchema.parse(req.query);
 
     const rows = await db
       .select({
@@ -132,10 +140,9 @@ statsRouter.get(
 statsRouter.get(
   '/timeline',
   asyncHandler(async (req, res) => {
-    const { from, to } = range(req);
-    const display = displayCurrencyOf(req);
-    const group = (req.query.group as string) || 'day'; // day | week | month
-    const trunc = group === 'month' ? 'month' : group === 'week' ? 'week' : 'day';
+    const { from, to, displayCurrency: display, group } = statsQuerySchema.parse(req.query);
+    // group ya está saneado por el enum del schema a 'day' | 'week' | 'month'.
+    const trunc = group;
 
     // `trunc` ya está saneado a 'day'|'week'|'month': inyectarlo con sql.raw
     // para que SELECT y GROUP BY compartan exactamente la misma expresión.
@@ -178,8 +185,7 @@ statsRouter.get(
 statsRouter.get(
   '/balance-evolution',
   asyncHandler(async (req, res) => {
-    const { from, to } = range(req);
-    const display = displayCurrencyOf(req);
+    const { from, to, displayCurrency: display } = statsQuerySchema.parse(req.query);
 
     const rows = await db
       .select({
