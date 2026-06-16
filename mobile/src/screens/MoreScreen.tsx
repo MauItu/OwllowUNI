@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -8,7 +8,7 @@ import { CurrencyPicker } from '../components/CurrencyPicker';
 import { Icon } from '../components/Icon';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useAuth } from '../hooks/useAuth';
-import { useTourTarget } from '../components/tour/TourContext';
+import { useTourTarget, useTourRegistry } from '../components/tour/TourContext';
 import type { RootStackParamList } from '../navigation/types';
 
 type Route = keyof RootStackParamList;
@@ -51,8 +51,27 @@ export function MoreScreen() {
   const mainCurrency = useSettingsStore((s) => s.mainCurrency);
   const setMainCurrency = useSettingsStore((s) => s.setMainCurrency);
   const { startTutorial } = useAuth();
+  // Objetivos del tour: encabezados de sección + item de ayuda.
+  const finanzasTarget = useTourTarget('more-finanzas');
+  const analisisTarget = useTourTarget('more-analisis');
+  const preferenciasTarget = useTourTarget('more-preferencias');
   const helpTarget = useTourTarget('more-help');
+  // Scroller para que el tour pueda acercar secciones que quedan bajo el fold.
+  const { registerScroller, unregisterScroller } = useTourRegistry();
+  const scrollRef = useRef<ScrollView>(null);
+  const offsetY = useRef(0);
   const [showCurrency, setShowCurrency] = useState(false);
+
+  useEffect(() => {
+    registerScroller('more', {
+      scrollBy: (dy) => scrollRef.current?.scrollTo({ y: Math.max(0, offsetY.current + dy), animated: true }),
+    });
+    return () => unregisterScroller('more');
+  }, [registerScroller, unregisterScroller]);
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    offsetY.current = e.nativeEvent.contentOffset.y;
+  };
 
   const renderItem = (item: NavItem) => {
     const color = item.color(theme);
@@ -75,16 +94,24 @@ export function MoreScreen() {
     <Screen>
       {/* Tab raíz: sin botón de volver. */}
       <ScreenHeader title="Más" />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <SectionTitle title="Finanzas" />
+      <ScrollView
+        ref={scrollRef}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View ref={finanzasTarget} collapsable={false}>
+          <SectionTitle title="Finanzas" />
+        </View>
         {FINANZAS.map(renderItem)}
 
-        <View style={{ marginTop: theme.spacing.md }}>
+        <View ref={analisisTarget} collapsable={false} style={{ marginTop: theme.spacing.md }}>
           <SectionTitle title="Análisis" />
         </View>
         {ANALISIS.map(renderItem)}
 
-        <View style={{ marginTop: theme.spacing.md }}>
+        <View ref={preferenciasTarget} collapsable={false} style={{ marginTop: theme.spacing.md }}>
           <SectionTitle title="Preferencias" />
         </View>
         <Pressable
@@ -110,7 +137,7 @@ export function MoreScreen() {
           <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.accentLight}22` }]}>
             <Icon name="graduation-cap" size={20} color={theme.colors.accentLight} />
           </View>
-          <Text style={styles.itemLabel}>Cómo usar la app</Text>
+          <Text style={styles.itemLabel}>Tutorial</Text>
           <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
         </Pressable>
       </ScrollView>

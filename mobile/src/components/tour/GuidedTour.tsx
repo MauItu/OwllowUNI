@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Animated, Easing, Dimensions } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Animated, Easing, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { type Theme } from '../../theme';
@@ -19,6 +19,8 @@ interface TourStep {
   tab?: keyof TabParamList;
   /** Clave del objetivo a resaltar. Si falta, el paso se muestra centrado. */
   target?: string;
+  /** Scroller a usar para llevar el objetivo a la vista si quedó fuera de pantalla. */
+  scroller?: string;
   icon: string;
   title: string;
   body: string;
@@ -39,7 +41,7 @@ const STEPS: TourStep[] = [
     tab: 'Home',
     icon: 'sparkles',
     title: 'Te doy un recorrido',
-    body: 'Te voy mostrando los botones y secciones de la app uno por uno. Puedes saltarlo cuando quieras y repetirlo desde Más → Cómo usar la app.',
+    body: 'Te voy mostrando los botones y secciones de la app uno por uno. Puedes saltarlo cuando quieras y repetirlo desde Más → Tutorial.',
   },
   {
     tab: 'Home',
@@ -88,14 +90,39 @@ const STEPS: TourStep[] = [
     target: 'tab-more',
     icon: 'layout-grid',
     title: 'Todo lo demás',
-    body: 'En "Más" están metas de ahorro, deudas, presupuestos, pagos recurrentes, gastos compartidos, categorías, etiquetas y ajustes.',
+    body: 'La pestaña "Más" reúne el resto de funciones, agrupadas por sección. Te las muestro.',
+  },
+  {
+    tab: 'More',
+    target: 'more-finanzas',
+    scroller: 'more',
+    icon: 'wallet',
+    title: 'Más · Finanzas',
+    body: 'Tus cuentas, categorías, plantillas y etiquetas, además de metas de ahorro, deudas y préstamos, presupuestos, pagos recurrentes y gastos compartidos.',
+  },
+  {
+    tab: 'More',
+    target: 'more-analisis',
+    scroller: 'more',
+    icon: 'lightbulb',
+    title: 'Más · Análisis',
+    body: 'Insights sobre tus hábitos de gasto, tasas de cambio entre monedas e importar o exportar tu información.',
+  },
+  {
+    tab: 'More',
+    target: 'more-preferencias',
+    scroller: 'more',
+    icon: 'settings-2',
+    title: 'Más · Preferencias',
+    body: 'Tu moneda principal, notificaciones, seguridad (PIN y biometría) y apariencia (tema claro/oscuro y paleta de colores).',
   },
   {
     tab: 'More',
     target: 'more-help',
+    scroller: 'more',
     icon: 'graduation-cap',
     title: 'Repite el tour cuando quieras',
-    body: 'Aquí mismo, en "Cómo usar la app", puedes volver a ver este recorrido cuando lo necesites.',
+    body: 'Aquí mismo, en "Tutorial", puedes volver a ver este recorrido cuando lo necesites.',
   },
   {
     tab: 'Home',
@@ -105,10 +132,13 @@ const STEPS: TourStep[] = [
   },
 ];
 
-const SCREEN = Dimensions.get('window');
 const HOLE_PADDING = 10;
 const TOOLTIP_GAP = 16;
 const TOOLTIP_MARGIN = 20;
+// Micro-ajuste de alineación: en la mitad superior baja el tooltip ~2px y en la
+// inferior lo sube ~2px, para que quede visualmente alineado con el objetivo.
+const ALIGN_NUDGE = 2;
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi));
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -129,15 +159,39 @@ function navigateToTab(tab: keyof TabParamList) {
  */
 export function GuidedTour({ onDone }: Props) {
   const insets = useSafeAreaInsets();
+  const { width: winW, height: winH } = useWindowDimensions();
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const { measure } = useTourRegistry();
+  const { measure, getScroller } = useTourRegistry();
 
   const [index, setIndex] = useState(0);
-  // rect del objetivo en coordenadas de ventana; null = paso centrado (o midiendo).
+  // rect del objetivo, YA en coordenadas del overlay (ver measureAdjusted).
   const [rect, setRect] = useState<TargetRect | null>(null);
+  // Altura real del tooltip (vía onLayout) para anclarlo sin salirse de pantalla.
+  const [tipHeight, setTipHeight] = useState(0);
+  // Ref al contenedor raíz del overlay: su origen en ventana corrige el desfase
+  // que mete Android (barra de estado/navegación) entre measureInWindow y el
+  // sistema de coordenadas en el que dibujamos el foco.
+  const rootRef = useRef<View>(null);
   const fade = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
+
+  // Mide el objetivo y lo pasa a coordenadas del overlay restando el origen del
+  // contenedor raíz. Al usar el MISMO measureInWindow para ambos, el offset de las
+  // barras del sistema se cancela y el foco cae exactamente sobre el elemento.
+  const measureAdjusted = useCallback(
+    async (key: string): Promise<TargetRect | null> => {
+      const w = await measure(key);
+      if (!w) return null;
+      const origin = await new Promise<{ x: number; y: number }>((resolve) => {
+        const node = rootRef.current;
+        if (!node) return resolve({ x: 0, y: 0 });
+        node.measureInWindow((x, y) => resolve({ x: x || 0, y: y || 0 }));
+      });
+      return { x: w.x - origin.x, y: w.y - origin.y, width: w.width, height: w.height };
+    },
+    [measure],
+  );
 
   const total = STEPS.length;
   const isLast = index === total - 1;
@@ -160,18 +214,32 @@ export function GuidedTour({ onDone }: Props) {
     let cancelled = false;
     fade.setValue(0);
     setRect(null);
+    setTipHeight(0);
 
     const run = async () => {
       if (step.tab) navigateToTab(step.tab);
 
       if (step.target) {
+        // Zona cómoda donde queremos que quede el objetivo (deja aire arriba y para
+        // el tooltip): si está fuera, pedimos al scroller que lo acerque y re-medimos.
+        const comfortTop = insets.top + winH * 0.22;
+        const comfortBottom = winH - insets.bottom - 220;
         // La pantalla puede estar montándose/animando: reintenta hasta que mida.
         const attempts = 14;
         for (let i = 0; i < attempts && !cancelled; i++) {
           await delay(i === 0 ? (step.tab ? 380 : 140) : 110);
-          const r = await measure(step.target);
+          let r = await measureAdjusted(step.target);
           if (cancelled) return;
           if (r) {
+            const scroller = step.scroller ? getScroller(step.scroller) : null;
+            // Si el objetivo quedó fuera de la zona cómoda, scrollea y re-mide.
+            if (scroller && (r.y < comfortTop - 8 || r.y + r.height > comfortBottom)) {
+              scroller.scrollBy(r.y - comfortTop);
+              await delay(320);
+              if (cancelled) return;
+              r = (await measureAdjusted(step.target)) ?? r;
+              if (cancelled) return;
+            }
             setRect(r);
             break;
           }
@@ -215,13 +283,29 @@ export function GuidedTour({ onDone }: Props) {
     ? {
         left: Math.max(rect.x - HOLE_PADDING, 0),
         top: Math.max(rect.y - HOLE_PADDING, 0),
-        width: Math.min(rect.width + HOLE_PADDING * 2, SCREEN.width),
+        width: Math.min(rect.width + HOLE_PADDING * 2, winW),
         height: rect.height + HOLE_PADDING * 2,
       }
     : null;
 
-  // El tooltip va debajo del objetivo si está en la mitad superior; si no, arriba.
-  const placeBelow = hole ? hole.top + hole.height / 2 < SCREEN.height / 2 : true;
+  // Posición vertical del tooltip: debajo del objetivo si cabe; si no, arriba; y
+  // siempre acotado al área segura para que nunca se salga de pantalla (responsive).
+  let tipTop = 0;
+  if (hole) {
+    const minTop = insets.top + theme.spacing.sm;
+    const maxTop = winH - insets.bottom - theme.spacing.sm - (tipHeight || 200);
+    const below = hole.top + hole.height + TOOLTIP_GAP;
+    const above = hole.top - TOOLTIP_GAP - (tipHeight || 200);
+    const fitsBelow = below <= maxTop;
+    const fitsAbove = above >= minTop;
+    const placeBelow = hole.top + hole.height / 2 < winH / 2;
+    if (placeBelow && fitsBelow) tipTop = below;
+    else if (fitsAbove) tipTop = above;
+    else tipTop = fitsBelow ? below : minTop;
+    // Mitad superior: baja ~2px. Mitad inferior: sube ~2px.
+    tipTop += placeBelow ? ALIGN_NUDGE : -ALIGN_NUDGE;
+    tipTop = clamp(tipTop, minTop, Math.max(minTop, maxTop));
+  }
 
   const ringStyle = hole
     ? {
@@ -251,7 +335,10 @@ export function GuidedTour({ onDone }: Props) {
   );
 
   const card = (anchored: boolean) => (
-    <View style={[styles.card, anchored ? styles.cardAnchored : styles.cardCentered]}>
+    <View
+      style={[styles.card, anchored ? styles.cardAnchored : styles.cardCentered]}
+      onLayout={anchored ? (e) => setTipHeight(e.nativeEvent.layout.height) : undefined}
+    >
       <View style={styles.cardHead}>
         <LinearGradient
           colors={theme.gradients.header}
@@ -294,7 +381,7 @@ export function GuidedTour({ onDone }: Props) {
   );
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View ref={rootRef} collapsable={false} style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {/* Capa que captura los toques: tocar fuera de los botones avanza. Queda por
           DEBAJO del foco y la tarjeta, así que tampoco deja interactuar con la app. */}
       <Pressable style={StyleSheet.absoluteFill} onPress={handleNext} />
@@ -320,16 +407,8 @@ export function GuidedTour({ onDone }: Props) {
             />
             <Animated.View pointerEvents="none" style={ringStyle!} />
 
-            {/* Tooltip anclado al objetivo (arriba o abajo según su posición). */}
-            <View
-              style={[
-                styles.anchorWrap,
-                placeBelow
-                  ? { top: hole.top + hole.height + TOOLTIP_GAP }
-                  : { bottom: SCREEN.height - hole.top + TOOLTIP_GAP },
-              ]}
-              pointerEvents="box-none"
-            >
+            {/* Tooltip anclado al objetivo, con tope superior acotado al área segura. */}
+            <View style={[styles.anchorWrap, { top: tipTop }]} pointerEvents="box-none">
               {card(true)}
             </View>
           </>

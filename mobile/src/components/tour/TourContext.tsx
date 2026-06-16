@@ -12,6 +12,12 @@ export interface TargetRect {
   height: number;
 }
 
+/** API mínima de una pantalla con scroll para llevar un objetivo a la vista. */
+export interface TourScroller {
+  /** Desplaza el contenido `dy` px (positivo = hacia abajo). */
+  scrollBy: (dy: number) => void;
+}
+
 interface TourRegistry {
   /** Registra el nodo medible de un objetivo del tour bajo una clave estable. */
   register: (key: string, ref: React.RefObject<View | null>) => void;
@@ -22,6 +28,11 @@ interface TourRegistry {
    * no está montado o aún no tiene tamaño (la pantalla puede estar en transición).
    */
   measure: (key: string) => Promise<TargetRect | null>;
+  /** Registra el scroller de una pantalla (para auto-scroll a objetivos largos). */
+  registerScroller: (key: string, scroller: TourScroller) => void;
+  unregisterScroller: (key: string) => void;
+  /** Devuelve el scroller registrado o null. */
+  getScroller: (key: string) => TourScroller | null;
 }
 
 const Ctx = createContext<TourRegistry | null>(null);
@@ -35,6 +46,7 @@ const Ctx = createContext<TourRegistry | null>(null);
  */
 export function TourProvider({ children }: { children: React.ReactNode }) {
   const refs = useRef(new Map<string, React.RefObject<View | null>>());
+  const scrollers = useRef(new Map<string, TourScroller>());
 
   const register = useCallback((key: string, ref: React.RefObject<View | null>) => {
     refs.current.set(key, ref);
@@ -43,6 +55,16 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const unregister = useCallback((key: string) => {
     refs.current.delete(key);
   }, []);
+
+  const registerScroller = useCallback((key: string, scroller: TourScroller) => {
+    scrollers.current.set(key, scroller);
+  }, []);
+
+  const unregisterScroller = useCallback((key: string) => {
+    scrollers.current.delete(key);
+  }, []);
+
+  const getScroller = useCallback((key: string) => scrollers.current.get(key) ?? null, []);
 
   const measure = useCallback((key: string): Promise<TargetRect | null> => {
     return new Promise((resolve) => {
@@ -58,7 +80,10 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const value = useMemo<TourRegistry>(() => ({ register, unregister, measure }), [register, unregister, measure]);
+  const value = useMemo<TourRegistry>(
+    () => ({ register, unregister, measure, registerScroller, unregisterScroller, getScroller }),
+    [register, unregister, measure, registerScroller, unregisterScroller, getScroller],
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
