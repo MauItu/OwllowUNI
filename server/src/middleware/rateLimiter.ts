@@ -1,4 +1,5 @@
 import rateLimit from 'express-rate-limit';
+import { env } from '../utils/validateEnv.js';
 
 /**
  * Rate limiting por IP para los endpoints de autenticación (fuerza bruta /
@@ -8,7 +9,7 @@ import rateLimit from 'express-rate-limit';
  * La respuesta 429 usa el shape `{ error }` del resto de la API (el mobile lee
  * `data.error` en `getErrorMessage`).
  */
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = env.NODE_ENV === 'production';
 const factor = isProd ? 1 : 10;
 
 const DEMASIADOS = { error: 'Demasiados intentos. Intenta de nuevo en unos minutos.' };

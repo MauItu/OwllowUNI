@@ -4,6 +4,7 @@ import { db } from './connection.js';
 import { accounts, categories, users } from './schema.js';
 import { eq, and, isNull } from 'drizzle-orm';
 import { BCRYPT_ROUNDS } from '../utils/constants.js';
+import { env } from '../utils/validateEnv.js';
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -21,7 +22,7 @@ const ADMIN_NAME = 'Mauricio';
 
 /** Crea (o actualiza el hash de) el usuario admin y devuelve su id. */
 async function seedAdminUser(): Promise<number> {
-  const envPassword = process.env.ADMIN_PASSWORD?.trim();
+  const envPassword = env.ADMIN_PASSWORD?.trim();
   const [existing] = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL));
 
   if (existing) {

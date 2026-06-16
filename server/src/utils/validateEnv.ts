@@ -23,6 +23,12 @@ const envSchema = z.object({
   // Credenciales de Gmail para recuperación de contraseña: opcionales.
   GMAIL_USER: z.string().optional(),
   GMAIL_APP_PASSWORD: z.string().optional(),
+  // Orígenes permitidos para CORS de navegador (lista separada por comas). Opcional:
+  // si falta, en prod se niega el cross-origin de navegador y en dev se refleja cualquiera.
+  CORS_ORIGINS: z.string().optional(),
+  // Contraseña inicial del usuario admin para `db:seed`: opcional (si falta, el seed
+  // genera una aleatoria fuerte). NO la usa el runtime de la API, solo el script de seed.
+  ADMIN_PASSWORD: z.string().optional(),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
 });
@@ -38,6 +44,12 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+/**
+ * Entorno validado y tipado: ÚNICA fuente de verdad para la configuración del
+ * server. Todo el código debe importar `env` de aquí (DATABASE_URL, JWT_SECRET,
+ * JWT_EXPIRATION, NODE_ENV, PORT, GMAIL_*, CORS_ORIGINS, ADMIN_PASSWORD) en vez de
+ * leer `process.env.*` o cargar dotenv por su cuenta.
+ */
 export const env = parsed.data;
 
 // Recuperación de contraseña requiere AMBAS credenciales de Gmail. Si falta alguna,
@@ -45,6 +57,3 @@ export const env = parsed.data;
 if (!env.GMAIL_USER || !env.GMAIL_APP_PASSWORD) {
   console.warn('⚠️  Recuperación de contraseña deshabilitada: faltan GMAIL_*');
 }
-
-/** Expiración del JWT (configurable vía `JWT_EXPIRATION`, default '30d'). */
-export const JWT_EXPIRATION = env.JWT_EXPIRATION;

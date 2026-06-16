@@ -1,6 +1,7 @@
 // Validación de entorno: PRIMERO de todo. Si falta/está mal, el proceso muere
-// con un mensaje claro antes de levantar nada (ver utils/validateEnv.ts).
-import './utils/validateEnv.js';
+// con un mensaje claro antes de levantar nada (ver utils/validateEnv.ts). Importar
+// `env` aquí, como primer import, garantiza esa validación antes que cualquier otra cosa.
+import { env } from './utils/validateEnv.js';
 import express from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -36,7 +37,7 @@ import {
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = env.PORT;
 
 // Detrás del proxy de Render (1 hop): permite que `req.ip` (y por tanto el rate
 // limiting por IP) use el X-Forwarded-For real. Valor numérico, no `true`, para no
@@ -60,8 +61,8 @@ app.use(compression());
 // (`origin: false`, sin header ACAO) en vez de abrir a cualquiera. Las apps nativas
 // NO envían header Origin, así que CORS no las afecta: el móvil sigue funcionando
 // igual; solo se cierra la puerta a webs de terceros que intenten usar la API.
-const isProd = process.env.NODE_ENV === 'production';
-const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+const isProd = env.NODE_ENV === 'production';
+const corsOrigins = env.CORS_ORIGINS?.split(',')
   .map((s) => s.trim())
   .filter(Boolean);
 if (isProd && !(corsOrigins && corsOrigins.length)) {

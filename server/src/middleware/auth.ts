@@ -1,23 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { config } from 'dotenv';
-import { resolve } from 'node:path';
 import { ApiError } from './errorHandler.js';
-import { JWT_EXPIRATION } from '../utils/validateEnv.js';
+import { env } from '../utils/validateEnv.js';
 
-// Asegura que el .env de la raíz esté cargado sin depender del orden de imports.
-config({ path: resolve(process.cwd(), '../.env') });
-config();
-
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error(
-    '❌ JWT_SECRET no está definida en el .env. La API no puede arrancar de forma segura.',
-  );
-  throw new Error('JWT_SECRET no está definida.');
-}
-// A partir de aquí JWT_SECRET es string (TS lo estrecha tras el guard).
-const SECRET: string = JWT_SECRET;
+// `env` (utils/validateEnv) es la única fuente de verdad: carga el .env y valida
+// JWT_SECRET (≥32 chars) al arrancar, así que aquí ya es un string seguro.
+const SECRET: string = env.JWT_SECRET;
 
 export interface AuthUser {
   id: number;
@@ -43,7 +31,7 @@ const JWT_ALGORITHM: jwt.Algorithm = 'HS256';
 export function signToken(user: AuthUser): string {
   return jwt.sign(user, SECRET, {
     algorithm: JWT_ALGORITHM,
-    expiresIn: JWT_EXPIRATION as jwt.SignOptions['expiresIn'],
+    expiresIn: env.JWT_EXPIRATION as jwt.SignOptions['expiresIn'],
   });
 }
 

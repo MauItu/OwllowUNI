@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { ApiError } from '../middleware/errorHandler.js';
+import { env } from '../utils/validateEnv.js';
 
 // Envío de emails vía Gmail SMTP (Nodemailer). Requiere dos variables de entorno:
 //   GMAIL_USER          → la dirección de Gmail que envía (también es el `from`).
@@ -13,7 +14,7 @@ import { ApiError } from '../middleware/errorHandler.js';
  * configuración sea uniforme y no revele si el email existe.
  */
 export function assertEmailConfigured(): void {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+  if (!env.GMAIL_USER || !env.GMAIL_APP_PASSWORD) {
     throw new ApiError(
       503,
       'El servicio de correo no está configurado (faltan GMAIL_USER y/o GMAIL_APP_PASSWORD).',
@@ -46,8 +47,8 @@ function resetEmailHtml(code: string): string {
  * si faltan las credenciales (503) o si el envío falla (502), en lugar de crashear.
  */
 export async function sendResetCodeEmail(to: string, code: string): Promise<void> {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
+  const user = env.GMAIL_USER;
+  const pass = env.GMAIL_APP_PASSWORD;
   if (!user || !pass) {
     throw new ApiError(
       503,
