@@ -8,6 +8,7 @@ import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHa
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { assertDebitSufficient } from '../utils/balance.js';
 import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
 import { getConversionMap } from '../services/exchangeRates.js';
 import { cacheResponse, ACCOUNTS_SUMMARY_TTL_MS } from '../services/cache.js';
@@ -746,10 +747,11 @@ accountsRouter.post(
     if (!stmt) throw new ApiError(404, 'Estado de cuenta no encontrado');
 
     const [payAcc] = await db
-      .select({ id: accounts.id })
+      .select({ id: accounts.id, type: accounts.type, currentBalance: accounts.currentBalance })
       .from(accounts)
       .where(and(eq(accounts.id, data.paymentAccountId), eq(accounts.userId, uid)));
     if (!payAcc) throw new ApiError(404, 'Cuenta de pago no encontrada');
+    assertDebitSufficient(payAcc, data.amount);
 
     const amountStr = data.amount.toFixed(2);
 

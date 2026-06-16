@@ -11,7 +11,7 @@ import { PAGINATION_DEFAULT_LIMIT, PAGINATION_MAX_LIMIT, IMPORT_BATCH_SIZE } fro
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
 import { frenchInstallment } from '../utils/installments.js';
-import { balanceStatements } from '../utils/balance.js';
+import { balanceStatements, assertDebitSufficient } from '../utils/balance.js';
 
 /** yyyy-MM-dd de una fecha local. */
 function ymd(d: Date): string {
@@ -405,6 +405,7 @@ transactionsRouter.post(
       }
     };
 
+    const accDeltas = new Map<number, number>();
     for (let i = 0; i < rows.length; i++) {
       const row = (rows[i] ?? {}) as Record<string, unknown>;
       const rowNum = i + 1;
@@ -448,6 +449,16 @@ transactionsRouter.post(
         }
         toAccountId = toAccount.id;
       }
+
+      if ((type === 'expense' || type === 'transfer') && account.type !== 'credit_card') {
+        const cumulative = accDeltas.get(account.id) ?? 0;
+        const projected = Number(account.currentBalance) + cumulative - amount;
+        if (projected < 0) {
+          errors.push({ row: rowNum, reason: 'Saldo insuficiente en la cuenta' });
+          continue;
+        }
+      }
+
       // Categoría opcional: subcategoría primero, luego categoría; si no existe, null
       const subName = str(row.subcategory).toLowerCase();
       const catName = str(row.category).toLowerCase();
@@ -456,6 +467,10 @@ transactionsRouter.post(
 
       const description = str(row.description).slice(0, 255) || null;
       const notes = str(row.notes) || null;
+
+      if (type === 'income') accDeltas.set(account.id, (accDeltas.get(account.id) ?? 0) + amount);
+      else if (type === 'expense' || type === 'transfer') accDeltas.set(account.id, (accDeltas.get(account.id) ?? 0) - amount);
+      if (type === 'transfer' && toAccountId != null) accDeltas.set(toAccountId, (accDeltas.get(toAccountId) ?? 0) + amount);
 
       const insertStmt = db
         .insert(transactions)
@@ -547,6 +562,9 @@ transactionsRouter.post(
       if (Number(srcAcc!.currentBalance) < data.amount) {
         throw new ApiError(400, 'Excede el crédito disponible de la tarjeta');
       }
+    }
+    if ((data.type === 'expense' || data.type === 'transfer') && !isCardExpense) {
+      assertDebitSufficient(srcAcc!, data.amount);
     }
 
     // Cuotas: solo aplican a gasto con tarjeta. El backend deriva los valores
@@ -685,7 +703,7 @@ transactionsRouter.put(
 
     // ¿La transacción editada sigue siendo un gasto con tarjeta de crédito?
     const [srcAcc] = await db
-      .select({ type: accounts.type, isFrozen: accounts.isFrozen })
+      .select({ type: accounts.type, isFrozen: accounts.isFrozen, currentBalance: accounts.currentBalance })
       .from(accounts)
       .where(and(eq(accounts.id, data.accountId), eq(accounts.userId, uid)));
     if (data.type === 'income' && srcAcc?.type === 'credit_card') {
@@ -694,6 +712,17 @@ transactionsRouter.put(
     const newCardExpense = data.type === 'expense' && srcAcc?.type === 'credit_card';
     if (newCardExpense && srcAcc?.isFrozen) {
       throw new ApiError(400, 'La tarjeta está congelada: no admite gastos nuevos');
+    }
+    if ((data.type === 'expense' || data.type === 'transfer') && !newCardExpense && srcAcc) {
+      let available = Number(srcAcc.currentBalance);
+      if (old.accountId === data.accountId) {
+        if (old.type === 'expense' || old.type === 'transfer') available += Number(old.amount);
+        else if (old.type === 'income') available -= Number(old.amount);
+      }
+      if (old.type === 'transfer' && old.toAccountId === data.accountId) {
+        available -= Number(old.toAmount ?? old.amount);
+      }
+      assertDebitSufficient({ ...srcAcc, currentBalance: available }, data.amount);
     }
     const installments = newCardExpense && data.installments && data.installments > 1 ? data.installments : null;
     const monthlyRate = installments ? data.monthlyInterestRate ?? 0 : null;

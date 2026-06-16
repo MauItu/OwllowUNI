@@ -13,6 +13,7 @@ import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { assertDebitSufficient } from '../utils/balance.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 import { frenchInstallment, computeDueInfo } from '../utils/installments.js';
 
@@ -37,14 +38,14 @@ function balanceUpdate(uid: number, accountId: number, delta: number) {
     .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
 }
 
-/** Verifica que una cuenta pertenezca al usuario (404 si no) y devuelve su tipo. */
-async function assertAccountOwned(uid: number, accountId: number): Promise<{ type: string }> {
+/** Verifica que una cuenta pertenezca al usuario (404 si no) y devuelve su tipo y saldo. */
+async function assertAccountOwned(uid: number, accountId: number): Promise<{ type: string; currentBalance: string }> {
   const [acc] = await db
-    .select({ id: accounts.id, type: accounts.type })
+    .select({ id: accounts.id, type: accounts.type, currentBalance: accounts.currentBalance })
     .from(accounts)
     .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
   if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
-  return { type: acc.type };
+  return { type: acc.type, currentBalance: acc.currentBalance };
 }
 
 /**
@@ -266,8 +267,12 @@ debtsRouter.post(
   asyncHandler(async (req, res) => {
     const uid = userId(req);
     const data = debtSchema.parse(req.body);
-    let accountType: string | null = null;
-    if (data.accountId != null) accountType = (await assertAccountOwned(uid, data.accountId)).type;
+    let accountInfo: { type: string; currentBalance: string } | null = null;
+    if (data.accountId != null) accountInfo = await assertAccountOwned(uid, data.accountId);
+    const accountType = accountInfo?.type ?? null;
+    if (data.registerInitialTransaction && data.type === 'loan' && accountInfo && accountType !== 'credit_card') {
+      assertDebitSufficient(accountInfo, data.totalAmount);
+    }
     const [row] = await db
       .insert(debts)
       .values({
@@ -440,8 +445,9 @@ debtsRouter.put(
         : oldTx != null;
 
     // Tipo de la cuenta efectiva (las tarjetas de crédito no llevan desembolso).
-    let effAccountType: string | null = null;
-    if (effAccountId != null) effAccountType = (await assertAccountOwned(uid, effAccountId)).type;
+    let effAccountInfo: { type: string; currentBalance: string } | null = null;
+    if (effAccountId != null) effAccountInfo = await assertAccountOwned(uid, effAccountId);
+    const effAccountType = effAccountInfo?.type ?? null;
     const canRegister = wantRegister && effAccountId != null && effAccountType !== 'credit_card';
 
     const txType = effType === 'debt' ? 'income' : 'expense';
@@ -455,6 +461,14 @@ debtsRouter.put(
           oldTx.type === 'income' ? -Number(oldTx.amount) : Number(oldTx.amount),
         )
       : null;
+
+    if (canRegister && txType === 'expense' && effAccountInfo) {
+      let available = Number(effAccountInfo.currentBalance);
+      if (oldTx && oldTx.accountId === effAccountId) {
+        available += oldTx.type === 'income' ? -Number(oldTx.amount) : Number(oldTx.amount);
+      }
+      assertDebitSufficient({ ...effAccountInfo, currentBalance: available }, effTotal);
+    }
 
     let row: typeof old | undefined;
     if (canRegister && oldTx == null) {
@@ -597,10 +611,11 @@ debtsRouter.post(
     if (debt.isPaidOff) throw new ApiError(400, 'Esta deuda ya está saldada');
     if (data.accountId != null) {
       const payAcc = await assertAccountOwned(uid, data.accountId);
-      // Una tarjeta de crédito no puede usarse para abonar una deuda (no salen
-      // fondos de ella; pagar con tarjeta solo trasladaría la deuda).
       if (payAcc.type === 'credit_card') {
         throw new ApiError(400, 'No puedes pagar una deuda con una tarjeta de crédito');
+      }
+      if (debt.type === 'debt') {
+        assertDebitSufficient(payAcc, data.amount);
       }
     }
 

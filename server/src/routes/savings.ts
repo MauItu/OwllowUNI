@@ -7,6 +7,7 @@ import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { assertDebitSufficient } from '../utils/balance.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 
 export const savingsRouter = Router();
@@ -32,12 +33,13 @@ function balanceUpdate(uid: number, accountId: number, delta: number) {
 }
 
 /** Verifica que una cuenta pertenezca al usuario (404 si no). */
-async function assertAccountOwned(uid: number, accountId: number): Promise<void> {
+async function assertAccountOwned(uid: number, accountId: number): Promise<{ type: string; currentBalance: string }> {
   const [acc] = await db
-    .select({ id: accounts.id })
+    .select({ id: accounts.id, type: accounts.type, currentBalance: accounts.currentBalance })
     .from(accounts)
     .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
   if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
+  return { type: acc.type, currentBalance: acc.currentBalance };
 }
 
 const goalSchema = z.object({
@@ -235,7 +237,10 @@ savingsRouter.post(
       .from(savingsGoals)
       .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
     if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
-    await assertAccountOwned(uid, data.accountId);
+    const acctInfo = await assertAccountOwned(uid, data.accountId);
+    if (data.type === 'deposit') {
+      assertDebitSufficient(acctInfo, data.amount);
+    }
 
     const isWithdrawal = data.type === 'withdrawal';
     // `signedStr` ya lleva el signo: suma en depósito, resta en retiro.
@@ -351,7 +356,14 @@ savingsRouter.put(
       .where(and(eq(savingsContributions.id, contributionId), eq(savingsContributions.goalId, id)));
     if (!contribution) throw new ApiError(404, 'Contribución no encontrada');
 
-    await assertAccountOwned(uid, data.accountId);
+    const editAcctInfo = await assertAccountOwned(uid, data.accountId);
+    if (data.type === 'deposit') {
+      let available = Number(editAcctInfo.currentBalance);
+      if (contribution.accountId === data.accountId) {
+        available -= accountDelta(contribution.type, Number(contribution.amount));
+      }
+      assertDebitSufficient({ ...editAcctInfo, currentBalance: available }, data.amount);
+    }
 
     const oldSigned = signedAmount(contribution.type, Number(contribution.amount));
     const newSigned = signedAmount(data.type, data.amount);

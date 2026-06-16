@@ -1,6 +1,17 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
 import { accounts } from '../db/schema.js';
+import { ApiError } from '../middleware/errorHandler.js';
+
+export function assertDebitSufficient(
+  account: { type: string; currentBalance: string | number },
+  amount: number,
+) {
+  if (account.type === 'credit_card') return;
+  if (Number(account.currentBalance) < amount) {
+    throw new ApiError(400, 'Saldo insuficiente en la cuenta');
+  }
+}
 
 /**
  * Genera los UPDATE de balance para una transacción.

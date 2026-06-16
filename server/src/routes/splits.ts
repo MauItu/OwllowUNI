@@ -19,6 +19,7 @@ import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHa
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
+import { assertDebitSufficient } from '../utils/balance.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 
 export const splitsRouter = Router();
@@ -50,12 +51,13 @@ async function getOwnedGroup(uid: number, groupId: number) {
 }
 
 /** Verifica que una cuenta pertenezca al usuario (404 si no). */
-async function assertAccountOwned(uid: number, accountId: number): Promise<void> {
+async function assertAccountOwned(uid: number, accountId: number): Promise<{ type: string; currentBalance: string }> {
   const [acc] = await db
-    .select({ id: accounts.id })
+    .select({ id: accounts.id, type: accounts.type, currentBalance: accounts.currentBalance })
     .from(accounts)
     .where(and(eq(accounts.id, accountId), eq(accounts.userId, uid)));
   if (!acc) throw new ApiError(404, 'Cuenta no encontrada');
+  return { type: acc.type, currentBalance: acc.currentBalance };
 }
 
 const groupSchema = z.object({
@@ -594,7 +596,8 @@ splitsRouter.post(
     // Si pago yo y hay cuenta: registrar el egreso real como transacción.
     let transactionId: number | null = null;
     if (data.accountId != null && paidByMember?.isMe) {
-      await assertAccountOwned(uid, data.accountId);
+      const expAcct = await assertAccountOwned(uid, data.accountId);
+      assertDebitSufficient(expAcct, data.totalAmount);
       const insertTx = db
         .insert(transactions)
         .values({
@@ -724,7 +727,8 @@ splitsRouter.put(
     }
 
     const newAccountId = paidByMember?.isMe ? data.accountId ?? null : null;
-    if (newAccountId != null) await assertAccountOwned(uid, newAccountId);
+    let editAcctInfo: { type: string; currentBalance: string } | null = null;
+    if (newAccountId != null) editAcctInfo = await assertAccountOwned(uid, newAccountId);
 
     // Transacción de cuenta anterior (si el gasto lo pagaba yo y tenía cuenta).
     let oldTx: { id: number; amount: string; accountId: number | null } | null = null;
@@ -761,6 +765,12 @@ splitsRouter.put(
           settledAt: s.memberId === data.paidByMemberId ? new Date() : null,
         })),
     );
+
+    if (newAccountId != null && editAcctInfo) {
+      let available = Number(editAcctInfo.currentBalance);
+      if (oldTx && oldTx.accountId === newAccountId) available += Number(oldTx.amount);
+      assertDebitSufficient({ ...editAcctInfo, currentBalance: available }, newAmount);
+    }
 
     if (newAccountId != null && oldTx == null) {
       // (A) No había movimiento y ahora sí: crear la tx, enlazarla y descontar (saga).
@@ -936,7 +946,10 @@ splitsRouter.post(
     const involvesMe = from.isMe || to.isMe;
     // La cuenta solo aplica si la liquidación involucra al usuario (`is_me`).
     const accountId = involvesMe ? data.accountId ?? null : null;
-    if (accountId != null) await assertAccountOwned(uid, accountId);
+    if (accountId != null) {
+      const settleAcct = await assertAccountOwned(uid, accountId);
+      if (!to.isMe) assertDebitSufficient(settleAcct, data.amount);
+    }
 
     // El usuario RECIBE (es "to") → income en su cuenta; PAGA (es "from") → expense.
     const meReceives = to.isMe;
