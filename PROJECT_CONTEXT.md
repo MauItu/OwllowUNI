@@ -199,7 +199,9 @@ server/
 mobile/
 ├── package.json
 ├── app.json
-├── eas.json                    ← build.preview.android.buildType = "apk"
+├── eas.json                    ← preview = APK · production = app-bundle + autoIncrement; AMBOS perfiles
+│                                  inyectan EXPO_PUBLIC_API_URL (backend de Render) — sin ella el build
+│                                  caería al fallback IP LAN de api/client.ts
 ├── tsconfig.json
 ├── babel.config.js             ← reanimated plugin
 ├── App.tsx
@@ -306,8 +308,9 @@ mobile/
 · `category_id` int FK→categories · `is_active` bool def true · `use_count` int def 0 · `created_at` timestamp def now()
 
 ### tags
-`id` serial PK · `name` varchar(50) NN UNIQUE · `color` varchar(7) def `#6C757D` · `icon` varchar(50) def `tag`
-· `created_at` timestamp def now()
+`id` serial PK · `user_id` int FK→users NN · `name` varchar(50) NN · `color` varchar(7) def `#6C757D`
+· `icon` varchar(50) def `tag` · `created_at` timestamp def now() · UNIQUE(`user_id`,`name`)
+> El nombre es único POR USUARIO (dos usuarios pueden tener la misma etiqueta), no global.
 
 ### transaction_tags
 `id` serial PK · `transaction_id` int FK→transactions ON DELETE CASCADE NN · `tag_id` int FK→tags ON DELETE CASCADE NN
@@ -890,6 +893,8 @@ activa (antes fijos a la bandera bisexual, ahora dependen de `paletteId`).
 - `ThemeProvider` envuelve la app en `App.tsx`. Lee `paletteId`/`themeMode` de `settingsStore`
   (persistidos en AsyncStorage). `themeMode` es `'system' | 'light' | 'dark'`; en `'system'`
   sigue `useColorScheme()`. `theme = palettes[paletteId][isDark ? 'dark' : 'light']`.
+  > `app.json` debe tener `userInterfaceStyle: "automatic"` (fix jul-2026): con `"dark"` fijo,
+  > `useColorScheme()` siempre devolvía dark y el modo "Sistema" nunca podía resolver a claro.
 - `useTheme()` → `{ theme, colors, isDark, toggleTheme, swatch, paletteId, setPalette,
   availablePalettes, themeMode, setThemeMode }`. `toggleTheme` fuerza `themeMode` a
   `'light'`/`'dark'` (sale de `'system'`). `swatch` = los 3 colores protagonistas de la paleta

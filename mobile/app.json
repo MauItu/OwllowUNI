@@ -5,7 +5,7 @@
     "owner": "maurarch",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "scheme": "walletclone",
     "newArchEnabled": true,
     "icon": "./assets/icon.png",
@@ -28,7 +28,8 @@
         "backgroundColor": "#0F0F14"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": [
+      "permissions": [],
+      "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -39,7 +40,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Permite elegir una foto de tu galería para adjuntarla como recibo.",
-          "cameraPermission": "Permite tomar una foto del recibo con la cámara."
+          "cameraPermission": "Permite tomar una foto del recibo con la cámara.",
+          "microphonePermission": false
         }
       ]
     ],

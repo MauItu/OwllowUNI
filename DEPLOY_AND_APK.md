@@ -11,59 +11,59 @@
 
 ---
 
-## ⚠️ DIAGNÓSTICO ACTUAL (leer primero)
+## ⚠️ DIAGNÓSTICO ACTUAL (actualizado 2026-07-04)
 
-Producción está **desactualizada**. Lo comprobé contra la URL real:
+Producción **ya sirve el código con auth/multiusuario**. Verificado contra la URL real:
 
 ```bash
-curl -s https://wallet-7v82.onrender.com/api/auth/me   # → HTTP 404  (no existe auth en prod)
-curl -s https://wallet-7v82.onrender.com/api/accounts   # → HTTP 200 SIN token (versión vieja single-user)
+curl -s https://wallet-7v82.onrender.com/api/health     # → HTTP 200 { status: 'ok', ... }
+curl -s https://wallet-7v82.onrender.com/api/accounts   # → HTTP 401 { error: 'No autorizado: falta el token' }
 ```
 
-**Causa raíz:** todo el código de multiusuario/auth **y los cambios de la auditoría** (índices, caché,
-CORS, 500s genéricos) están **solo en la rama `APK`**, no en `main`. Render despliega desde **`main`**
-(`origin/HEAD → main`). Por eso sirve el código viejo.
+El diagnóstico anterior (2026-06-13: prod servía la versión vieja single-user desde `main`
+mientras el código nuevo vivía en la rama `APK`) **quedó resuelto**: `main` contiene el código
+con auth y Render lo despliega. El flujo sigue siendo **merge a `main` → auto-deploy**.
 
-Commits que están en `APK` y faltan en `main`:
+**Pendientes reales de deploy (auditoría 2026-07-04, ver `AUDITORIA_LANZAMIENTO_Y_PLAN.md`):**
 
-```
-8db4099 docs: document auth/multiuser, indexes, cache, CORS; version drizzle journal
-9649800 refactor: batch CSV import, compensate settle, dedupe tag links
-e1c3287 security: generic 500s, CORS allowlist via env, validate tagIds ownership
-aec9fb9 perf(cache): in-process response cache with per-user version invalidation
-92bea69 perf(splits): fix N+1 in GET /splits and /summary
-e4650ba perf(db): add secondary indexes on user_id, FKs and (user_id,date) hot paths
-f3e95d8 Multi-usuarios feat: ... (toda la feature de auth)
-```
-
-**La DB ya NO necesita migraciones** (lo verifiqué: las 10 migraciones 0000→0009 están aplicadas en Neon,
-la tabla `users` ya tiene filas y los índices de `0009` existen). El único trabajo de deploy es **llevar el
-código de `APK` a la rama que Render despliega y redeployar.**
+- La `DATABASE_URL` del `.env` **local** es rechazada por Neon (`password authentication failed` —
+  credenciales rotadas). Render conecta con sus propias env vars, pero **las migraciones se corren
+  desde local**, así que hay que actualizar el `.env` con la connection string vigente del dashboard
+  de Neon antes de poder migrar.
+- Por lo anterior, **no está confirmado** que la migración `0021_balance_nonnegative_guard`
+  (CHECK `accounts_balance_nonnegative`) esté aplicada en la DB de producción. Verificar con:
+  `SELECT conname, convalidated FROM pg_constraint WHERE conname = 'accounts_balance_nonnegative';`
+  y, si falta, correr `cd server && pnpm db:migrate`. La constraint nace `NOT VALID`; tras revisar
+  que no haya saldos negativos históricos ilegítimos, correr
+  `ALTER TABLE accounts VALIDATE CONSTRAINT accounts_balance_nonnegative;`.
+- `GMAIL_USER`/`GMAIL_APP_PASSWORD` sin configurar en Render → la recuperación de contraseña
+  sigue deshabilitada (los endpoints devuelven 503 por un bypass temporal en el código).
 
 ---
 
 ## 1) Deploy del backend actualizado a Render
 
-### 1.1 Llevar el código de `APK` a `main` (lo que Render despliega)
+### 1.1 Llevar la rama de trabajo a `main` (lo que Render despliega)
 
-> Render hace auto-deploy al hacer push a `main`. Mergeá `APK → main` y pusheá.
+> Render hace auto-deploy al hacer push a `main`. Mergeá tu rama de trabajo → `main` y pusheá.
+> (Ejemplo con una rama `mi-rama`; en su momento fue `APK`, hoy sería la rama de feature activa.)
 
 ```bash
 cd /home/mauro/Documents/proyectos/wallet
 
-# Asegurate de tener APK al día en el remoto
-git checkout APK
-git push origin APK
+# Asegurate de tener la rama al día en el remoto
+git checkout mi-rama
+git push origin mi-rama
 
 # Merge a main
 git checkout main
 git pull origin main
-git merge APK            # debería ser fast-forward o un merge limpio
+git merge mi-rama        # debería ser fast-forward o un merge limpio
 git push origin main     # ← esto dispara el auto-deploy en Render
 ```
 
 > **Alternativa (sin tocar main):** en el dashboard de Render → tu servicio → **Settings → Build & Deploy →
-> Branch**, cambialo de `main` a `APK` y guardá. Render redeployará desde `APK`. (Recomiendo el merge a `main`
+> Branch**, cambialo a la rama que quieras desplegar y guardá. (Recomiendo el merge a `main`
 > para no dejar `main` desincronizado.)
 
 ### 1.2 Configuración del servicio en Render (Web Service)

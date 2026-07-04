@@ -14,7 +14,10 @@
       }
     },
     "production": {
-      "android": { "buildType": "app-bundle" }
+      "android": { "buildType": "app-bundle", "autoIncrement": true },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://wallet-7v82.onrender.com/api"
+      }
     }
   },
   "submit": {
