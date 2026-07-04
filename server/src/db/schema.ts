@@ -811,7 +811,26 @@ export const splitSettlementsRelations = relations(splitSettlements, ({ one }) =
   }),
 }));
 
+// ─────────────────────────────── style_votes ────────────────────────
+// Votación A/B del rediseño visual: cada usuario vota UNA vez por la paleta que
+// prefiere como estilo definitivo de la app (`choice` = paletteId: 'professional'
+// | 'indigo'). UNIQUE(user_id) → un voto por usuario; el POST hace upsert para
+// permitir cambiar el voto. Feature temporal de producto; borrar la tabla cuando
+// se decida el estilo final.
+export const styleVotes = pgTable('style_votes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .references(() => users.id)
+    .notNull()
+    .unique(),
+  choice: varchar('choice', { length: 20 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // ─────────────────────────────── types ──────────────────────────────
+export type StyleVote = typeof styleVotes.$inferSelect;
+export type NewStyleVote = typeof styleVotes.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type PasswordReset = typeof passwordResets.$inferSelect;

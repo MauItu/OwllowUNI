@@ -169,6 +169,13 @@
       "when": 1783186880164,
       "tag": "0023_lethal_squirrel_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783206969203,
+      "tag": "0024_regular_drax",
+      "breakpoints": true
     }
   ]
 }

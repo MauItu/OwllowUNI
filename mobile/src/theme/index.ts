@@ -683,16 +683,17 @@ export const palettes = {
     swatch: ['#C8442A', '#D362A4', '#A30262'],
   },
   professional: {
-    label: 'Profesional',
+    // "Clásico": el look actual de producción — expresivo, con gradientes de color
+    // en headers y cards. Candidato ORIGINAL de la votación A/B.
+    label: 'Clásico',
     light: proLightTheme,
     dark: proDarkTheme,
     swatch: ['#2F5BD0', '#6366F1', '#0F766E'],
   },
-  // Rediseño Claude v2 (jul-2026), afinado con el test de gustos del usuario:
-  // premium + energía, índigo protagonista, minimalismo plano, coral como guiño.
-  // Convive con las originales: el admin alterna desde Más → Apariencia.
+  // "Minimal": rediseño plano (índigo protagonista, coral como guiño, superficies
+  // neutras — el número es el protagonista). Candidato NUEVO de la votación A/B.
   indigo: {
-    label: 'Índigo Coral',
+    label: 'Minimal',
     light: indigoLightTheme,
     dark: indigoDarkTheme,
     swatch: ['#4F46E5', '#F43F5E', '#1A1D27'],

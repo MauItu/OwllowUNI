@@ -27,6 +27,7 @@ import cron from 'node-cron';
 import { authRouter } from './routes/auth.js';
 import { passwordResetRouter } from './routes/password-reset.js';
 import { adminRouter } from './routes/admin.js';
+import { styleVoteRouter } from './routes/style-vote.js';
 import { authenticate, requireAdmin } from './middleware/auth.js';
 import { globalLimiter } from './middleware/rateLimiter.js';
 import {
@@ -127,6 +128,9 @@ app.use('/api/recurring-rules', authenticate, invalidateOnMutation, recurringRou
 app.use('/api/recurring', authenticate, invalidateOnMutation, recurringActionsRouter);
 // Administración (solo admin): reconciliación de saldos. Solo lectura.
 app.use('/api/admin', authenticate, requireAdmin, adminRouter);
+// Votación A/B del rediseño visual (cualquier usuario autenticado). Sin caché
+// para que los conteos estén frescos.
+app.use('/api/style-vote', authenticate, styleVoteRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

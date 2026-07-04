@@ -23,6 +23,7 @@ import {
   passwordResets,
   recurringRules,
   creditCardStatements,
+  styleVotes,
   type User,
 } from '../db/schema.js';
 import { provisionUserDefaults } from '../db/defaults.js';
@@ -326,6 +327,7 @@ authRouter.delete(
       db.delete(accounts).where(eq(accounts.userId, uid)),
       db.delete(exchangeRates).where(eq(exchangeRates.userId, uid)),
       db.delete(passwordResets).where(eq(passwordResets.userId, uid)),
+      db.delete(styleVotes).where(eq(styleVotes.userId, uid)),
       db.delete(categories).where(eq(categories.userId, uid)),
       db.delete(users).where(eq(users.id, uid)),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

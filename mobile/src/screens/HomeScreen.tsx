@@ -12,6 +12,7 @@ import { HomeSummaryCard } from '../components/HomeSummaryCard';
 import { InsightCard } from '../components/InsightCard';
 import { TransactionCard } from '../components/TransactionCard';
 import { BottomSheet } from '../components/BottomSheet';
+import { StyleVoteBanner } from '../components/StyleVoteBanner';
 import { Icon } from '../components/Icon';
 import { useAccounts } from '../hooks/useAccounts';
 import { useAccountsSummary } from '../hooks/useAccountsSummary';
@@ -148,6 +149,9 @@ export function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
+        {/* Aviso de votación del estilo (solo si no ha votado; se descarta por sesión). */}
+        <StyleVoteBanner />
+
         <View ref={balanceTarget} collapsable={false}>
           <BalanceSummary
             totalBalance={acctSummary?.total ?? totalBalance}

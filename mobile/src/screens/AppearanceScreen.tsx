@@ -5,10 +5,7 @@ import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, SectionTitle } from '../components/common';
 import { Icon } from '../components/Icon';
-import { useAuth } from '../hooks/useAuth';
 import type { ThemeMode } from '../stores/settingsStore';
-
-const ADMIN_EMAIL = 'mauiturriza@gmail.com';
 
 const THEME_MODES: { key: ThemeMode; label: string; icon: string }[] = [
   { key: 'system', label: 'Sistema', icon: 'smartphone' },
@@ -20,9 +17,6 @@ export function AppearanceScreen() {
   const navigation = useNavigation<any>();
   const { theme, paletteId, setPalette, availablePalettes, themeMode, setThemeMode } = useTheme();
   const styles = useThemedStyles(createStyles);
-  const { user } = useAuth();
-  // Solo el admin (o el correo dueño) puede elegir paleta; el resto queda en "Profesional".
-  const canChangePalette = user?.isAdmin === true || user?.email === ADMIN_EMAIL;
 
   return (
     <Screen>
@@ -45,35 +39,50 @@ export function AppearanceScreen() {
           })}
         </View>
 
-        {canChangePalette && (
-          <>
-            <View style={styles.sectionGap}>
-              <SectionTitle title="Paleta de colores" />
-            </View>
-            {availablePalettes.map((p) => {
-              const selected = paletteId === p.id;
-              return (
-                <Pressable
-                  key={p.id}
-                  style={[styles.card, selected && styles.cardSelected]}
-                  onPress={() => setPalette(p.id)}
-                >
-                  <View style={styles.swatchRow}>
-                    {p.swatch.map((color, i) => (
-                      <View key={i} style={[styles.swatch, { backgroundColor: color }]} />
-                    ))}
-                  </View>
-                  <Text style={styles.cardLabel}>{p.label}</Text>
-                  {selected && (
-                    <View style={styles.checkWrap}>
-                      <Icon name="check" size={20} color={theme.colors.primary} />
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })}
-          </>
-        )}
+        {/* Durante la votación A/B todos los usuarios eligen entre las dos paletas
+            candidatas (Clásico / Minimal). availablePalettes ya viene filtrado. */}
+        <View style={styles.sectionGap}>
+          <SectionTitle title="Estilo de la app" />
+        </View>
+        {availablePalettes.map((p) => {
+          const selected = paletteId === p.id;
+          return (
+            <Pressable
+              key={p.id}
+              style={[styles.card, selected && styles.cardSelected]}
+              onPress={() => setPalette(p.id)}
+            >
+              <View style={styles.swatchRow}>
+                {p.swatch.map((color, i) => (
+                  <View key={i} style={[styles.swatch, { backgroundColor: color }]} />
+                ))}
+              </View>
+              <Text style={styles.cardLabel}>{p.label}</Text>
+              {selected && (
+                <View style={styles.checkWrap}>
+                  <Icon name="check" size={20} color={theme.colors.primary} />
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
+
+        {/* Enlace a la votación del estilo definitivo. */}
+        <Pressable
+          style={styles.voteRow}
+          onPress={() => navigation.navigate('StyleVote')}
+          accessibilityRole="button"
+          accessibilityLabel="Votar por el estilo definitivo"
+        >
+          <View style={[styles.voteIcon, { backgroundColor: `${theme.colors.accent}22` }]}>
+            <Icon name="sparkles" size={20} color={theme.colors.accent} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.voteTitle}>Vota por el estilo definitivo</Text>
+            <Text style={styles.voteHint}>Ayúdanos a elegir cómo se verá la app.</Text>
+          </View>
+          <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
+        </Pressable>
       </ScrollView>
     </Screen>
   );
@@ -147,4 +156,24 @@ const createStyles = (theme: Theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    voteRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      backgroundColor: theme.colors.surfaceLight,
+      borderRadius: theme.borderRadius.lg,
+      padding: theme.spacing.md,
+      marginTop: theme.spacing.md,
+      borderWidth: 1,
+      borderColor: theme.colors.cardBorder,
+    },
+    voteIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: theme.borderRadius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    voteTitle: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
+    voteHint: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, marginTop: 2 },
   });

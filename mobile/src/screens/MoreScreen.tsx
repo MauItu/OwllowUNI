@@ -45,6 +45,7 @@ const AJUSTES: NavItem[] = [
   { label: 'Notificaciones', icon: 'bell', route: 'SettingsNotifications', color: (t) => t.colors.accentLight },
   { label: 'Seguridad', icon: 'lock-keyhole', route: 'Security', color: (t) => t.colors.primary },
   { label: 'Apariencia', icon: 'palette', route: 'Appearance', color: (t) => t.colors.secondary },
+  { label: 'Vota por el estilo', icon: 'sparkles', route: 'StyleVote', color: (t) => t.colors.accent },
   { label: 'Mi cuenta', icon: 'circle-user', route: 'Account', color: (t) => t.colors.secondary },
 ];
 

@@ -745,6 +745,21 @@ mobile/
 - `POST   /api/recurring/catch-up` (router aparte, montado en `/api/recurring`) — materializa los cargos pendientes del usuario
   del JWT → `{ generatedCount }`. Idempotente. Lo llama el mobile UNA vez al abrir la app (background, errores silenciados).
 
+### Style vote (votación A/B del rediseño, jul-2026)
+> Router `routes/style-vote.ts`, montado con `authenticate` (sin caché — conteos frescos). Tabla `style_votes`
+> (`user_id` UNIQUE, `choice` varchar(20); migración `0024_regular_drax.sql`, aditiva). Feature TEMPORAL de
+> producto: borrar tabla+rutas+UI al decidir el estilo. `choice` = paletteId candidato ('professional'|'indigo').
+- `GET /api/style-vote` — `{ myVote: 'professional'|'indigo'|null, tallies: {professional,indigo}, total }`.
+- `POST /api/style-vote` — `{ choice }` (zod enum), **upsert por user_id** (`onConflictDoUpdate`) para permitir
+  cambiar el voto; devuelve el mismo shape que el GET. `choice` inválido → 400.
+> **Borrado de cuenta:** `DELETE /api/auth/account` incluye `style_votes` en la cascada (el FK bloqueaba el
+> borrado del usuario — corregido y verificado E2E: votar → borrar cuenta → 200).
+> **Mobile:** `useStyleVote` (provider en `App.tsx`, un fetch por sesión, `dismissBanner` de sesión) +
+> `styleVoteApi` + tipos `StyleVoteChoice/StyleVoteState`. **`StyleVoteScreen`** (RootStack, lazy): 2 opciones
+> con preview EN VIVO al tocar (aplica la paleta) + barras de resultados + botón votar/cambiar voto. Entradas:
+> **banner "span" `StyleVoteBanner`** al tope del Home (aparece cada entrada mientras `myVote==null`, se descarta
+> por sesión y desaparece al votar), fila en `AppearanceScreen` y en Más → Preferencias ("Vota por el estilo").
+
 ### Admin (solo `is_admin`, jul-2026)
 > Router `routes/admin.ts`, montado con `authenticate` + `requireAdmin` (primer uso real del guard). Solo lectura.
 - `GET /api/admin/reconcile[?userId=N]` — **reconciliación de saldos** (`utils/reconcile.ts`): recalcula el
@@ -830,8 +845,12 @@ TypeScript ~5.9, @types/react ~19.1.
 
 ## DISEÑO — Sistema de temas dual y selector de paletas (rediseño jun 2026)
 
-**5 paletas** conmutables (Bisexual, Gay, Lésbica, Profesional e **Índigo Coral**), cada una con
-variante claro/oscuro, seleccionables desde "Más → Apariencia". Definidas en `mobile/src/theme/index.ts`
+**5 paletas** definidas (Bisexual, Gay, Lésbica, Profesional/**"Clásico"** e Índigo Coral/**"Minimal"**),
+cada una con variante claro/oscuro. **Votación A/B en curso (jul-2026):** durante el test, el selector de
+"Más → Apariencia" ofrece SOLO las dos candidatas a TODOS los usuarios — **`professional` (label "Clásico",
+el look expresivo actual)** y **`indigo` (label "Minimal", el rediseño plano)** — vía `VOTE_PALETTE_IDS`
+en `ThemeContext`. Las otras 3 siguen en el registro pero no se ofrecen. (Antes solo el admin cambiaba de
+paleta; ahora todos eligen entre las dos.) Ver "VOTACIÓN DE ESTILO" abajo. Definidas en `mobile/src/theme/index.ts`
 como `palettes.<id> = { label, light, dark, swatch }` (`PaletteId = keyof typeof palettes`);
 `lightTheme`/`darkTheme` exportados son alias de compatibilidad de `palettes.bisexual.{light,dark}`
 (paleta por defecto). El estado activo (`paletteId`, `themeMode`) vive en `settingsStore`

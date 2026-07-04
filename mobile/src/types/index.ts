@@ -782,3 +782,14 @@ export interface SplitSettlement {
   transactionId: number | null;
   createdAt: string;
 }
+
+// ── Votación A/B del estilo de la app ──
+// `choice` es el paletteId candidato (estable aunque cambie el label mostrado).
+export type StyleVoteChoice = 'professional' | 'indigo';
+
+export interface StyleVoteState {
+  /** null = el usuario aún no ha votado. */
+  myVote: StyleVoteChoice | null;
+  tallies: Record<StyleVoteChoice, number>;
+  total: number;
+}

@@ -38,6 +38,8 @@ export type RootStackParamList = {
   Rates: undefined;
   Security: undefined;
   Appearance: undefined;
+  // Votación A/B del estilo de la app.
+  StyleVote: undefined;
   // Mi cuenta: perfil + exportar todos los datos + eliminar cuenta.
   Account: undefined;
   // Documentos legales (también en el stack de auth, para el consentimiento del registro).

@@ -18,6 +18,7 @@ import { createToastConfig } from './src/components/toastConfig';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { AppLockProvider, useAppLock } from './src/hooks/useAppLock';
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
+import { StyleVoteProvider } from './src/hooks/useStyleVote';
 import { initNotifications } from './src/services/notifications';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -111,9 +112,11 @@ export default function App() {
             <AuthProvider>
               <ThemeProvider>
                 <AppLockProvider>
-                  <TourProvider>
-                    <ThemedApp />
-                  </TourProvider>
+                  <StyleVoteProvider>
+                    <TourProvider>
+                      <ThemedApp />
+                    </TourProvider>
+                  </StyleVoteProvider>
                 </AppLockProvider>
               </ThemeProvider>
             </AuthProvider>

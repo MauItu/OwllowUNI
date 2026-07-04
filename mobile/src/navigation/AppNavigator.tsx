@@ -84,6 +84,7 @@ const SecurityScreen = lazyScreen(() => import('../screens/SecurityScreen').then
 const AppearanceScreen = lazyScreen(() => import('../screens/AppearanceScreen').then((m) => ({ default: m.AppearanceScreen })));
 const AccountScreen = lazyScreen(() => import('../screens/AccountScreen').then((m) => ({ default: m.AccountScreen })));
 const LegalScreen = lazyScreen(() => import('../screens/LegalScreen').then((m) => ({ default: m.LegalScreen })));
+const StyleVoteScreen = lazyScreen(() => import('../screens/StyleVoteScreen').then((m) => ({ default: m.StyleVoteScreen })));
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -286,6 +287,7 @@ export function AppNavigator() {
         <RootStack.Screen name="Appearance" component={AppearanceScreen} />
         <RootStack.Screen name="Account" component={AccountScreen} />
         <RootStack.Screen name="Legal" component={LegalScreen} />
+        <RootStack.Screen name="StyleVote" component={StyleVoteScreen} />
       </RootStack.Navigator>
       )}
     </NavigationContainer>

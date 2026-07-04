@@ -64,6 +64,8 @@ import type {
   RatesResponse,
   RateResult,
   AccountsSummary,
+  StyleVoteState,
+  StyleVoteChoice,
 } from '../types';
 
 /**
@@ -401,4 +403,11 @@ export const statsApi = {
     api
       .get<BalancePoint[]>('/stats/balance-evolution', { params: { from, to, displayCurrency } })
       .then((r) => r.data),
+};
+
+// ── Votación A/B del estilo de la app ──
+export const styleVoteApi = {
+  get: () => api.get<StyleVoteState>('/style-vote').then((r) => r.data),
+  cast: (choice: StyleVoteChoice) =>
+    api.post<StyleVoteState>('/style-vote', { choice }).then((r) => r.data),
 };
