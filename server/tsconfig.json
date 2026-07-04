@@ -14,5 +14,8 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "drizzle"]
+  // Los .test.ts quedan FUERA del build/typecheck de tsc: no deben compilarse a
+  // dist/ (Render) y algunos importan utils del mobile (fuera de rootDir). Los
+  // corre y transpila vitest (`pnpm test`), que resuelve el import cross-package.
+  "exclude": ["node_modules", "dist", "drizzle", "src/**/*.test.ts"]
 }
