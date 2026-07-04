@@ -42,7 +42,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     themeMode === 'system' ? (systemScheme ?? 'dark') === 'dark' : themeMode === 'dark';
 
   // Solo el admin puede cambiar de paleta; el resto queda fijo en "professional".
-  const paletteId: PaletteId = isAdmin ? storedPaletteId : DEFAULT_PALETTE;
+  // El id persistido en AsyncStorage puede apuntar a una paleta que YA NO existe
+  // (renombrada/eliminada en una actualización — pasó con 'amber'): si no está en
+  // el registro, caer al default en vez de crashear con `palettes[id].light`.
+  const requestedId = isAdmin ? storedPaletteId : DEFAULT_PALETTE;
+  const paletteId: PaletteId = requestedId in palettes ? requestedId : DEFAULT_PALETTE;
   const palette = palettes[paletteId];
   const theme = isDark ? palette.dark : palette.light;
 
