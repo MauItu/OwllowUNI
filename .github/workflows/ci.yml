@@ -1,0 +1,60 @@
+name: CI
+
+# Protege `main` (= lo que Render despliega): typecheck de server y mobile +
+# tests del server en cada PR y en cada push a main. Sin secretos: los tests
+# actuales son unitarios puros (no tocan la DB).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server (typecheck + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: server/pnpm-lock.yaml
+      - name: Install
+        working-directory: server
+        run: pnpm install --frozen-lockfile
+      # Los tests importan utils puros del mobile (paridad de cuotas, CSV,
+      # calculadora): necesitan los tipos/archivos del mobile presentes, pero
+      # NO sus node_modules (son módulos sin dependencias).
+      - name: Typecheck
+        working-directory: server
+        run: pnpm typecheck
+      - name: Tests
+        working-directory: server
+        run: pnpm test
+
+  mobile:
+    name: Mobile (typecheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+      - name: Install
+        working-directory: mobile
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: mobile
+        run: pnpm typecheck

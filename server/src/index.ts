@@ -36,6 +36,7 @@ import {
   INSIGHTS_TTL_MS,
 } from './services/cache.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { sendAlert } from './utils/alerting.js';
 
 const app = express();
 const PORT = env.PORT;
@@ -195,8 +196,13 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // alcance a flushear (y un orquestador/PM2/Render reinicie el server).
 process.on('unhandledRejection', (reason) => {
   console.error('unhandledRejection — promesa rechazada sin catch:', reason);
+  sendAlert('unhandledRejection en el server', { reason: String(reason) });
 });
 process.on('uncaughtException', (err) => {
   console.error('uncaughtException — excepción no atrapada:', err);
+  sendAlert('uncaughtException — el server se reinicia', {
+    error: err.message,
+    stack: err.stack?.slice(0, 800),
+  });
   setTimeout(() => process.exit(1), 1000).unref();
 });

@@ -1463,6 +1463,24 @@ salvo el middleware de logging. El orden del pipeline es: `helmet` → `requestL
   `Date.now()` y loguea `"[HTTP] MÉTODO /path STATUS TIMEms"` en `res.on('finish')`. En **producción**
   (`NODE_ENV=production`) solo loguea lo relevante (>1000 ms o status ≥400) para no inundar logs; en
   desarrollo loguea todo.
+- **Alertas operativas sin dependencias (`utils/alerting.ts`, jul-2026):** si `ALERT_WEBHOOK_URL` está
+  definida (validada como URL opcional en `validateEnv`), `sendAlert(title, payload)` POSTea los eventos
+  críticos a ese webhook (compatible Discord/Slack/ntfy: body con `content` + `text` + payload). Fire-and-forget
+  con timeout de 5 s, nunca lanza. Enganchada en: **"COMPENSACIÓN FALLIDA"** (`safeCompensate` — el evento que
+  exige reconciliación manual; correr `GET /api/admin/reconcile` después) y en `uncaughtException`/
+  `unhandledRejection` (`index.ts`). Sin la env var es no-op (queda el `console.error` estructurado).
+- **CI (`.github/workflows/ci.yml`, jul-2026):** en PRs y push a `main` (lo que Render despliega): job
+  `server` (pnpm install + `typecheck` + `test`) y job `mobile` (install + `typecheck`). Node 22 + pnpm 11,
+  caché por lockfile. Sin secretos (los tests son unitarios puros).
+- **Tests (`pnpm test`, vitest, jul-2026):** 36 tests unitarios del núcleo financiero puro:
+  `utils/recurrence.test.ts` (frecuencias, cursor, fin de mes, tope 1000), `utils/installments.test.ts`
+  (amortización francesa con los ejemplos documentados, mora, **paridad exacta con el espejo del mobile** en
+  216 combinaciones) y `utils/mobile-utils.test.ts` (parser CSV y motor de calculadora del mobile — utils puros
+  sin deps de RN, corridos desde la suite del server). Los `.test.ts` están **excluidos del tsconfig** (no van
+  a `dist/` y algunos importan archivos del mobile fuera de `rootDir`); los transpila vitest.
+- **Runbook (`RUNBOOK.md`, jul-2026):** guía operativa — deploy, migraciones en prod (aditivas, se aplican
+  ANTES del deploy desde local), rollback (código sí, DB no: restore de Neon), backups, alertas, incidentes
+  comunes y checklist pre-beta.
 - **Build de producción (sin `tsx` en runtime):** `tsconfig.json` usa `module`/`moduleResolution: NodeNext`,
   `target: ES2022`, `outDir: dist`. `pnpm build` (= `tsc`) compila `src/` → `dist/` (ESM ejecutable por Node,
   los imports ya usan extensión `.js`); `pnpm start` corre `node dist/index.js`. `dist/` está gitignoreado.

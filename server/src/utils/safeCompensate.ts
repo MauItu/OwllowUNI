@@ -1,4 +1,5 @@
 import { db } from '../db/connection.js';
+import { sendAlert } from './alerting.js';
 
 /** Datos para identificar la operación al loguear una compensación fallida. */
 export interface CompensationContext {
@@ -38,17 +39,22 @@ export async function safeCompensate(
     await db.batch(undoBatch as any);
   } catch (compErr) {
     const e = compErr instanceof Error ? compErr : new Error(String(compErr));
+    const detail = {
+      endpoint: context.endpoint,
+      operation: context.operation,
+      userId: context.userId,
+      entityId: context.entityId,
+      txId: context.txId,
+      error: e.message,
+    };
     console.error(
       'COMPENSACIÓN FALLIDA — reconciliación manual necesaria',
-      JSON.stringify({
-        endpoint: context.endpoint,
-        operation: context.operation,
-        userId: context.userId,
-        entityId: context.entityId,
-        txId: context.txId,
-        error: e.message,
-      }),
+      JSON.stringify(detail),
       e.stack,
     );
+    // Este es EL evento que exige intervención humana (saldo movido sin registro
+    // o viceversa): además del log, se notifica al webhook de alertas si existe.
+    // `GET /api/admin/reconcile` encuentra el diff resultante.
+    sendAlert('COMPENSACIÓN FALLIDA — reconciliación manual necesaria', detail);
   }
 }

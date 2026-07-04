@@ -31,6 +31,10 @@ const envSchema = z.object({
   // Contraseña inicial del usuario admin para `db:seed`: opcional (si falta, el seed
   // genera una aleatoria fuerte). NO la usa el runtime de la API, solo el script de seed.
   ADMIN_PASSWORD: z.string().optional(),
+  // Webhook para alertas operativas críticas (compensación fallida, crash del
+  // proceso). Opcional: sin ella las alertas son no-op (queda el console.error).
+  // Acepta webhooks de Discord/Slack/ntfy tal cual (ver utils/alerting.ts).
+  ALERT_WEBHOOK_URL: z.string().url().optional(),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
 });
