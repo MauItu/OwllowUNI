@@ -82,7 +82,7 @@ export function BudgetsScreen() {
         onBack={() => navigation.goBack()}
         right={
           <Pressable hitSlop={10} onPress={openCreate}>
-            <Icon name="plus" size={24} color="#FFFFFF" strokeWidth={2.4} />
+            <Icon name="plus" size={24} color={theme.colors.onHeader} strokeWidth={2.4} />
           </Pressable>
         }
       />
@@ -502,12 +502,12 @@ const createStyles = (theme: Theme) =>
     toggleTextActive: { color: '#FFFFFF', fontWeight: theme.fontWeight.bold },
 
     summaryCard: { borderRadius: theme.borderRadius.lg, padding: theme.spacing.lg, marginBottom: theme.spacing.md, gap: theme.spacing.xs },
-    summaryLabel: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm },
-    summaryAmount: { color: '#FFFFFF', fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold },
+    summaryLabel: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.sm },
+    summaryAmount: { color: theme.colors.onHeader, fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold },
     summaryRow: { flexDirection: 'row', gap: theme.spacing.lg, marginTop: theme.spacing.sm },
     summaryItem: { gap: 2 },
-    summaryItemLabel: { color: 'rgba(255,255,255,0.8)', fontSize: theme.fontSize.xs },
-    summaryItemValue: { color: '#FFFFFF', fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
+    summaryItemLabel: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.xs },
+    summaryItemValue: { color: theme.colors.onHeader, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold },
     overPill: {
       flexDirection: 'row',
       alignItems: 'center',

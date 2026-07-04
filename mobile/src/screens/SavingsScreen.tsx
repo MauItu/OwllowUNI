@@ -32,7 +32,7 @@ export function SavingsScreen() {
         onBack={() => navigation.goBack()}
         right={
           <Pressable hitSlop={10} onPress={() => navigation.navigate('AddSavingsGoal')}>
-            <Icon name="plus" size={24} color="#FFFFFF" strokeWidth={2.4} />
+            <Icon name="plus" size={24} color={theme.colors.onHeader} strokeWidth={2.4} />
           </Pressable>
         }
       />
@@ -64,13 +64,13 @@ export function SavingsScreen() {
                 <Text style={styles.summaryAmount}>{formatCurrency(summary.totalSaved)}</Text>
                 <View style={styles.summaryPills}>
                   <View style={styles.pill}>
-                    <Icon name="target" size={14} color="#FFFFFF" />
+                    <Icon name="target" size={14} color={theme.colors.onHeader} />
                     <Text style={styles.pillText}>
                       {summary.activeGoals} {summary.activeGoals === 1 ? 'meta activa' : 'metas activas'}
                     </Text>
                   </View>
                   <View style={styles.pill}>
-                    <Icon name="check-circle" size={14} color="#FFFFFF" />
+                    <Icon name="check-circle" size={14} color={theme.colors.onHeader} />
                     <Text style={styles.pillText}>{summary.completedGoals} completadas</Text>
                   </View>
                 </View>
@@ -96,17 +96,17 @@ const createStyles = (theme: Theme) =>
       marginBottom: theme.spacing.md,
       gap: theme.spacing.xs,
     },
-    summaryLabel: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm },
-    summaryAmount: { color: '#FFFFFF', fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold },
+    summaryLabel: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.sm },
+    summaryAmount: { color: theme.colors.onHeader, fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold },
     summaryPills: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.xs },
     pill: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: theme.spacing.xs,
-      backgroundColor: 'rgba(255,255,255,0.2)',
+      backgroundColor: `${theme.colors.onHeader}33`,
       borderRadius: theme.borderRadius.full,
       paddingHorizontal: theme.spacing.md,
       paddingVertical: 5,
     },
-    pillText: { color: '#FFFFFF', fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold },
+    pillText: { color: theme.colors.onHeader, fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold },
   });

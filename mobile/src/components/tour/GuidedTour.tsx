@@ -341,7 +341,7 @@ export function GuidedTour({ onDone }: Props) {
     >
       <View style={styles.cardHead}>
         <LinearGradient
-          colors={theme.gradients.header}
+          colors={theme.gradients.button}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.iconCircle}
@@ -367,7 +367,7 @@ export function GuidedTour({ onDone }: Props) {
 
         <Pressable onPress={handleNext} style={({ pressed }) => pressed && { opacity: 0.85 }}>
           <LinearGradient
-            colors={theme.gradients.header}
+            colors={theme.gradients.button}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.nextBtn}

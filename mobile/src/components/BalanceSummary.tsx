@@ -72,11 +72,12 @@ export function BalanceSummary({ totalBalance, income, expense, currency = 'COP'
 }
 
 function Pill({ icon, label, value }: { icon: string; label: string; value: string }) {
+  const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.pill}>
       <View style={styles.pillIcon}>
-        <Icon name={icon} size={18} color="#FFFFFF" />
+        <Icon name={icon} size={18} color={theme.colors.onHeader} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.pillLabel}>{label}</Text>
@@ -99,28 +100,28 @@ const createStyles = (theme: Theme) =>
       shadowOffset: { width: 0, height: 6 },
       elevation: 8,
     },
-    label: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm },
+    label: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.sm },
     heroRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: theme.spacing.xs },
-    heroSymbol: { color: 'rgba(255,255,255,0.9)', fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.semibold, marginTop: 4, marginRight: 2 },
-    hero: { color: '#FFFFFF', fontSize: theme.fontSize.hero, fontWeight: theme.fontWeight.bold, letterSpacing: -1 },
+    heroSymbol: { color: theme.colors.onHeader, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.semibold, marginTop: 4, marginRight: 2 },
+    hero: { color: theme.colors.onHeader, fontSize: theme.fontSize.hero, fontWeight: theme.fontWeight.bold, letterSpacing: -1 },
     creditLines: { marginTop: theme.spacing.md, gap: theme.spacing.xs },
     creditRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm },
-    creditLabel: { color: 'rgba(255,255,255,0.9)', fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
+    creditLabel: { color: theme.colors.onHeader, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.medium },
     creditAvailable: { color: '#7BE0A8', fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold, maxWidth: '55%' },
-    possibleLabel: { color: 'rgba(255,255,255,0.7)', fontSize: theme.fontSize.xs },
-    possibleValue: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold, maxWidth: '50%' },
+    possibleLabel: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.xs },
+    possibleValue: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold, maxWidth: '50%' },
     pills: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.lg },
     pill: {
       flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
       gap: theme.spacing.sm,
-      backgroundColor: 'rgba(255,255,255,0.16)',
+      backgroundColor: `${theme.colors.onHeader}29`,
       borderRadius: theme.borderRadius.xl,
       paddingVertical: theme.spacing.md,
       paddingHorizontal: theme.spacing.md,
     },
-    pillIcon: { width: 34, height: 34, borderRadius: theme.borderRadius.full, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
-    pillLabel: { color: 'rgba(255,255,255,0.8)', fontSize: theme.fontSize.xs },
-    pillValue: { color: '#FFFFFF', fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold, marginTop: 1 },
+    pillIcon: { width: 34, height: 34, borderRadius: theme.borderRadius.full, backgroundColor: `${theme.colors.onHeader}40`, alignItems: 'center', justifyContent: 'center' },
+    pillLabel: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.xs },
+    pillValue: { color: theme.colors.onHeader, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.semibold, marginTop: 1 },
   });

@@ -830,7 +830,7 @@ TypeScript ~5.9, @types/react ~19.1.
 
 ## DISEÑO — Sistema de temas dual y selector de paletas (rediseño jun 2026)
 
-**5 paletas** conmutables (Bisexual, Gay, Lésbica, Profesional y **Ámbar & Petróleo**), cada una con
+**5 paletas** conmutables (Bisexual, Gay, Lésbica, Profesional e **Índigo Coral**), cada una con
 variante claro/oscuro, seleccionables desde "Más → Apariencia". Definidas en `mobile/src/theme/index.ts`
 como `palettes.<id> = { label, light, dark, swatch }` (`PaletteId = keyof typeof palettes`);
 `lightTheme`/`darkTheme` exportados son alias de compatibilidad de `palettes.bisexual.{light,dark}`
@@ -885,16 +885,31 @@ colors: {
 - Oscuro: `background:'#221310'`, `primary:'#E8631C'`, `secondary:'#FF8FC2'`,
   `accent:'#D362A4'`, `income:'#4ADE80'`, `expense/danger:'#E8631C'`, `transfer:'#FF8FC2'`.
 
-**Ámbar & Petróleo (rediseño Claude, jul-2026)** — swatch `#116A5E / #D08700 / #6D4C9F`.
-- Concepto: fintech con calidez — petróleo (confianza) + ámbar dorado (dinero) + violeta ciruela.
-- Claro "Marfil": `background:'#F8F7F4'` (marfil cálido), `primary:'#116A5E'`, `secondary:'#96610A'`
-  (ámbar quemado), `accent:'#6D4C9F'`, `income:'#217A44'`, `expense:'#B3362B'` (teja),
-  `transfer:'#0E6BA8'`. Texto tinta verdosa `#20241F`.
-- Oscuro "Medianoche Ámbar": `background:'#0C1418'` (azul-petróleo nocturno), `primary:'#0F9A8A'`,
-  `secondary/tabActive:'#F5B301'` (**tab activo dorado**, la firma de la paleta), `accent:'#9D7BE0'`,
-  `expense:'#F87066'` (coral). Gradiente header teal→violeta; progress teal→dorado.
-- Verificación AA en el código (ratios anotados por token); blanco sobre primary 6.47 (claro) /
-  3.49 (oscuro, ≥3 texto grande — mismo criterio que Profesional 3.68).
+**Índigo Coral (rediseño Claude v2, jul-2026)** — swatch `#4F46E5 / #F43F5E / #1A1D27`. Elegida por el
+usuario vía test de gustos (premium+energía, índigo protagonista, minimalismo plano, ambos modos).
+Reemplazó a la propuesta v1 "Ámbar & Petróleo" (descartada).
+- **Minimalismo plano:** header y card de balance son superficies **NEUTRAS** (`gradients.header` =
+  `[background, background]`, `balance`/`cardHighlight` = blanco/surface planos con `cardBorder`
+  hairline) y el contenido usa los tokens nuevos `onHeader`/`onHeaderMuted` (ver abajo). El número es
+  el protagonista. El coral aparece poco (accent/gasto) y por eso se nota.
+- Claro: `background:'#FAFAFC'`, `primary:'#4338CA'`, `secondary:'#4F46E5'`, `accent/expense:'#E11D48'`
+  (coral), `income:'#0B815A'`, `transfer:'#2563EB'`, texto tinta `#1A1D27`.
+- Oscuro "Grafito": `background:'#0D1117'`, `primary:'#6D70F3'`, `secondary:'#8FA5FF'`,
+  `accent/expense:'#FB7185'`, `income:'#34D399'`. `button` gradiente índigo `['#5A5CE6','#6D70F3']`.
+- Verificación AA en el código (ratios anotados por token); blanco sobre el fill del botón ≥3.99.
+
+> **Tokens nuevos del sistema (jul-2026, TODAS las paletas):** `colors.onHeader` y `colors.onHeaderMuted` =
+> color del CONTENIDO sobre las superficies de header/balance/cardHighlight (blanco `#FFFFFF`/`#FFFFFFD9`
+> en las 4 paletas expresivas — comportamiento idéntico al anterior —; color de texto del tema en Índigo
+> Coral). `onHeader` es SIEMPRE hex de 6 dígitos: los consumidores derivan translucidez concatenando alpha
+> (`${onHeader}33`). Y `gradients.button` = fill del `PrimaryButton` sin color explícito (= `header` en las
+> paletas expresivas; índigo sólido en la plana) — desacopla el CTA del header para que un header neutro no
+> deje el botón invisible. **Migrados a estos tokens:** `common.tsx` (ScreenHeader + PrimaryButton),
+> `HomeScreen` (topBar), `BalanceSummary`, `AccountsScreen` (card total), y las cards de resumen de
+> `Savings/Splits/Debts/Budgets`; `GuidedTour` usa `gradients.button` en su ícono y botón "Siguiente"
+> (texto blanco). Los blancos sobre colores SÓLIDOS (toggles activos, pills de excedido, FABs) se quedan
+> en blanco. Código nuevo: NUNCA texto blanco hardcodeado sobre `gradients.header/balance/cardHighlight` —
+> usar `onHeader`.
 
 **Profesional (fintech corporativo)** — swatch `#2F5BD0 / #0F766E / #475569`.
 - Claro: `background:'#F7F8FA'`, `primary:'#2F5BD0'` (azul), `secondary:'#0F766E'` (teal),

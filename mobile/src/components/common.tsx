@@ -71,7 +71,7 @@ export function ScreenHeader({
           accessibilityRole="button"
           accessibilityLabel="Volver"
         >
-          <Icon name="chevron-left" size={26} color="#FFFFFF" />
+          <Icon name="chevron-left" size={26} color={theme.colors.onHeader} />
         </Pressable>
       ) : (
         <View style={styles.headerBtn} />
@@ -129,7 +129,7 @@ export function PrimaryButton({
   const { theme } = useTheme();
   const styles = useThemedStyles(createStyles);
   // Sin color explícito, el botón usa el gradiente rosa→morado del tema.
-  const gradient: readonly [string, string] = color ? [color, color] : theme.gradients.header;
+  const gradient: readonly [string, string] = color ? [color, color] : theme.gradients.button;
   const content = loading ? (
     <ActivityIndicator color="#FFFFFF" />
   ) : (
@@ -276,8 +276,8 @@ const createStyles = (theme: Theme) =>
   },
   headerBtn: { minWidth: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitleWrap: { flex: 1, alignItems: 'center' },
-  headerTitle: { color: '#FFFFFF', fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold },
-  headerSubtitle: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.xs, marginTop: 1 },
+  headerTitle: { color: theme.colors.onHeader, fontSize: theme.fontSize.lg, fontWeight: theme.fontWeight.bold },
+  headerSubtitle: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.xs, marginTop: 1 },
   button: {
     flexDirection: 'row',
     alignItems: 'center',

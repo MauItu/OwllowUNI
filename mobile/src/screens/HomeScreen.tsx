@@ -115,7 +115,7 @@ export function HomeScreen() {
           accessibilityRole="button"
           accessibilityLabel="Abrir perfil"
         >
-          <Icon name="circle-user" size={24} color="#FFFFFF" />
+          <Icon name="circle-user" size={24} color={theme.colors.onHeader} />
         </Pressable>
         <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
           <Text style={styles.greeting}>{greeting()}</Text>
@@ -130,7 +130,7 @@ export function HomeScreen() {
             accessibilityRole="button"
             accessibilityLabel="Buscar"
           >
-            <Icon name="search" size={22} color="#FFFFFF" />
+            <Icon name="search" size={22} color={theme.colors.onHeader} />
           </Pressable>
           <Pressable
             style={styles.iconBtn}
@@ -138,7 +138,7 @@ export function HomeScreen() {
             accessibilityRole="button"
             accessibilityLabel="Ver cuentas"
           >
-            <Icon name="wallet" size={22} color="#FFFFFF" />
+            <Icon name="wallet" size={22} color={theme.colors.onHeader} />
           </Pressable>
         </View>
       </LinearGradient>
@@ -377,10 +377,10 @@ const createStyles = (theme: Theme) =>
     borderBottomLeftRadius: theme.borderRadius.lg,
     borderBottomRightRadius: theme.borderRadius.lg,
   },
-  greeting: { color: '#FFFFFF', fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold },
-  date: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm, marginTop: 2 },
+  greeting: { color: theme.colors.onHeader, fontSize: theme.fontSize.xl, fontWeight: theme.fontWeight.bold },
+  date: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.sm, marginTop: 2 },
   topActions: { flexDirection: 'row', gap: theme.spacing.sm },
-  iconBtn: { width: 44, height: 44, borderRadius: theme.borderRadius.full, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  iconBtn: { width: 44, height: 44, borderRadius: theme.borderRadius.full, backgroundColor: `${theme.colors.onHeader}33`, alignItems: 'center', justifyContent: 'center' },
   content: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   section: { marginTop: theme.spacing.xl },
   insightsSection: { marginTop: theme.spacing.lg },

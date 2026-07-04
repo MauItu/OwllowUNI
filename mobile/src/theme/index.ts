@@ -1,8 +1,8 @@
 /**
  * Sistema de temas dual con selector de paleta:
- *  - 4 paletas (Bisexual, Gay, Lésbica, Profesional), cada una con variante
- *    claro/oscuro. La paleta activa se elige en Más → Apariencia y se
- *    persiste en `settingsStore` (`paletteId` + `themeMode`).
+ *  - 5 paletas (Bisexual, Gay, Lésbica, Profesional, Índigo Coral), cada una
+ *    con variante claro/oscuro. La paleta activa se elige en Más → Apariencia
+ *    y se persiste en `settingsStore` (`paletteId` + `themeMode`).
  *  - `lightTheme`/`darkTheme` son alias de compatibilidad de la paleta
  *    Bisexual (valor por defecto, "Minimalista Nórdico" / "Orquídea Velvet").
  *  - Todas las paletas comparten `Theme`/`ThemeColors` y cumplen WCAG AA
@@ -60,17 +60,34 @@ export interface ThemeColors {
   // Barra de estado del sistema
   statusBar: string;
 
+  /**
+   * Color del CONTENIDO (texto/íconos) sobre las superficies de header, balance
+   * y cardHighlight. En las paletas expresivas es blanco (gradientes de color);
+   * en paletas planas (Índigo Coral) esas superficies son neutras y el contenido
+   * usa el color de texto del tema. Siempre hex de 6 dígitos: los consumidores
+   * derivan translucidez concatenando alpha (`${onHeader}33`).
+   */
+  onHeader: string;
+  /** Variante secundaria/atenuada de `onHeader` (hex, puede llevar alpha). */
+  onHeaderMuted: string;
+
   // Paleta para gráficas
   chart: readonly string[];
 }
 
 export interface ThemeGradients {
-  header: GradientTuple; // rosa → morado, texto blanco encima
+  header: GradientTuple; // superficie del header (contenido en colors.onHeader)
   cardHighlight: GradientTuple;
-  balance: GradientTuple; // card de balance total, texto blanco
+  balance: GradientTuple; // card de balance total (contenido en colors.onHeader)
   progress: GradientTuple; // barras de progreso rosa → azul
   income: GradientTuple;
   expense: GradientTuple;
+  /**
+   * Fill del CTA (PrimaryButton sin color explícito). Separado de `header` para
+   * que una paleta plana pueda tener header neutro SIN dejar el botón invisible
+   * (el texto del botón es blanco siempre).
+   */
+  button: GradientTuple;
 }
 
 // Tokens compartidos entre ambos temas
@@ -143,10 +160,13 @@ export const lightTheme: Theme = {
     tabInactive: '#ADB5BD', // inactivo gris claro
 
     statusBar: '#E2E6EA',
+    onHeader: '#FFFFFF',
+    onHeaderMuted: '#FFFFFFD9',
     chart: chartLight,
   },
   gradients: {
     header: ['#C1437A', '#7B528C'], // rosa → morado
+    button: ['#C1437A', '#7B528C'],
     cardHighlight: ['#C1437A', '#7B528C'],
     balance: ['#C1437A', '#7B528C'],
     progress: ['#C1437A', '#3A60A1'], // rosa → azul
@@ -193,10 +213,13 @@ export const darkTheme: Theme = {
     tabInactive: '#75689A',
 
     statusBar: '#1B1428',
+    onHeader: '#FFFFFF',
+    onHeaderMuted: '#FFFFFFD9',
     chart: chartDark,
   },
   gradients: {
     header: ['#F72585', '#7209B7'], // rosa frambuesa → púrpura
+    button: ['#F72585', '#7209B7'],
     cardHighlight: ['#7209B7', '#F72585'],
     balance: ['#7209B7', '#F72585'], // púrpura → rosa
     progress: ['#F72585', '#4CC9F0'], // rosa → turquesa
@@ -242,11 +265,14 @@ const gayLightTheme: Theme = {
     tabActive: '#0B6E5B',
     tabInactive: '#909C9A',
 
-    statusBar: '#DFE6E3', // derivado: background oscurecido ~8%
+    statusBar: '#DFE6E3',
+    onHeader: '#FFFFFF',
+    onHeaderMuted: '#FFFFFFD9', // derivado: background oscurecido ~8%
     chart: ['#0B6E5B', '#2A6FB5', '#3D1A78', '#297D4E', '#E8A838', '#4EADA1', '#D4845A', '#9B7DB8'],
   },
   gradients: {
     header: ['#0B6E5B', '#3D1A78'],
+    button: ['#0B6E5B', '#3D1A78'],
     cardHighlight: ['#0B6E5B', '#3D1A78'],
     balance: ['#0B6E5B', '#3D1A78'],
     progress: ['#0B6E5B', '#2A6FB5'],
@@ -292,11 +318,14 @@ const gayDarkTheme: Theme = {
     tabActive: '#7BADE2',
     tabInactive: '#516461',
 
-    statusBar: '#0B1512', // derivado: background oscurecido ~25%
+    statusBar: '#0B1512',
+    onHeader: '#FFFFFF',
+    onHeaderMuted: '#FFFFFFD9', // derivado: background oscurecido ~25%
     chart: ['#1FAE90', '#7BADE2', '#8E7BEA', '#4ADE80', '#FF8FC2', '#B47EE8', '#E8A838', '#4EADA1'],
   },
   gradients: {
     header: ['#1FAE90', '#8E7BEA'],
+    button: ['#1FAE90', '#8E7BEA'],
     cardHighlight: ['#8E7BEA', '#1FAE90'],
     balance: ['#8E7BEA', '#1FAE90'],
     progress: ['#1FAE90', '#7BADE2'],
@@ -342,11 +371,14 @@ const lesbianLightTheme: Theme = {
     tabActive: '#C8442A',
     tabInactive: '#A79692',
 
-    statusBar: '#EBE4E0', // derivado: background oscurecido ~8%
+    statusBar: '#EBE4E0',
+    onHeader: '#FFFFFF',
+    onHeaderMuted: '#FFFFFFD9', // derivado: background oscurecido ~8%
     chart: ['#C8442A', '#A30262', '#D362A4', '#297D4E', '#E8A838', '#4EADA1', '#D4845A', '#9B7DB8'],
   },
   gradients: {
     header: ['#C8442A', '#A30262'],
+    button: ['#C8442A', '#A30262'],
     cardHighlight: ['#C8442A', '#A30262'],
     balance: ['#C8442A', '#A30262'],
     progress: ['#C8442A', '#A30262'],
@@ -392,11 +424,14 @@ const lesbianDarkTheme: Theme = {
     tabActive: '#FF8FC2',
     tabInactive: '#6F5A56',
 
-    statusBar: '#1A0E0C', // derivado: background oscurecido ~25%
+    statusBar: '#1A0E0C',
+    onHeader: '#FFFFFF',
+    onHeaderMuted: '#FFFFFFD9', // derivado: background oscurecido ~25%
     chart: ['#E8631C', '#FF8FC2', '#D362A4', '#4ADE80', '#E8A838', '#4EADA1', '#D4845A', '#9B7DB8'],
   },
   gradients: {
     header: ['#E8631C', '#FF8FC2'],
+    button: ['#E8631C', '#FF8FC2'],
     cardHighlight: ['#FF8FC2', '#E8631C'],
     balance: ['#FF8FC2', '#E8631C'],
     progress: ['#E8631C', '#FF8FC2'],
@@ -442,11 +477,14 @@ const proLightTheme: Theme = {
     tabActive: '#2F5BD0',
     tabInactive: '#95A0AF',
 
-    statusBar: '#E3E4E6', // derivado: background oscurecido ~8%
+    statusBar: '#E3E4E6',
+    onHeader: '#FFFFFF',
+    onHeaderMuted: '#FFFFFFD9', // derivado: background oscurecido ~8%
     chart: ['#2F5BD0', '#0F766E', '#6366F1', '#15803D', '#E8A838', '#4EADA1', '#D4845A', '#9B7DB8'],
   },
   gradients: {
     header: ['#2F5BD0', '#0F766E'],
+    button: ['#2F5BD0', '#0F766E'],
     cardHighlight: ['#2F5BD0', '#0F766E'],
     balance: ['#2F5BD0', '#0F766E'],
     progress: ['#2F5BD0', '#0F766E'],
@@ -492,11 +530,14 @@ const proDarkTheme: Theme = {
     tabActive: '#2DD4BF',
     tabInactive: '#6E7988',
 
-    statusBar: '#0B101C', // derivado: background oscurecido ~25%
+    statusBar: '#0B101C',
+    onHeader: '#FFFFFF',
+    onHeaderMuted: '#FFFFFFD9', // derivado: background oscurecido ~25%
     chart: ['#3B82F6', '#2DD4BF', '#818CF8', '#34D399', '#E8A838', '#4EADA1', '#D4845A', '#9B7DB8'],
   },
   gradients: {
     header: ['#3B82F6', '#2DD4BF'],
+    button: ['#3B82F6', '#2DD4BF'],
     cardHighlight: ['#2DD4BF', '#3B82F6'],
     balance: ['#2DD4BF', '#3B82F6'],
     progress: ['#3B82F6', '#2DD4BF'],
@@ -506,108 +547,115 @@ const proDarkTheme: Theme = {
   ...shared,
 };
 
-// ── PALETA ÁMBAR & PETRÓLEO (rediseño Claude, jul-2026) — claro ──────────────
-// Concepto: fintech con calidez. Petróleo profundo (confianza) como primario,
-// ámbar dorado (dinero, energía) como secundario/protagonista de acentos y
-// violeta ciruela como terciario. Fondos marfil cálido en claro y azul-petróleo
-// nocturno en oscuro. Todos los tokens de texto verificados WCAG AA (≥4.5:1)
-// sobre su fondo; blanco sobre primary/gradientes ≥3:1 (texto grande/bold),
-// mismos criterios que las paletas existentes.
-const amberLightTheme: Theme = {
+// ── PALETA ÍNDIGO CORAL (rediseño Claude v2, jul-2026) — claro ───────────────
+// Concepto elegido por el usuario vía test de gustos: premium + energía, índigo
+// protagonista, MINIMALISMO PLANO. Header y card de balance son superficies
+// NEUTRAS (gradientes planos del color de fondo/surface) y el contenido encima
+// usa `onHeader` = color de texto del tema: el número es el protagonista. El
+// coral aparece poco (acento/gasto) y por eso se nota. Todos los tokens de
+// texto verificados WCAG AA (ratios anotados); blanco sobre el fill del botón
+// ≥3.99 en ambos modos.
+const indigoLightTheme: Theme = {
   colors: {
-    background: '#F8F7F4', // marfil cálido (no gris clínico)
-    surface: '#EDEBE5',
+    background: '#FAFAFC',
+    surface: '#F1F2F6',
     surfaceLight: '#FFFFFF',
-    surfaceAccent: '#E3E0D6',
+    surfaceAccent: '#E8EAF1',
 
-    primary: '#116A5E', // petróleo profundo — CTA principal (blanco encima: 6.47)
-    primaryDark: '#CFE5E0', // contenedor suave (teclas de operador)
-    primaryLight: '#0D584E', // texto legible sobre marfil (7.77)
+    primary: '#4338CA', // índigo profundo — CTA (7.58 vs fondo; blanco encima 7.9)
+    primaryDark: '#DEDDF9', // contenedor suave (teclas de operador)
+    primaryLight: '#3730A3', // texto índigo legible (9.53)
 
-    secondary: '#96610A', // ámbar quemado — enlaces/navegación (4.89)
+    secondary: '#4F46E5', // enlaces/navegación (6.03)
 
-    accent: '#6D4C9F', // violeta ciruela — tags/alertas (6.16)
-    accentLight: '#5D3F8C', // variante texto (7.67)
+    accent: '#E11D48', // coral — el guiño de la paleta (4.51; fondos de chips/alertas)
+    accentLight: '#BE123C', // variante texto (6.03)
 
-    income: '#217A44', // (4.99)
-    expense: '#B3362B', // rojo teja cálido (5.63)
-    transfer: '#0E6BA8', // azul petróleo (5.32)
+    income: '#0B815A', // (4.68)
+    expense: '#E11D48', // coral = gasto: coherente con el acento (4.51)
+    transfer: '#2563EB', // (4.96)
 
-    success: '#217A44',
-    danger: '#B3362B',
-    warning: '#96610A',
+    success: '#0B815A',
+    danger: '#E11D48',
+    warning: '#BE123C',
 
-    text: '#20241F', // tinta verdosa cálida (14.7)
-    textSecondary: '#5F675F', // (5.46)
-    textMuted: '#8F978E',
+    text: '#1A1D27', // tinta (16.13)
+    textSecondary: '#5B6172', // (5.93)
+    textMuted: '#8B90A0',
 
-    border: '#D8D4C8',
-    borderLight: '#E6E2D8',
-    cardBorder: 'transparent',
+    border: '#E3E5EC',
+    borderLight: '#EEEFF4',
+    cardBorder: '#E3E5EC', // hairline: separa las cards planas del fondo
 
-    tabActive: '#116A5E',
-    tabInactive: '#A3A99C',
+    tabActive: '#4338CA',
+    tabInactive: '#9AA0B0',
 
-    statusBar: '#E8E5DD',
-    chart: ['#116A5E', '#D08700', '#6D4C9F', '#217A44', '#0E6BA8', '#B3362B', '#4EADA1', '#9B7DB8'],
+    statusBar: '#EFF0F4',
+    onHeader: '#1A1D27', // header NEUTRO: contenido en color de texto
+    onHeaderMuted: '#5B6172',
+    chart: ['#4F46E5', '#F43F5E', '#0EA5E9', '#10B981', '#8B5CF6', '#F59E0B', '#64748B', '#EC4899'],
   },
   gradients: {
-    header: ['#116A5E', '#6D4C9F'], // petróleo → ciruela (blanco encima ≥3)
-    cardHighlight: ['#116A5E', '#6D4C9F'],
-    balance: ['#0D584E', '#5D3F8C'],
-    progress: ['#116A5E', '#D08700'], // petróleo → ámbar (barras con calidez)
-    income: ['#217A44', '#3DA56C'],
-    expense: ['#93261C', '#B3362B'],
+    header: ['#FAFAFC', '#FAFAFC'], // plano = fondo (minimalismo total)
+    button: ['#4338CA', '#4F46E5'], // el CTA SÍ lleva índigo (texto blanco 7.9)
+    cardHighlight: ['#FFFFFF', '#FFFFFF'], // card blanca con cardBorder hairline
+    balance: ['#FFFFFF', '#FFFFFF'],
+    progress: ['#4F46E5', '#818CF8'],
+    income: ['#0B815A', '#10B981'],
+    expense: ['#BE123C', '#E11D48'],
   },
   ...shared,
 };
 
-// ── PALETA ÁMBAR & PETRÓLEO — oscuro "Medianoche Ámbar" ─────────────────────
-const amberDarkTheme: Theme = {
+// ── PALETA ÍNDIGO CORAL — oscuro "Grafito" ───────────────────────────────────
+const indigoDarkTheme: Theme = {
   colors: {
-    background: '#0C1418', // azul-petróleo nocturno
-    surface: '#152125',
-    surfaceLight: '#1D2C31',
-    surfaceAccent: '#28383E',
+    background: '#0D1117', // grafito azulado
+    surface: '#151B23',
+    surfaceLight: '#1C242E',
+    surfaceAccent: '#27303C',
 
-    primary: '#0F9A8A', // teal petróleo — CTA (blanco encima: 3.49, ≥3 large/bold)
-    primaryDark: '#0B6E62', // pressed
-    primaryLight: '#7FE0CF', // texto de acento (11.93)
+    primary: '#6D70F3', // índigo luminoso — CTA (4.74 vs fondo; blanco encima 3.99)
+    primaryDark: '#4547B0', // pressed
+    primaryLight: '#A5B4FC', // texto índigo legible (9.49)
 
-    secondary: '#F5B301', // ámbar dorado — enlaces/navegación (10.04)
+    secondary: '#8FA5FF', // enlaces/navegación (8.11)
 
-    accent: '#9D7BE0', // violeta (5.62; para fondos y chips)
-    accentLight: '#C9B6F2', // variante texto (10.15)
+    accent: '#FB7185', // coral (7.03)
+    accentLight: '#FDA4AF', // variante texto (10.01)
 
-    income: '#4ADE80',
-    expense: '#F87066', // coral cálido (6.64)
-    transfer: '#62B6CB', // (8.04)
+    income: '#34D399', // (9.84)
+    expense: '#FB7185', // coral = gasto (7.03)
+    transfer: '#60A5FA', // (7.44)
 
-    success: '#4ADE80',
-    danger: '#F87066',
-    warning: '#F5B301',
+    success: '#34D399',
+    danger: '#FB7185',
+    warning: '#FDA4AF',
 
-    text: '#F2F0E9', // blanco cálido (16.31)
-    textSecondary: '#93A29C', // (6.99)
-    textMuted: '#67756F',
+    text: '#F0F2F8', // (16.91)
+    textSecondary: '#98A1B3', // (7.29)
+    textMuted: '#6A7284',
 
-    border: '#243237',
-    borderLight: '#33454C',
-    cardBorder: '#243237',
+    border: '#232B36',
+    borderLight: '#303947',
+    cardBorder: '#232B36',
 
-    tabActive: '#F5B301', // tab activo DORADO: la firma de la paleta
-    tabInactive: '#67756F',
+    tabActive: '#A5B4FC',
+    tabInactive: '#6A7284',
 
-    statusBar: '#080E11',
-    chart: ['#0F9A8A', '#F5B301', '#9D7BE0', '#4ADE80', '#62B6CB', '#F87066', '#E8A838', '#D4845A'],
+    statusBar: '#090D12',
+    onHeader: '#F0F2F8', // header NEUTRO también en oscuro
+    onHeaderMuted: '#98A1B3',
+    chart: ['#818CF8', '#FB7185', '#38BDF8', '#34D399', '#A78BFA', '#FBBF24', '#94A3B8', '#F472B6'],
   },
   gradients: {
-    header: ['#0F9A8A', '#7C5CBF'], // teal → violeta (blanco encima ≥3)
-    cardHighlight: ['#7C5CBF', '#0F9A8A'],
-    balance: ['#0F7264', '#6A4B9E'], // extremos oscuros: blanco encima 5.8/6.7
-    progress: ['#0F9A8A', '#F5B301'], // teal → dorado
-    income: ['#2FA45C', '#4ADE80'],
-    expense: ['#B3362B', '#F87066'],
+    header: ['#0D1117', '#0D1117'], // plano = fondo
+    button: ['#5A5CE6', '#6D70F3'],
+    cardHighlight: ['#151B23', '#151B23'], // card surface con cardBorder
+    balance: ['#151B23', '#151B23'],
+    progress: ['#6D70F3', '#A5B4FC'],
+    income: ['#10B981', '#34D399'],
+    expense: ['#E11D48', '#FB7185'],
   },
   ...shared,
 };
@@ -640,13 +688,14 @@ export const palettes = {
     dark: proDarkTheme,
     swatch: ['#2F5BD0', '#6366F1', '#0F766E'],
   },
-  // Rediseño propuesto por Claude (jul-2026). Convive con las originales: el
-  // admin alterna entre esta y las demás desde Más → Apariencia.
-  amber: {
-    label: 'Ámbar & Petróleo',
-    light: amberLightTheme,
-    dark: amberDarkTheme,
-    swatch: ['#116A5E', '#D08700', '#6D4C9F'],
+  // Rediseño Claude v2 (jul-2026), afinado con el test de gustos del usuario:
+  // premium + energía, índigo protagonista, minimalismo plano, coral como guiño.
+  // Convive con las originales: el admin alterna desde Más → Apariencia.
+  indigo: {
+    label: 'Índigo Coral',
+    light: indigoLightTheme,
+    dark: indigoDarkTheme,
+    swatch: ['#4F46E5', '#F43F5E', '#1A1D27'],
   },
 } as const;
 

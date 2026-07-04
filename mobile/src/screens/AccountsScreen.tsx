@@ -130,7 +130,7 @@ export function AccountsScreen() {
         onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
         right={
           <Pressable onPress={() => navigation.navigate('AddAccount')} hitSlop={10}>
-            <Icon name="plus" size={24} color="#FFFFFF" />
+            <Icon name="plus" size={24} color={theme.colors.onHeader} />
           </Pressable>
         }
       />
@@ -143,10 +143,10 @@ export function AccountsScreen() {
       >
         <View style={styles.totalHeader}>
           <View style={styles.totalIcon}>
-            <Icon name="layers" size={20} color="#FFFFFF" />
+            <Icon name="layers" size={20} color={theme.colors.onHeader} />
           </View>
           <Pressable onPress={() => navigation.navigate('Rates')} hitSlop={8} style={styles.ratesPill}>
-            <Icon name="arrow-right-left" size={13} color="#FFFFFF" />
+            <Icon name="arrow-right-left" size={13} color={theme.colors.onHeader} />
             <Text style={styles.ratesPillText}>Tasas</Text>
           </Pressable>
         </View>
@@ -156,7 +156,7 @@ export function AccountsScreen() {
         </Text>
         {hasForeign && (
           <Pressable style={styles.ratesNote} onPress={() => refetchSummary(true)} hitSlop={6}>
-            <Icon name={summary?.stale ? 'triangle-alert' : 'refresh-cw'} size={12} color="rgba(255,255,255,0.85)" />
+            <Icon name={summary?.stale ? 'triangle-alert' : 'refresh-cw'} size={12} color={theme.colors.onHeaderMuted} />
             <Text style={styles.ratesNoteText}>
               {summary?.stale ? 'Tasas sin actualizar' : `Tasas actualizadas ${ratesAgo ?? ''}`} · toca para refrescar
             </Text>
@@ -233,13 +233,13 @@ const createStyles = (theme: Theme) =>
     elevation: 8,
   },
   totalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing.sm },
-  totalIcon: { width: 40, height: 40, borderRadius: theme.borderRadius.full, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
-  ratesPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: theme.borderRadius.full, paddingHorizontal: theme.spacing.sm, paddingVertical: 5 },
-  ratesPillText: { color: '#FFFFFF', fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold },
-  totalLabel: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm },
-  totalValue: { color: '#FFFFFF', fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold, marginTop: theme.spacing.xs, letterSpacing: -0.5 },
+  totalIcon: { width: 40, height: 40, borderRadius: theme.borderRadius.full, backgroundColor: `${theme.colors.onHeader}38`, alignItems: 'center', justifyContent: 'center' },
+  ratesPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: `${theme.colors.onHeader}38`, borderRadius: theme.borderRadius.full, paddingHorizontal: theme.spacing.sm, paddingVertical: 5 },
+  ratesPillText: { color: theme.colors.onHeader, fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold },
+  totalLabel: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.sm },
+  totalValue: { color: theme.colors.onHeader, fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold, marginTop: theme.spacing.xs, letterSpacing: -0.5 },
   ratesNote: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: theme.spacing.sm },
-  ratesNoteText: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.xs },
+  ratesNoteText: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.xs },
   list: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xxl },
   sectionHeader: {
     flexDirection: 'row',

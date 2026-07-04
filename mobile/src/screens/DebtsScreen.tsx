@@ -134,7 +134,7 @@ export function DebtsScreen() {
         onBack={() => navigation.goBack()}
         right={
           <Pressable hitSlop={10} onPress={() => navigation.navigate('AddDebt')}>
-            <Icon name="plus" size={24} color="#FFFFFF" strokeWidth={2.4} />
+            <Icon name="plus" size={24} color={theme.colors.onHeader} strokeWidth={2.4} />
           </Pressable>
         }
       />
@@ -169,11 +169,11 @@ export function DebtsScreen() {
                   <Text style={styles.summaryAmount}>{formatCurrency(summary.netBalance)}</Text>
                   <View style={styles.summaryPills}>
                     <View style={styles.pill}>
-                      <Icon name="arrow-up-from-line" size={14} color="#FFFFFF" />
+                      <Icon name="arrow-up-from-line" size={14} color={theme.colors.onHeader} />
                       <Text style={styles.pillText}>Debo {formatCurrency(summary.totalDebt)}</Text>
                     </View>
                     <View style={styles.pill}>
-                      <Icon name="arrow-down-to-line" size={14} color="#FFFFFF" />
+                      <Icon name="arrow-down-to-line" size={14} color={theme.colors.onHeader} />
                       <Text style={styles.pillText}>Me deben {formatCurrency(summary.totalLoan)}</Text>
                     </View>
                   </View>
@@ -258,19 +258,19 @@ const createStyles = (theme: Theme) =>
       marginBottom: theme.spacing.md,
       gap: theme.spacing.xs,
     },
-    summaryLabel: { color: 'rgba(255,255,255,0.85)', fontSize: theme.fontSize.sm },
-    summaryAmount: { color: '#FFFFFF', fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold },
+    summaryLabel: { color: theme.colors.onHeaderMuted, fontSize: theme.fontSize.sm },
+    summaryAmount: { color: theme.colors.onHeader, fontSize: theme.fontSize.xxl, fontWeight: theme.fontWeight.bold },
     summaryPills: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginTop: theme.spacing.xs },
     pill: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: theme.spacing.xs,
-      backgroundColor: 'rgba(255,255,255,0.2)',
+      backgroundColor: `${theme.colors.onHeader}33`,
       borderRadius: theme.borderRadius.full,
       paddingHorizontal: theme.spacing.md,
       paddingVertical: 5,
     },
-    pillText: { color: '#FFFFFF', fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold },
+    pillText: { color: theme.colors.onHeader, fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.semibold },
     toggle: { flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.md },
     toggleBtn: {
       flex: 1,
