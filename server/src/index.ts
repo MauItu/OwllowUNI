@@ -26,7 +26,8 @@ import { materializeRecurringCharges, usersWithActiveRules } from './services/re
 import cron from 'node-cron';
 import { authRouter } from './routes/auth.js';
 import { passwordResetRouter } from './routes/password-reset.js';
-import { authenticate } from './middleware/auth.js';
+import { adminRouter } from './routes/admin.js';
+import { authenticate, requireAdmin } from './middleware/auth.js';
 import { globalLimiter } from './middleware/rateLimiter.js';
 import {
   invalidateOnMutation,
@@ -123,6 +124,8 @@ app.use('/api/insights', authenticate, cacheResponse(INSIGHTS_TTL_MS), insightsR
 app.use('/api/rates', authenticate, invalidateOnMutation, ratesRouter);
 app.use('/api/recurring-rules', authenticate, invalidateOnMutation, recurringRouter);
 app.use('/api/recurring', authenticate, invalidateOnMutation, recurringActionsRouter);
+// Administración (solo admin): reconciliación de saldos. Solo lectura.
+app.use('/api/admin', authenticate, requireAdmin, adminRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

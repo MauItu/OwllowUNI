@@ -127,6 +127,12 @@ export const categories = pgTable('categories', {
 }, (t) => ({
   userIdx: index('categories_user_id_idx').on(t.userId),
   parentIdx: index('categories_parent_id_idx').on(t.parentId),
+  // UNIQUE parcial: nombre único (case-insensitive) por usuario+tipo SOLO entre
+  // categorías PADRE. Blinda `getOrCreateExpenseCategory` (cuota de manejo) de
+  // carreras sin impedir subcategorías homónimas bajo padres distintos ("Otros").
+  uniqueParentName: uniqueIndex('categories_user_type_name_unique')
+    .on(t.userId, t.type, sql`lower(${t.name})`)
+    .where(sql`${t.parentId} IS NULL`),
 }));
 
 // ───────────────────────── recurring_rules ──────────────────────────

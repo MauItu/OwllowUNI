@@ -581,8 +581,11 @@ mobile/
 ### Categories
 - `GET    /api/categories` — todas, subcategorías anidadas (`children[]`)
 - `GET    /api/categories/:type` — `income` | `expense`
-- `POST   /api/categories`
-- `PUT    /api/categories/:id`
+- `POST   /api/categories` · `PUT /api/categories/:id` — **409** `'Ya tienes una categoría con ese nombre'`
+  si viola el UNIQUE parcial `categories_user_type_name_unique` (`(user_id,type,lower(name)) WHERE parent_id
+  IS NULL`, migración `0023_lethal_squirrel_girl.sql`): nombre único case-insensitive SOLO entre categorías
+  PADRE (las subcategorías pueden repetir nombre bajo padres distintos, p. ej. "Otros"). Blinda
+  `getOrCreateExpenseCategory` (cuota de manejo) de carreras: ante 23505 re-lee la fila ganadora.
 - `DELETE /api/categories/:id` — CASCADE subcategorías
 
 ### Transactions
@@ -599,8 +602,8 @@ mobile/
 > POST/PUT aceptan `receiptFilename` y GET (lista + `/:id`) lo devuelven. Es solo el **nombre** del archivo;
 > la imagen del recibo se guarda LOCAL en el dispositivo (ver feature "Recibos"). El backend no recibe ni
 > almacena la imagen. Borrar la transacción NO borra el archivo (eso lo hace el cliente).
-- `GET    /api/transactions/export` — query: `format=csv|json, from, to, accountId?, categoryId?, type?`. Devuelve el archivo con `Content-Disposition: attachment`. **CSV**: UTF-8 con BOM (Excel + tildes), separador coma, filas CRLF, columnas `fecha, hora, tipo, monto, descripción, cuenta, cuenta destino, categoría, subcategoría, etiquetas` (separadas por `;`)`, notas`. `tipo` se exporta en español (Ingreso/Gasto/Transferencia); `categoría/subcategoría` se derivan del `parentId` (si la categoría es hija → categoría=padre, subcategoría=hija). **JSON**: arreglo de filas normalizadas (mismo shape que acepta el import). Ruta registrada **antes** de `/:id`.
-- `POST   /api/transactions/import` — body `{ transactions: NormalizedRow[] }` (o un arreglo directo). Valida cada fila: tipo (acepta español o inglés), monto numérico > 0, fecha `yyyy-MM-dd`, cuenta existente (match por nombre case-insensitive; transfer exige cuenta destino), categoría opcional (match por subcategoría→categoría; si no existe, `null`). Cada importada actualiza `current_balance` como una creación normal. Los statements se ejecutan en **batches de 50 filas** (`db.batch`, cada lote atómico). Respuesta `{ imported: n, errors: [{ row, reason }] }` con **resultado parcial veraz**: si un lote falla, ese lote completo se revierte (no se suma a `imported`) y se añade a `errors` un item con el rango de filas del lote (las demás filas válidas sí se importan). **El CSV exportado es round-trippable** (export → import sin errores). Las etiquetas no se importan (solo informativas en el CSV).
+- `GET    /api/transactions/export` — query: `format=csv|json, from, to, accountId?, categoryId?, type?`. Devuelve el archivo con `Content-Disposition: attachment`. **Cota de rango (jul-2026): máximo 5 años** — sin `from` exporta los últimos 5 años (desde `to` u hoy); `from`+`to` que excedan 5 años → 400. **CSV**: UTF-8 con BOM (Excel + tildes), separador coma, filas CRLF, columnas `fecha, hora, tipo, monto, descripción, cuenta, cuenta destino, categoría, subcategoría, etiquetas` (separadas por `;`)`, notas`. `tipo` se exporta en español (Ingreso/Gasto/Transferencia); `categoría/subcategoría` se derivan del `parentId` (si la categoría es hija → categoría=padre, subcategoría=hija). **JSON**: arreglo de filas normalizadas (mismo shape que acepta el import). Ruta registrada **antes** de `/:id`.
+- `POST   /api/transactions/import` — body `{ transactions: NormalizedRow[] }` (o un arreglo directo). Valida cada fila: tipo (acepta español o inglés), monto numérico > 0, fecha `yyyy-MM-dd`, cuenta existente (match por nombre case-insensitive; transfer exige cuenta destino), categoría opcional (match por subcategoría→categoría; si no existe, `null`). Cada importada actualiza `current_balance` como una creación normal. Los statements se ejecutan en **batches de 50 filas** (`db.batch`, cada lote atómico). Respuesta `{ imported: n, errors: [{ row, reason }], possibleDuplicates: n }` — `possibleDuplicates` (jul-2026) cuenta las filas entrantes que YA existían (misma fecha+monto+tipo+cuenta, indexadas ANTES de insertar): detector de re-import (el import no es idempotente); el mobile lo muestra como advertencia con instrucción de revisar duplicados. Con **resultado parcial veraz**: si un lote falla, ese lote completo se revierte (no se suma a `imported`) y se añade a `errors` un item con el rango de filas del lote (las demás filas válidas sí se importan). **El CSV exportado es round-trippable** (export → import sin errores). Las etiquetas no se importan (solo informativas en el CSV).
 
 ### Templates
 - `GET    /api/templates` — orden `use_count DESC`
@@ -741,6 +744,17 @@ mobile/
 - `PATCH  /api/recurring-rules/:id/toggle` — pausa/activa (`is_active`).
 - `POST   /api/recurring/catch-up` (router aparte, montado en `/api/recurring`) — materializa los cargos pendientes del usuario
   del JWT → `{ generatedCount }`. Idempotente. Lo llama el mobile UNA vez al abrir la app (background, errores silenciados).
+
+### Admin (solo `is_admin`, jul-2026)
+> Router `routes/admin.ts`, montado con `authenticate` + `requireAdmin` (primer uso real del guard). Solo lectura.
+- `GET /api/admin/reconcile[?userId=N]` — **reconciliación de saldos** (`utils/reconcile.ts`): recalcula el
+  saldo ESPERADO de cada cuenta desde su historial (`initial_balance` + Σincome − Σexpense − Σtransfer-out +
+  Σtransfer-in(`to_amount??amount`) − Σdepósitos-ahorro + Σretiros-ahorro; tarjetas suman además
+  Σ`debt_payments` de sus deudas automáticas — el FIFO no inserta filas de pago, sin doble conteo) y lo compara
+  con `current_balance` → `{ checkedAt, totalAccounts, mismatchCount, mismatches[], accounts[] }` con
+  `diff`/`ok` (tolerancia 0.01) por cuenta. Es la red de seguridad de los saldos materializados: un diff en
+  débito = bug casi seguro (saga a medias, "COMPENSACIÓN FALLIDA"); en tarjeta amerita revisión manual (límite
+  editado / historia pre-0014). Verificado contra la DB real: 19/20 cuentas en 0.00 exacto.
 
 ### Insights (análisis automático)
 - `GET /api/insights` — devuelve `Insight[]` del mes actual, calculados por **agregación SQL determinística**
@@ -1560,8 +1574,8 @@ pnpm build:apk      # eas build -p android --profile preview
 > **Validación:** `pnpm typecheck` limpio en server y mobile en cada fase; @tester verificó CRUD + idempotencia (materializar 2×
 > = mismo conteo), cuota (crear/modificar/materializar/desactivar), y congelado (gasto→400, pago de deuda→201). @reviewer por fase,
 > CRÍTICOS corregidos. **Limitación conocida:** editar/borrar desde "Pagos recurrentes" la regla de una cuota de manejo puede
-> desincronizar `accounts.management_fee_*` (la regla y la cuenta se gestionan por separado). **Pendiente menor:** índice único
-> en `categories(user_id,type,lower(name))` para blindar `getOrCreateExpenseCategory` de carreras.
+> desincronizar `accounts.management_fee_*` (la regla y la cuenta se gestionan por separado). ~~Pendiente menor: índice único
+> en categories~~ → **RESUELTO jul-2026**: UNIQUE parcial `categories_user_type_name_unique` (migración 0023, ver Categories API).
 
 ---
 

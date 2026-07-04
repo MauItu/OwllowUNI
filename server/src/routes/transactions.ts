@@ -226,8 +226,20 @@ transactionsRouter.get(
       string
     >;
 
+    // Cota de rango: el export nunca lee más de 5 años (respuesta no acotada =
+    // query cara + payload gigante). Sin `from`, se exportan los últimos 5 años
+    // contados desde `to` (o desde hoy). Con ambos, el rango no puede excederlos.
+    const MAX_EXPORT_YEARS = 5;
+    const rangeEnd = to ? new Date(to) : new Date();
+    const defaultFrom = new Date(rangeEnd);
+    defaultFrom.setFullYear(defaultFrom.getFullYear() - MAX_EXPORT_YEARS);
+    const effectiveFrom = from || defaultFrom.toISOString().slice(0, 10);
+    if (from && to && new Date(to).getTime() - new Date(from).getTime() > MAX_EXPORT_YEARS * 366 * 24 * 3600 * 1000) {
+      throw new ApiError(400, `El rango de exportación no puede superar ${MAX_EXPORT_YEARS} años`);
+    }
+
     const conditions: SQL[] = [eq(transactions.userId, userId(req))];
-    if (from) conditions.push(gte(transactions.date, from));
+    conditions.push(gte(transactions.date, effectiveFrom));
     if (to) conditions.push(lte(transactions.date, to));
     if (accountId) conditions.push(eq(transactions.accountId, Number(accountId)));
     if (categoryId) conditions.push(eq(transactions.categoryId, Number(categoryId)));
@@ -340,6 +352,38 @@ transactionsRouter.post(
     let imported = 0;
     const errors: { row: number; reason: string }[] = [];
 
+    // Detección de re-import (el import NO es idempotente: re-importar el mismo
+    // archivo duplica transacciones y mueve saldos dos veces). ANTES de insertar
+    // nada, se indexan las transacciones existentes del usuario en el rango de
+    // fechas del archivo por (fecha|monto|tipo|cuenta); cada fila entrante que ya
+    // exista suma a `possibleDuplicates`, que el cliente muestra como advertencia.
+    const rawDates = rows
+      .map((r) => String((r as Record<string, unknown>)?.date ?? '').trim())
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort();
+    const existingKeys = new Set<string>();
+    if (rawDates.length > 0) {
+      const existing = await db
+        .select({
+          date: transactions.date,
+          amount: transactions.amount,
+          type: transactions.type,
+          accountId: transactions.accountId,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, uid),
+            gte(transactions.date, rawDates[0]),
+            lte(transactions.date, rawDates[rawDates.length - 1]),
+          ),
+        );
+      for (const t of existing) {
+        existingKeys.add(`${t.date}|${Number(t.amount).toFixed(2)}|${t.type}|${t.accountId}`);
+      }
+    }
+    let possibleDuplicates = 0;
+
     // Acumula los statements de las filas válidas y los ejecuta en batches (en vez
     // de un round-trip HTTP por fila). La validación sigue siendo por fila. Cada
     // batch es atómico (neon-http): si un flush falla, ESE lote completo se revierte,
@@ -437,6 +481,10 @@ transactionsRouter.post(
       const description = str(row.description).slice(0, 255) || null;
       const notes = str(row.notes) || null;
 
+      if (existingKeys.has(`${date}|${amount.toFixed(2)}|${type}|${account.id}`)) {
+        possibleDuplicates++;
+      }
+
       if (type === 'income') accDeltas.set(account.id, (accDeltas.get(account.id) ?? 0) + amount);
       else if (type === 'expense' || type === 'transfer') accDeltas.set(account.id, (accDeltas.get(account.id) ?? 0) - amount);
       if (type === 'transfer' && toAccountId != null) accDeltas.set(toAccountId, (accDeltas.get(toAccountId) ?? 0) + amount);
@@ -462,7 +510,7 @@ transactionsRouter.post(
     }
     await flush();
 
-    res.json({ imported, errors });
+    res.json({ imported, errors, possibleDuplicates });
   }),
 );
 

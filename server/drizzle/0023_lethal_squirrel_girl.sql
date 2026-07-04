@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "categories_user_type_name_unique" ON "categories" USING btree ("user_id","type",lower("name")) WHERE "categories"."parent_id" IS NULL;

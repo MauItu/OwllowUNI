@@ -312,6 +312,16 @@ export function ImportExportScreen() {
                 </>
               )}
             </View>
+            {(result.possibleDuplicates ?? 0) > 0 && (
+              <View style={styles.dupWarning}>
+                <Icon name="triangle-alert" size={16} color={theme.colors.accentLight} />
+                <Text style={styles.dupWarningText}>
+                  {result.possibleDuplicates} fila(s) ya existían (misma fecha, monto y cuenta).
+                  Si importaste este archivo antes, ahora tienes movimientos duplicados que
+                  afectan tus saldos: revisa y elimina los repetidos.
+                </Text>
+              </View>
+            )}
             {result.errors.length > 0 && (
               <View style={styles.errorList}>
                 {result.errors.map((e) => (
@@ -403,6 +413,21 @@ const createStyles = (theme: Theme) =>
       borderColor: theme.colors.cardBorder,
     },
     resultRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs },
+    dupWarning: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.sm,
+      padding: theme.spacing.sm,
+      borderRadius: theme.borderRadius.sm,
+      backgroundColor: `${theme.colors.accent}1A`,
+    },
+    dupWarningText: {
+      flex: 1,
+      color: theme.colors.textSecondary,
+      fontSize: theme.fontSize.xs,
+      lineHeight: 17,
+    },
     resultOk: { color: theme.colors.income, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
     resultErr: { color: theme.colors.expense, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.bold },
     errorList: { marginTop: theme.spacing.md, gap: theme.spacing.xs },

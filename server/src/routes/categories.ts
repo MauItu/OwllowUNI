@@ -3,7 +3,7 @@ import { and, eq, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
 import { categories, type Category } from '../db/schema.js';
-import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
+import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 
@@ -86,18 +86,25 @@ categoriesRouter.post(
     const uid = userId(req);
     const data = categorySchema.parse(req.body);
     await assertParentOwned(uid, data.parentId);
-    const [row] = await db
-      .insert(categories)
-      .values({
-        userId: uid,
-        name: data.name,
-        type: data.type,
-        icon: data.icon,
-        color: data.color,
-        parentId: data.parentId ?? null,
-        sortOrder: data.sortOrder ?? 0,
-      })
-      .returning();
+    // UNIQUE parcial (user,type,lower(name)) entre categorías padre → 409 amable.
+    let row;
+    try {
+      [row] = await db
+        .insert(categories)
+        .values({
+          userId: uid,
+          name: data.name,
+          type: data.type,
+          icon: data.icon,
+          color: data.color,
+          parentId: data.parentId ?? null,
+          sortOrder: data.sortOrder ?? 0,
+        })
+        .returning();
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ApiError(409, 'Ya tienes una categoría con ese nombre');
+      throw err;
+    }
     res.status(201).json(row);
   }),
 );
@@ -110,18 +117,24 @@ categoriesRouter.put(
     const id = parseId(req.params.id);
     const data = categorySchema.partial().parse(req.body);
     await assertParentOwned(uid, data.parentId);
-    const [row] = await db
-      .update(categories)
-      .set({
-        ...(data.name !== undefined && { name: data.name }),
-        ...(data.type !== undefined && { type: data.type }),
-        ...(data.icon !== undefined && { icon: data.icon }),
-        ...(data.color !== undefined && { color: data.color }),
-        ...(data.parentId !== undefined && { parentId: data.parentId }),
-        ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
-      })
-      .where(and(eq(categories.id, id), eq(categories.userId, userId(req))))
-      .returning();
+    let row;
+    try {
+      [row] = await db
+        .update(categories)
+        .set({
+          ...(data.name !== undefined && { name: data.name }),
+          ...(data.type !== undefined && { type: data.type }),
+          ...(data.icon !== undefined && { icon: data.icon }),
+          ...(data.color !== undefined && { color: data.color }),
+          ...(data.parentId !== undefined && { parentId: data.parentId }),
+          ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
+        })
+        .where(and(eq(categories.id, id), eq(categories.userId, userId(req))))
+        .returning();
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ApiError(409, 'Ya tienes una categoría con ese nombre');
+      throw err;
+    }
     if (!row) throw new ApiError(404, 'Categoría no encontrada');
     res.json(row);
   }),

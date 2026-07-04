@@ -767,6 +767,8 @@ export interface ImportTransactionRow {
 export interface ImportResult {
   imported: number;
   errors: { row: number; reason: string }[];
+  /** Filas que ya existían (misma fecha+monto+tipo+cuenta): posible re-import duplicado. */
+  possibleDuplicates?: number;
 }
 
 export interface SplitSettlement {

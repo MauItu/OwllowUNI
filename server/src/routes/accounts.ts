@@ -73,11 +73,30 @@ async function getOrCreateExpenseCategory(uid: number, name: string): Promise<{ 
     )
     .limit(1);
   if (existing) return existing;
-  const [created] = await db
-    .insert(categories)
-    .values({ userId: uid, name, type: 'expense', icon: 'receipt', color: '#6C757D' })
-    .returning({ id: categories.id });
-  return created;
+  // El check previo es best-effort; la fuente de verdad es el UNIQUE parcial
+  // `categories_user_type_name_unique`. Ante la carrera (dos requests creando la
+  // misma categoría), el perdedor re-lee la fila que ganó.
+  try {
+    const [created] = await db
+      .insert(categories)
+      .values({ userId: uid, name, type: 'expense', icon: 'receipt', color: '#6C757D' })
+      .returning({ id: categories.id });
+    return created;
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    const [winner] = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(
+        and(
+          eq(categories.userId, uid),
+          eq(categories.type, 'expense'),
+          sql`lower(${categories.name}) = ${name.toLowerCase()}`,
+        ),
+      )
+      .limit(1);
+    return winner;
+  }
 }
 
 /** Campos de cuota de manejo que se persisten en `accounts`. */
