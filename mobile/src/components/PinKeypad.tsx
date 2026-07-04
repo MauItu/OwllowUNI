@@ -22,6 +22,8 @@ export function PinKeypad({ onDigit, onDelete, onBiometric, biometricIcon = 'fin
     <Pressable
       onPress={() => onDigit(label)}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
       style={({ pressed }) => [styles.key, pressed && styles.keyPressed, disabled && styles.keyDisabled]}
     >
       <Text style={styles.keyText}>{label}</Text>
@@ -50,6 +52,8 @@ export function PinKeypad({ onDigit, onDelete, onBiometric, biometricIcon = 'fin
           <Pressable
             onPress={onBiometric}
             disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel="Desbloquear con biometría"
             style={({ pressed }) => [styles.key, styles.keyGhost, pressed && styles.keyPressed]}
           >
             <Icon name={biometricIcon} size={26} color={theme.colors.primaryLight} />
@@ -61,6 +65,8 @@ export function PinKeypad({ onDigit, onDelete, onBiometric, biometricIcon = 'fin
         <Pressable
           onPress={onDelete}
           disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel="Borrar dígito"
           style={({ pressed }) => [styles.key, styles.keyGhost, pressed && styles.keyPressed, disabled && styles.keyDisabled]}
         >
           <Icon name="delete" size={26} color={theme.colors.text} />

@@ -1,5 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { authApi, recurringApi, setAuthToken, setUnauthorizedHandler } from '../api/client';
+import Toast from 'react-native-toast-message';
+import {
+  authApi,
+  recurringApi,
+  setAuthToken,
+  setUnauthorizedHandler,
+  setColdStartHandler,
+} from '../api/client';
 import { saveToken, getToken, removeToken } from '../services/auth';
 import { loadSettingsForUser } from '../stores/settingsStore';
 import { useAppStore } from '../stores/appStore';
@@ -175,6 +182,25 @@ function useProvideAuth(): AuthValue {
       setUser(null);
     });
     return () => setUnauthorizedHandler(null);
+  }, []);
+
+  // Cold start del backend (Render free duerme): el cliente reintenta el GET con
+  // timeout amplio; aquí solo se avisa al usuario para que la espera no parezca
+  // un error. Throttle de 30s para no encadenar toasts si reintentan varios GET.
+  useEffect(() => {
+    let lastToast = 0;
+    setColdStartHandler(() => {
+      const now = Date.now();
+      if (now - lastToast < 30_000) return;
+      lastToast = now;
+      Toast.show({
+        type: 'info',
+        text1: 'Conectando con el servidor…',
+        text2: 'El servidor estaba dormido; esto puede tardar unos segundos.',
+        visibilityTime: 6000,
+      });
+    });
+    return () => setColdStartHandler(null);
   }, []);
 
   // Al quedar autenticado (login/registro o restauración en cold-start), dispara

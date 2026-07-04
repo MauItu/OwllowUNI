@@ -150,7 +150,14 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         if (isAdd) {
           return (
             <View key={route.key} style={styles.addSlot}>
-              <Pressable ref={tourRef} onPress={onPress} style={styles.addFab} hitSlop={8}>
+              <Pressable
+                ref={tourRef}
+                onPress={onPress}
+                style={styles.addFab}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Agregar transacción"
+              >
                 <Icon name="plus" size={32} color={theme.colors.background} strokeWidth={2.5} />
               </Pressable>
             </View>
@@ -159,7 +166,16 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
         const color = isFocused ? theme.colors.tabActive : theme.colors.tabInactive;
         return (
-          <Pressable ref={tourRef} key={route.key} style={styles.tabItem} onPress={onPress} hitSlop={4}>
+          <Pressable
+            ref={tourRef}
+            key={route.key}
+            style={styles.tabItem}
+            onPress={onPress}
+            hitSlop={4}
+            accessibilityRole="tab"
+            accessibilityLabel={meta.label}
+            accessibilityState={{ selected: isFocused }}
+          >
             <Icon name={meta.icon} size={24} color={color} strokeWidth={isFocused ? 2.4 : 2} />
             <Text style={[styles.tabLabel, { color }]} numberOfLines={1}>
               {meta.label}

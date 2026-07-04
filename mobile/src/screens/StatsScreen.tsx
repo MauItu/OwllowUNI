@@ -184,6 +184,19 @@ export function StatsScreen() {
           <AccountTypeFilter value={accountType} onChange={setAccountType} />
         </View>
 
+        {/* Con filtro activo el recálculo es client-side en monto NATIVO (sin
+            conversión de tasas): si hay cuentas en más de una moneda, los números
+            difieren de la vista "Todas" (que sí convierte en el servidor). */}
+        {accountType !== 'all' && new Set(accounts.map((a) => a.currency)).size > 1 && (
+          <View style={styles.currencyNote}>
+            <Icon name="info" size={14} color={theme.colors.textMuted} />
+            <Text style={styles.currencyNoteText}>
+              Cálculo local sin conversión de moneda: los montos se suman en la moneda de cada
+              cuenta.
+            </Text>
+          </View>
+        )}
+
         {/* Resumen: Ingresos / Gastos / Balance */}
         <View style={styles.summaryRow}>
           <SummaryCard label="Ingresos" value={summary.income} currency={mainCurrency} color={theme.colors.income} icon="arrow-down-left" />
@@ -310,6 +323,13 @@ const createStyles = (theme: Theme) =>
   // El AccountTypeFilter trae su propio padding horizontal (lg); lo cancelamos
   // contra el padding del content para alinear los chips al resto de la pantalla.
   typeFilterWrap: { marginHorizontal: -theme.spacing.lg, marginTop: theme.spacing.xs },
+  currencyNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: theme.spacing.xs,
+    marginTop: theme.spacing.sm,
+  },
+  currencyNoteText: { flex: 1, color: theme.colors.textMuted, fontSize: theme.fontSize.xs, lineHeight: 16 },
   summaryRow: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.md },
   summaryCard: { flex: 1, backgroundColor: theme.colors.surface, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md, gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.cardBorder },
   summaryIcon: { width: 32, height: 32, borderRadius: theme.borderRadius.full, alignItems: 'center', justifyContent: 'center' },

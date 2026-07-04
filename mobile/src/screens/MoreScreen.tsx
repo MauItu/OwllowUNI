@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Linking, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import Constants from 'expo-constants';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -10,6 +11,8 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useAuth } from '../hooks/useAuth';
 import { useTourTarget, useTourRegistry } from '../components/tour/TourContext';
 import type { RootStackParamList } from '../navigation/types';
+
+const SUPPORT_EMAIL = 'mauiturriza@gmail.com';
 
 type Route = keyof RootStackParamList;
 interface NavItem {
@@ -141,6 +144,39 @@ export function MoreScreen() {
           <Text style={styles.itemLabel}>Tutorial</Text>
           <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
         </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.surfaceLight }]}
+          onPress={() =>
+            Linking.openURL(
+              `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Soporte Wallet')}`,
+            ).catch(() => {})
+          }
+          accessibilityRole="button"
+          accessibilityLabel="Contactar soporte"
+        >
+          <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.secondary}22` }]}>
+            <Icon name="mail" size={20} color={theme.colors.secondary} />
+          </View>
+          <Text style={styles.itemLabel}>Contactar soporte</Text>
+          <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.surfaceLight }]}
+          onPress={() => navigation.navigate('Legal', { doc: 'privacy' })}
+          accessibilityRole="button"
+          accessibilityLabel="Política de privacidad"
+        >
+          <View style={[styles.iconWrap, { backgroundColor: `${theme.colors.primary}22` }]}>
+            <Icon name="shield-check" size={20} color={theme.colors.primary} />
+          </View>
+          <Text style={styles.itemLabel}>Privacidad y términos</Text>
+          <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
+        </Pressable>
+
+        {/* Versión de la app (de app.json vía expo-constants) */}
+        <Text style={styles.version}>
+          Wallet v{Constants.expoConfig?.version ?? '1.0.0'}
+        </Text>
       </ScrollView>
 
       <CurrencyPicker
@@ -171,6 +207,12 @@ const createStyles = (theme: Theme) =>
       borderRadius: theme.borderRadius.full,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    version: {
+      color: theme.colors.textMuted,
+      fontSize: theme.fontSize.xs,
+      textAlign: 'center',
+      marginTop: theme.spacing.lg,
     },
     itemLabel: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.medium },
     itemValue: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },

@@ -1009,8 +1009,14 @@ y `MoreScreen` son tabs con **carga diferida** (`lazyScreen`); su `ScreenHeader`
 > **Tab "Más" (`MoreScreen.tsx`).** Reúne el menú de navegación que antes vivía en el Sidebar, agrupado en
 > **Finanzas** (Cuentas, Categorías, Plantillas, Etiquetas, Metas de ahorro, Deudas, Presupuestos, Pagos
 > recurrentes, Gastos compartidos), **Análisis** (Insights, Tasas de cambio, Importar/Exportar) y
-> **Preferencias** (Moneda principal vía `CurrencyPicker`, Notificaciones, Seguridad, Apariencia). Cada fila
-> navega al screen del root stack. `TransactionsScreen` sigue siendo screen del root stack (se abre desde Home).
+> **Preferencias** (Moneda principal vía `CurrencyPicker`, Notificaciones, Seguridad, Apariencia, **Mi cuenta**)
+> y **Ayuda** (Tutorial, **Contactar soporte** — mailto a `SUPPORT_EMAIL` —, **Privacidad y términos** →
+> `LegalScreen`) + la **versión de la app** al pie (`Constants.expoConfig.version`). Cada fila navega al screen
+> del root stack. `TransactionsScreen` sigue siendo screen del root stack (se abre desde Home).
+> **Accesibilidad (jul-2026):** primera pasada de `accessibilityLabel`/`accessibilityRole` en los controles de
+> ícono puro: tab bar (`role="tab"` + `selected`), FAB central "Agregar transacción", teclas de `Calculator`
+> (nombres legibles para operadores) y `PinKeypad`, botón "Volver" de `ScreenHeader` (cubre todas las
+> pantallas), header de Home (perfil/buscar/cuentas), FAB de Transactions y FAB de plantillas del Home.
 
 > **Sidebar = drawer de PERFIL (`components/Sidebar.tsx`).** Tras mover el menú al tab "Más", el Sidebar dejó
 > de ser navegación y ahora muestra el **perfil del usuario**: avatar, nombre y correo (de `useAuth`), una
@@ -1114,7 +1120,8 @@ con barra de progreso.
 > (combina con los demás filtros; nota: con paginación solo filtra lo descargado). En **Stats**, cuando el filtro
 > ≠ 'all' se traen las transacciones del período (`limit:1000`) y se recalculan resumen/categorías/timeline/
 > evolución en cliente vía `utils/statsAggregation.ts` (suma en monto nativo, sin conversión multi-moneda); con
-> 'all' se usan los datos agregados del servidor.
+> 'all' se usan los datos agregados del servidor. Cuando el filtro está activo y el usuario tiene cuentas en
+> **más de una moneda**, Stats muestra una nota "Cálculo local sin conversión de moneda" (jul-2026).
 
 **AccountsScreen:** card total consolidado con `LinearGradient` (gradiente `cardHighlight`); cuentas como
 cards con borde izquierdo (4px) del color de la cuenta; "+" en el header.
@@ -1424,6 +1431,10 @@ Motor en `calculatorEngine.ts` (evaluación paso a paso, **NO `eval()`**). Manej
   en lugar de congelar en la splash.
 - **Reducido** timeout de Axios de 15 s → 5 s en `api/client.ts` para fallar rápido si el backend no responde.
   (Los `console.log` de diagnóstico que dejó este fix ya se removieron.)
+- **Retry de cold start (jul-2026):** el interceptor de respuesta de `api/client.ts` reintenta UNA vez los
+  **GET** que fallan por timeout o red (sin respuesta) con timeout de **30 s** (Render free tarda ~10-30 s en
+  despertar) — flag `__coldStartRetried` por request. `setColdStartHandler` avisa a la UI: `useAuth` muestra un
+  toast "Conectando con el servidor…" (throttle 30 s). Así el primer request del día no muestra un error espurio.
 
 ## PRODUCCIÓN
 

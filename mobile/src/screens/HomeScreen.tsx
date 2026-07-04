@@ -107,7 +107,14 @@ export function HomeScreen() {
         style={styles.topBar}
       >
         {/* Abre el drawer de perfil (nombre, correo, cerrar sesión). */}
-        <Pressable ref={profileTarget} style={styles.iconBtn} onPress={openSidebar} hitSlop={8}>
+        <Pressable
+          ref={profileTarget}
+          style={styles.iconBtn}
+          onPress={openSidebar}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir perfil"
+        >
           <Icon name="circle-user" size={24} color="#FFFFFF" />
         </Pressable>
         <View style={{ flex: 1, marginLeft: theme.spacing.sm }}>
@@ -115,10 +122,22 @@ export function HomeScreen() {
           <Text style={styles.date}>{dateLabel}</Text>
         </View>
         <View style={styles.topActions}>
-          <Pressable ref={searchTarget} style={styles.iconBtn} onPress={() => navigation.navigate('Search')} hitSlop={8}>
+          <Pressable
+            ref={searchTarget}
+            style={styles.iconBtn}
+            onPress={() => navigation.navigate('Search')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Buscar"
+          >
             <Icon name="search" size={22} color="#FFFFFF" />
           </Pressable>
-          <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('Accounts')}>
+          <Pressable
+            style={styles.iconBtn}
+            onPress={() => navigation.navigate('Accounts')}
+            accessibilityRole="button"
+            accessibilityLabel="Ver cuentas"
+          >
             <Icon name="wallet" size={22} color="#FFFFFF" />
           </Pressable>
         </View>
@@ -300,7 +319,12 @@ export function HomeScreen() {
       </ScrollView>
 
       {/* Botón flotante de plantillas */}
-      <Pressable style={styles.templatesFab} onPress={() => setSheetOpen(true)}>
+      <Pressable
+        style={styles.templatesFab}
+        onPress={() => setSheetOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Plantillas rápidas"
+      >
         <Icon name="zap" size={20} color="#FFFFFF" strokeWidth={2.4} />
       </Pressable>
 

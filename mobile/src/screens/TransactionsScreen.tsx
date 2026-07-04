@@ -205,7 +205,12 @@ export function TransactionsScreen() {
       )}
 
       {/* FAB agregar */}
-      <Pressable style={styles.fab} onPress={() => navigation.navigate('AddTransaction')}>
+      <Pressable
+        style={styles.fab}
+        onPress={() => navigation.navigate('AddTransaction')}
+        accessibilityRole="button"
+        accessibilityLabel="Agregar transacción"
+      >
         <Icon name="plus" size={26} color={theme.colors.background} strokeWidth={2.4} />
       </Pressable>
 

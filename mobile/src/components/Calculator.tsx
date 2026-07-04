@@ -55,10 +55,22 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
     onConfirm(value);
   };
 
+  // Nombres legibles para TalkBack (las teclas son solo símbolos visuales).
+  const KEY_A11Y: Record<string, string> = {
+    C: 'Borrar todo',
+    '÷': 'Dividir',
+    '×': 'Multiplicar',
+    '-': 'Restar',
+    '+': 'Sumar',
+    '.': 'Punto decimal',
+  };
+
   const renderKey = (label: string, onPress: () => void, variant: 'num' | 'op' | 'action' = 'num', flex = 1) => (
     <Pressable
       key={label}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={KEY_A11Y[label] ?? label}
       style={({ pressed }) => [
         styles.key,
         variant === 'op' && styles.keyOp,
@@ -91,6 +103,8 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
           {renderKey('×', () => tap({ kind: 'operator', value: '×' }), 'op')}
           <Pressable
             onPress={() => tap({ kind: 'backspace' })}
+            accessibilityRole="button"
+            accessibilityLabel="Borrar último dígito"
             style={({ pressed }) => [styles.key, styles.keyAction, { flex: 1 }, pressed && styles.keyPressed]}
           >
             <Icon name="delete" size={24} color={theme.colors.text} />
@@ -125,6 +139,8 @@ export function Calculator({ type, initialValue = 0, currency = 'COP', onConfirm
           </View>
           <Pressable
             onPress={handleConfirm}
+            accessibilityRole="button"
+            accessibilityLabel="Confirmar monto"
             style={({ pressed }) => [styles.confirm, pressed && styles.keyPressed]}
           >
             <Icon name="check" size={34} color="#FFFFFF" strokeWidth={2.6} />

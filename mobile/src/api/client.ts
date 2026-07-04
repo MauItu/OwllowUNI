@@ -105,8 +105,17 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Callback opcional para avisar a la UI que el servidor está "despertando"
+// (cold start de Render free): lo registra App/useAuth para mostrar un toast.
+let onColdStartRetry: (() => void) | null = null;
+export function setColdStartHandler(cb: (() => void) | null) {
+  onColdStartRetry = cb;
+}
+
 // Ante un 401 (salvo en las propias rutas de auth), limpia el token y avisa a
-// la UI para redirigir al login.
+// la UI para redirigir al login. Ante un timeout/fallo de red en un GET (el
+// backend en Render free duerme y el primer request del día excede los 5s),
+// reintenta UNA vez con timeout amplio en vez de mostrar un error espurio.
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
@@ -117,7 +126,22 @@ api.interceptors.response.use(
       authToken = null;
       await removeToken();
       onUnauthorized?.();
+      return Promise.reject(error);
     }
+
+    // Retry de cold start: solo GET (idempotente), solo timeout o fallo de red
+    // (sin respuesta del servidor), y solo un intento por request.
+    const config = error?.config as
+      | (typeof error.config & { __coldStartRetried?: boolean })
+      | undefined;
+    const isTimeoutOrNetwork = error?.code === 'ECONNABORTED' || !error?.response;
+    if (config && config.method === 'get' && isTimeoutOrNetwork && !config.__coldStartRetried) {
+      config.__coldStartRetried = true;
+      config.timeout = 30_000; // Render free tarda ~10-30s en despertar
+      onColdStartRetry?.();
+      return api.request(config);
+    }
+
     return Promise.reject(error);
   },
 );

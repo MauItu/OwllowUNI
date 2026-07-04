@@ -64,7 +64,13 @@ export function ScreenHeader({
       style={styles.header}
     >
       {onBack ? (
-        <Pressable onPress={onBack} hitSlop={12} style={styles.headerBtn}>
+        <Pressable
+          onPress={onBack}
+          hitSlop={12}
+          style={styles.headerBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Volver"
+        >
           <Icon name="chevron-left" size={26} color="#FFFFFF" />
         </Pressable>
       ) : (
