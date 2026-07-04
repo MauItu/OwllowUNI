@@ -830,8 +830,8 @@ TypeScript ~5.9, @types/react ~19.1.
 
 ## DISEÑO — Sistema de temas dual y selector de paletas (rediseño jun 2026)
 
-**4 paletas** conmutables (Bisexual, Gay, Lésbica, Profesional), cada una con variante
-claro/oscuro, seleccionables desde "Más → Apariencia". Definidas en `mobile/src/theme/index.ts`
+**5 paletas** conmutables (Bisexual, Gay, Lésbica, Profesional y **Ámbar & Petróleo**), cada una con
+variante claro/oscuro, seleccionables desde "Más → Apariencia". Definidas en `mobile/src/theme/index.ts`
 como `palettes.<id> = { label, light, dark, swatch }` (`PaletteId = keyof typeof palettes`);
 `lightTheme`/`darkTheme` exportados son alias de compatibilidad de `palettes.bisexual.{light,dark}`
 (paleta por defecto). El estado activo (`paletteId`, `themeMode`) vive en `settingsStore`
@@ -884,6 +884,17 @@ colors: {
   `accent:'#D362A4'` (rosa), `income:'#297D4E'`, `expense/danger:'#C8442A'`, `transfer:'#A30262'`.
 - Oscuro: `background:'#221310'`, `primary:'#E8631C'`, `secondary:'#FF8FC2'`,
   `accent:'#D362A4'`, `income:'#4ADE80'`, `expense/danger:'#E8631C'`, `transfer:'#FF8FC2'`.
+
+**Ámbar & Petróleo (rediseño Claude, jul-2026)** — swatch `#116A5E / #D08700 / #6D4C9F`.
+- Concepto: fintech con calidez — petróleo (confianza) + ámbar dorado (dinero) + violeta ciruela.
+- Claro "Marfil": `background:'#F8F7F4'` (marfil cálido), `primary:'#116A5E'`, `secondary:'#96610A'`
+  (ámbar quemado), `accent:'#6D4C9F'`, `income:'#217A44'`, `expense:'#B3362B'` (teja),
+  `transfer:'#0E6BA8'`. Texto tinta verdosa `#20241F`.
+- Oscuro "Medianoche Ámbar": `background:'#0C1418'` (azul-petróleo nocturno), `primary:'#0F9A8A'`,
+  `secondary/tabActive:'#F5B301'` (**tab activo dorado**, la firma de la paleta), `accent:'#9D7BE0'`,
+  `expense:'#F87066'` (coral). Gradiente header teal→violeta; progress teal→dorado.
+- Verificación AA en el código (ratios anotados por token); blanco sobre primary 6.47 (claro) /
+  3.49 (oscuro, ≥3 texto grande — mismo criterio que Profesional 3.68).
 
 **Profesional (fintech corporativo)** — swatch `#2F5BD0 / #0F766E / #475569`.
 - Claro: `background:'#F7F8FA'`, `primary:'#2F5BD0'` (azul), `secondary:'#0F766E'` (teal),

@@ -506,6 +506,112 @@ const proDarkTheme: Theme = {
   ...shared,
 };
 
+// ── PALETA ÁMBAR & PETRÓLEO (rediseño Claude, jul-2026) — claro ──────────────
+// Concepto: fintech con calidez. Petróleo profundo (confianza) como primario,
+// ámbar dorado (dinero, energía) como secundario/protagonista de acentos y
+// violeta ciruela como terciario. Fondos marfil cálido en claro y azul-petróleo
+// nocturno en oscuro. Todos los tokens de texto verificados WCAG AA (≥4.5:1)
+// sobre su fondo; blanco sobre primary/gradientes ≥3:1 (texto grande/bold),
+// mismos criterios que las paletas existentes.
+const amberLightTheme: Theme = {
+  colors: {
+    background: '#F8F7F4', // marfil cálido (no gris clínico)
+    surface: '#EDEBE5',
+    surfaceLight: '#FFFFFF',
+    surfaceAccent: '#E3E0D6',
+
+    primary: '#116A5E', // petróleo profundo — CTA principal (blanco encima: 6.47)
+    primaryDark: '#CFE5E0', // contenedor suave (teclas de operador)
+    primaryLight: '#0D584E', // texto legible sobre marfil (7.77)
+
+    secondary: '#96610A', // ámbar quemado — enlaces/navegación (4.89)
+
+    accent: '#6D4C9F', // violeta ciruela — tags/alertas (6.16)
+    accentLight: '#5D3F8C', // variante texto (7.67)
+
+    income: '#217A44', // (4.99)
+    expense: '#B3362B', // rojo teja cálido (5.63)
+    transfer: '#0E6BA8', // azul petróleo (5.32)
+
+    success: '#217A44',
+    danger: '#B3362B',
+    warning: '#96610A',
+
+    text: '#20241F', // tinta verdosa cálida (14.7)
+    textSecondary: '#5F675F', // (5.46)
+    textMuted: '#8F978E',
+
+    border: '#D8D4C8',
+    borderLight: '#E6E2D8',
+    cardBorder: 'transparent',
+
+    tabActive: '#116A5E',
+    tabInactive: '#A3A99C',
+
+    statusBar: '#E8E5DD',
+    chart: ['#116A5E', '#D08700', '#6D4C9F', '#217A44', '#0E6BA8', '#B3362B', '#4EADA1', '#9B7DB8'],
+  },
+  gradients: {
+    header: ['#116A5E', '#6D4C9F'], // petróleo → ciruela (blanco encima ≥3)
+    cardHighlight: ['#116A5E', '#6D4C9F'],
+    balance: ['#0D584E', '#5D3F8C'],
+    progress: ['#116A5E', '#D08700'], // petróleo → ámbar (barras con calidez)
+    income: ['#217A44', '#3DA56C'],
+    expense: ['#93261C', '#B3362B'],
+  },
+  ...shared,
+};
+
+// ── PALETA ÁMBAR & PETRÓLEO — oscuro "Medianoche Ámbar" ─────────────────────
+const amberDarkTheme: Theme = {
+  colors: {
+    background: '#0C1418', // azul-petróleo nocturno
+    surface: '#152125',
+    surfaceLight: '#1D2C31',
+    surfaceAccent: '#28383E',
+
+    primary: '#0F9A8A', // teal petróleo — CTA (blanco encima: 3.49, ≥3 large/bold)
+    primaryDark: '#0B6E62', // pressed
+    primaryLight: '#7FE0CF', // texto de acento (11.93)
+
+    secondary: '#F5B301', // ámbar dorado — enlaces/navegación (10.04)
+
+    accent: '#9D7BE0', // violeta (5.62; para fondos y chips)
+    accentLight: '#C9B6F2', // variante texto (10.15)
+
+    income: '#4ADE80',
+    expense: '#F87066', // coral cálido (6.64)
+    transfer: '#62B6CB', // (8.04)
+
+    success: '#4ADE80',
+    danger: '#F87066',
+    warning: '#F5B301',
+
+    text: '#F2F0E9', // blanco cálido (16.31)
+    textSecondary: '#93A29C', // (6.99)
+    textMuted: '#67756F',
+
+    border: '#243237',
+    borderLight: '#33454C',
+    cardBorder: '#243237',
+
+    tabActive: '#F5B301', // tab activo DORADO: la firma de la paleta
+    tabInactive: '#67756F',
+
+    statusBar: '#080E11',
+    chart: ['#0F9A8A', '#F5B301', '#9D7BE0', '#4ADE80', '#62B6CB', '#F87066', '#E8A838', '#D4845A'],
+  },
+  gradients: {
+    header: ['#0F9A8A', '#7C5CBF'], // teal → violeta (blanco encima ≥3)
+    cardHighlight: ['#7C5CBF', '#0F9A8A'],
+    balance: ['#0F7264', '#6A4B9E'], // extremos oscuros: blanco encima 5.8/6.7
+    progress: ['#0F9A8A', '#F5B301'], // teal → dorado
+    income: ['#2FA45C', '#4ADE80'],
+    expense: ['#B3362B', '#F87066'],
+  },
+  ...shared,
+};
+
 // ── Selector de paletas ──────────────────────────────────────────────────────
 // `swatch`: 3 colores protagonistas de cada paleta, usados en las tarjetas de
 // selección (Más → Apariencia) y en la ilustración de EmptyState.
@@ -533,6 +639,14 @@ export const palettes = {
     light: proLightTheme,
     dark: proDarkTheme,
     swatch: ['#2F5BD0', '#6366F1', '#0F766E'],
+  },
+  // Rediseño propuesto por Claude (jul-2026). Convive con las originales: el
+  // admin alterna entre esta y las demás desde Más → Apariencia.
+  amber: {
+    label: 'Ámbar & Petróleo',
+    light: amberLightTheme,
+    dark: amberDarkTheme,
+    swatch: ['#116A5E', '#D08700', '#6D4C9F'],
   },
 } as const;
 
