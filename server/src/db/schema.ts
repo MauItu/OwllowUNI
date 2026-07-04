@@ -26,6 +26,11 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   name: varchar('name', { length: 100 }).notNull(),
   isAdmin: boolean('is_admin').default(false).notNull(),
+  // Versión de sesión: viaja como claim `v` en el JWT y se compara contra esta
+  // columna al autenticar. Se incrementa al cambiar/resetear la contraseña →
+  // TODOS los tokens emitidos antes quedan revocados (401). Tokens viejos sin
+  // el claim se tratan como v=0 (compatibles mientras la columna siga en 0).
+  tokenVersion: integer('token_version').default(0).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

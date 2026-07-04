@@ -38,6 +38,10 @@ export type RootStackParamList = {
   Rates: undefined;
   Security: undefined;
   Appearance: undefined;
+  // Mi cuenta: perfil + exportar todos los datos + eliminar cuenta.
+  Account: undefined;
+  // Documentos legales (también en el stack de auth, para el consentimiento del registro).
+  Legal: { doc: 'privacy' | 'terms' };
 };
 
 export type AuthStackParamList = {
@@ -46,6 +50,7 @@ export type AuthStackParamList = {
   ForgotPassword: undefined;
   VerifyResetCode: { email: string };
   ResetPassword: { token: string };
+  Legal: { doc: 'privacy' | 'terms' };
 };
 
 export type TabParamList = {

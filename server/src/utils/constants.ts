@@ -11,6 +11,12 @@
 /** Rondas de bcrypt para hashear contraseñas (`auth.ts`, `password-reset.ts`). */
 export const BCRYPT_ROUNDS = 12;
 
+/**
+ * Largo mínimo de contraseña, ÚNICO para todos los flujos (registro, cambio en
+ * perfil y reset). Antes el reset permitía 6 y el registro 8 (inconsistente).
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+
 /** Paginación de `GET /api/transactions`: `limit` por defecto y tope máximo. */
 export const PAGINATION_DEFAULT_LIMIT = 30;
 export const PAGINATION_MAX_LIMIT = 100;

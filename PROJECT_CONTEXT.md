@@ -43,13 +43,21 @@ wallet/                         ← raíz del repo
     categorías default + cuenta "Efectivo" (`db/defaults.ts → provisionUserDefaults`).
   - `POST /api/auth/login` — `{ email, password }` → `{ token, user }` (error genérico si fallan).
   - `GET /api/auth/me` (auth) · `PUT /api/auth/profile` (auth) — cambia nombre/contraseña (exige la actual).
+    Al cambiar la contraseña **incrementa `users.token_version`** (revoca todas las sesiones) y devuelve un
+    `token` fresco en la respuesta para que la sesión actual no se caiga.
+  - **`GET /api/auth/export` (auth, jul-2026)** — descarga TODOS los datos del usuario en un JSON
+    (`Content-Disposition: attachment`): user + accounts, categories, transactions, templates, tags, savings
+    (metas y contribuciones), debts (y pagos), budgets, splits (grupos/miembros/gastos/liquidaciones),
+    exchange_rates, recurring_rules y credit_card_statements. Derecho de portabilidad (habeas data).
+  - **`DELETE /api/auth/account` (auth, jul-2026)** — `{ password }` (exige la contraseña actual; 401 si no).
+    Borra **TODAS** las filas del usuario en UN `db.batch` atómico con orden que respeta los FK sin CASCADE
+    (hijas con FK a transactions → transactions → debts → padres → users) y revoca la sesión al instante
+    (caché de token_version invalidado; el usuario inexistente nunca vuelve a autenticar). Verificado E2E:
+    usuario con tx+deuda+pago+ahorro+aporte+split+regla → borrado 200, token después 401, 0 filas huérfanas.
   - **Recuperación de contraseña por email** (`routes/password-reset.ts`, públicos; código de 6 dígitos
-    pensado para móvil, no link). Requiere `GMAIL_USER` y `GMAIL_APP_PASSWORD` (envío vía **Gmail SMTP** con **Nodemailer**).
-    - ⚠️ **TEMPORALMENTE DESHABILITADO:** los 3 endpoints están bypaseados al inicio de su handler y devuelven
-      **503** `{ error: "Función temporalmente deshabilitada." }`. El código se conserva intacto (solo un `return`
-      temprano); para reactivar, quitar ese `return` en cada handler de `password-reset.ts`. En mobile el link
-      "¿Olvidaste tu contraseña?" de `LoginScreen` está comentado (no borrado). El comportamiento documentado
-      abajo es el original/al reactivar.
+    pensado para móvil, no link). Requiere `GMAIL_USER` y `GMAIL_APP_PASSWORD` (envío vía **Gmail SMTP** con
+    **Nodemailer**). **REACTIVADA (jul-2026):** se quitaron los bypass 503 y el link de `LoginScreen` está
+    activo. ⚠️ Falta configurar `GMAIL_*` en Render para que funcione en prod (sin ellas responde 503).
     - `POST /api/auth/forgot-password` — `{ email }`. Si el email existe: genera código de 6 dígitos
       (`crypto.randomInt`) + token de 64 chars (`crypto.randomBytes`), expiración 15 min, invalida códigos
       previos no usados del usuario y envía el código por email. **Siempre responde 200** con mensaje genérico
@@ -57,13 +65,21 @@ wallet/                         ← raíz del repo
       Si faltan `GMAIL_USER`/`GMAIL_APP_PASSWORD` responde 503 con mensaje claro (no crashea).
     - `POST /api/auth/verify-reset-code` — `{ email, code }` → `{ token }` si el código es válido/no usado/no
       expirado (JOIN con `users`); 400 si no. **No** marca el código como usado todavía.
-    - `POST /api/auth/reset-password` — `{ token, newPassword(≥6) }`. Rehashea con bcrypt 12 y, en un `db.batch`
-      atómico, actualiza `users.password_hash` y marca el reset `used=true` (token de un solo uso). 400 si el
-      token es inválido/expirado/usado.
+    - `POST /api/auth/reset-password` — `{ token, newPassword(≥8) }`. Rehashea con bcrypt 12 y, en un `db.batch`
+      atómico, actualiza `users.password_hash`, **incrementa `token_version`** (revoca sesiones) y marca el reset
+      `used=true` (token de un solo uso). 400 si el token es inválido/expirado/usado.
+  > **Política de contraseñas unificada:** mínimo **8** en TODOS los flujos (registro, perfil, reset), vía
+  > `MIN_PASSWORD_LENGTH` en `utils/constants.ts` (antes el reset permitía 6).
 - **Middleware `server/src/middleware/auth.ts`:** `authenticate` valida el Bearer e inyecta
   `req.user = { id, email, isAdmin }`; `userId(req)` y `requireAdmin`. La expiración del token sale de
-  `JWT_EXPIRATION` (default **30d**, configurable por env), centralizada en `utils/validateEnv.ts`.
+  `JWT_EXPIRATION` (default **7d** desde jul-2026; antes 30d), centralizada en `utils/validateEnv.ts`.
   `JWT_SECRET` es **obligatorio** en el `.env` raíz (el server no arranca sin él).
+  > **Revocación por versión (migración `0022_damp_moondragon.sql`, jul-2026):** `users.token_version` int def 0.
+  > El JWT lleva el claim `v`; `authenticate` lo compara contra la columna (caché en memoria de 60s por usuario,
+  > mismo supuesto de proceso único que la caché de respuestas; `invalidateTokenVersionCache` da revocación
+  > inmediata en proceso). Tokens viejos sin `v` cuentan como 0 (compatibles hasta el primer cambio de
+  > contraseña). `signToken(user, tokenVersion)` ahora exige la versión. `authenticate` pasó a ser async
+  > (envuelve todo en try/catch → `next(err)`).
 - **Hardening de producción (server):**
   - **Rate limiting (`middleware/rateLimiter.ts`, `express-rate-limit`):** por IP, montado ANTES del
     handler en `auth.ts`. `POST /api/auth/login` = 5/15 min; `POST /api/auth/register` = 3/hora; 429 con
@@ -73,7 +89,7 @@ wallet/                         ← raíz del repo
   - **Helmet (`helmet()` en `index.ts`, ANTES de CORS):** headers de seguridad por defecto
     (X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, Cross-Origin-*, quita X-Powered-By).
   - **Validación de entorno al arrancar (`utils/validateEnv.ts`, Zod):** importado PRIMERO en `index.ts`.
-    Valida `DATABASE_URL` (url), `JWT_SECRET` (≥32 chars), `JWT_EXPIRATION` (default '30d'), `NODE_ENV`
+    Valida `DATABASE_URL` (url), `JWT_SECRET` (≥32 chars), `JWT_EXPIRATION` (default '7d'), `NODE_ENV`
     (default 'development'), `PORT` (default 3000); `GMAIL_USER`/`GMAIL_APP_PASSWORD` opcionales (si faltan,
     `console.warn` "Recuperación de contraseña deshabilitada: faltan GMAIL_*"). Si algo falla → `process.exit(1)`
     con el detalle, NO arranca en estado roto.
@@ -83,9 +99,15 @@ wallet/                         ← raíz del repo
   **expo-secure-store**, nunca AsyncStorage). `api/client.ts` inyecta el Bearer y, ante 401, limpia
   el token y redirige al login. Paletas restringidas a admin (resto: `professional`). El stack de auth
   incluye además el flujo de recuperación: `ForgotPasswordScreen` (pide email) → `VerifyResetCodeScreen`
-  (6 inputs OTP, timer de 15 min, reenviar con throttle de 60 s) → `ResetPasswordScreen` (nueva contraseña).
-  `LoginScreen` enlazaba con "¿Olvidaste tu contraseña?", pero ese link está **comentado** mientras el
-  flujo esté deshabilitado (ver ⚠️ arriba); las pantallas siguen en el stack para reactivar sin reescribir.
+  (6 inputs OTP, timer de 15 min, reenviar con throttle de 60 s) → `ResetPasswordScreen` (nueva contraseña,
+  mínimo 8). El link "¿Olvidaste tu contraseña?" de `LoginScreen` está **activo** (reactivado jul-2026).
+  > **Privacidad y cuenta (jul-2026):** `RegisterScreen` exige un **checkbox de consentimiento** (términos +
+  > política de privacidad + autorización de tratamiento de datos) antes de crear la cuenta, con links a
+  > **`LegalScreen`** (`{ doc: 'privacy' | 'terms' }`, textos embebidos en `src/legal/texts.ts`, espejo de
+  > `PRIVACY.md`/`TERMS.md` de la raíz; registrada en el AuthStack Y el RootStack). **`AccountScreen`**
+  > ("Mi cuenta", entrada en el Sidebar de perfil y en Más → Preferencias): perfil + **"Descargar mis datos"**
+  > (GET /auth/export → JSON a cacheDirectory + share sheet) + enlaces legales + **"Eliminar cuenta"**
+  > (BottomSheet con contraseña → DELETE /auth/account → toast + logout).
 
 ---
 

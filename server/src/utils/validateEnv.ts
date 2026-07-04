@@ -18,8 +18,10 @@ const envSchema = z.object({
   JWT_SECRET: z
     .string()
     .min(32, 'debe tener al menos 32 caracteres (un secreto corto es inseguro)'),
-  // Expiración del JWT, configurable. Formato `ms` (p. ej. '30d', '12h', '3600').
-  JWT_EXPIRATION: z.string().default('30d'),
+  // Expiración del JWT, configurable. Formato `ms` (p. ej. '7d', '12h', '3600').
+  // Default 7d (antes 30d): para una app financiera, un token robado no debe
+  // valer un mes; la revocación por token_version cubre el resto.
+  JWT_EXPIRATION: z.string().default('7d'),
   // Credenciales de Gmail para recuperación de contraseña: opcionales.
   GMAIL_USER: z.string().optional(),
   GMAIL_APP_PASSWORD: z.string().optional(),

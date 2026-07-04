@@ -149,6 +149,12 @@ export const authApi = {
     api.post<VerifyResetCodeResponse>('/auth/verify-reset-code', data).then((r) => r.data),
   resetPassword: (data: ResetPasswordInput) =>
     api.post<MessageResponse>('/auth/reset-password', data).then((r) => r.data),
+  // Derechos del titular de los datos: export COMPLETO (JSON con todas las
+  // entidades del usuario; puede ser grande → timeout amplio) y borrado de cuenta.
+  exportData: () =>
+    api.get<Record<string, unknown>>('/auth/export', { timeout: 30_000 }).then((r) => r.data),
+  deleteAccount: (password: string) =>
+    api.delete<MessageResponse>('/auth/account', { data: { password } }).then((r) => r.data),
 };
 
 // ───────────────────────── Accounts ─────────────────────────

@@ -8,7 +8,8 @@ import { users, passwordResets } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { assertEmailConfigured, sendResetCodeEmail } from '../services/email.js';
 import { passwordResetLimiter } from '../middleware/rateLimiter.js';
-import { BCRYPT_ROUNDS } from '../utils/constants.js';
+import { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } from '../utils/constants.js';
+import { invalidateTokenVersionCache } from '../middleware/auth.js';
 
 // Router público (sin JWT): se monta bajo /api/auth junto al authRouter.
 export const passwordResetRouter = Router();
@@ -31,7 +32,10 @@ const verifySchema = z.object({
 
 const resetSchema = z.object({
   token: z.string().trim().length(64, 'Token inválido'),
-  newPassword: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres').max(200),
+  newPassword: z
+    .string()
+    .min(MIN_PASSWORD_LENGTH, `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres`)
+    .max(200),
 });
 
 /** Genera un código numérico de 6 dígitos (000000–999999) con CSPRNG. */
@@ -44,11 +48,6 @@ passwordResetRouter.post(
   '/forgot-password',
   passwordResetLimiter,
   asyncHandler(async (req, res) => {
-    // TEMPORALMENTE DESHABILITADO: el flujo de recuperación de contraseña está
-    // bypaseado. El código de abajo se conserva intacto; quitar este return para
-    // reactivarlo.
-    res.status(503).json({ error: 'Función temporalmente deshabilitada.' });
-    return;
     const { email } = forgotSchema.parse(req.body);
 
     // Falla de forma uniforme si no hay clave de correo (antes del lookup, para
@@ -95,9 +94,6 @@ passwordResetRouter.post(
   '/verify-reset-code',
   passwordResetLimiter,
   asyncHandler(async (req, res) => {
-    // TEMPORALMENTE DESHABILITADO (ver forgot-password). Quitar este return para reactivar.
-    res.status(503).json({ error: 'Función temporalmente deshabilitada.' });
-    return;
     const { email, code } = verifySchema.parse(req.body);
 
     const [match] = await db
@@ -125,9 +121,6 @@ passwordResetRouter.post(
   '/reset-password',
   passwordResetLimiter,
   asyncHandler(async (req, res) => {
-    // TEMPORALMENTE DESHABILITADO (ver forgot-password). Quitar este return para reactivar.
-    res.status(503).json({ error: 'Función temporalmente deshabilitada.' });
-    return;
     const { token, newPassword } = resetSchema.parse(req.body);
 
     const [reset] = await db
@@ -146,13 +139,20 @@ passwordResetRouter.post(
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
     // Cambio de contraseña + consumo del token de forma atómica (db.batch).
+    // El bump de token_version revoca TODAS las sesiones previas (si alguien
+    // tenía la contraseña vieja y una sesión abierta, la pierde).
     await db.batch([
       db
         .update(users)
-        .set({ passwordHash, updatedAt: new Date() })
+        .set({
+          passwordHash,
+          tokenVersion: sql`${users.tokenVersion} + 1` as unknown as number,
+          updatedAt: new Date(),
+        })
         .where(eq(users.id, reset.userId)),
       db.update(passwordResets).set({ used: true }).where(eq(passwordResets.id, reset.id)),
     ] as any);
+    invalidateTokenVersionCache(reset.userId);
 
     res.json({ message: 'Contraseña actualizada' });
   }),

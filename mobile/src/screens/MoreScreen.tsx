@@ -42,6 +42,7 @@ const AJUSTES: NavItem[] = [
   { label: 'Notificaciones', icon: 'bell', route: 'SettingsNotifications', color: (t) => t.colors.accentLight },
   { label: 'Seguridad', icon: 'lock-keyhole', route: 'Security', color: (t) => t.colors.primary },
   { label: 'Apariencia', icon: 'palette', route: 'Appearance', color: (t) => t.colors.secondary },
+  { label: 'Mi cuenta', icon: 'circle-user', route: 'Account', color: (t) => t.colors.secondary },
 ];
 
 export function MoreScreen() {

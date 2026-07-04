@@ -82,6 +82,8 @@ const MoreScreen = lazyScreen(() => import('../screens/MoreScreen').then((m) => 
 const SettingsNotificationsScreen = lazyScreen(() => import('../screens/SettingsNotificationsScreen').then((m) => ({ default: m.SettingsNotificationsScreen })));
 const SecurityScreen = lazyScreen(() => import('../screens/SecurityScreen').then((m) => ({ default: m.SecurityScreen })));
 const AppearanceScreen = lazyScreen(() => import('../screens/AppearanceScreen').then((m) => ({ default: m.AppearanceScreen })));
+const AccountScreen = lazyScreen(() => import('../screens/AccountScreen').then((m) => ({ default: m.AccountScreen })));
+const LegalScreen = lazyScreen(() => import('../screens/LegalScreen').then((m) => ({ default: m.LegalScreen })));
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -201,6 +203,7 @@ function AuthNavigator() {
       <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
       <AuthStack.Screen name="VerifyResetCode" component={VerifyResetCodeScreen} />
       <AuthStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+      <AuthStack.Screen name="Legal" component={LegalScreen} />
     </AuthStack.Navigator>
   );
 }
@@ -265,6 +268,8 @@ export function AppNavigator() {
         <RootStack.Screen name="Rates" component={RatesScreen} />
         <RootStack.Screen name="Security" component={SecurityScreen} />
         <RootStack.Screen name="Appearance" component={AppearanceScreen} />
+        <RootStack.Screen name="Account" component={AccountScreen} />
+        <RootStack.Screen name="Legal" component={LegalScreen} />
       </RootStack.Navigator>
       )}
     </NavigationContainer>

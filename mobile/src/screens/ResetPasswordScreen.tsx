@@ -19,8 +19,8 @@ export function ResetPasswordScreen() {
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async () => {
-    if (password.length < 6) {
-      Toast.show({ type: 'error', text1: 'La contraseña debe tener al menos 6 caracteres' });
+    if (password.length < 8) {
+      Toast.show({ type: 'error', text1: 'La contraseña debe tener al menos 8 caracteres' });
       return;
     }
     if (password !== confirm) {
@@ -58,7 +58,7 @@ export function ResetPasswordScreen() {
             label="Nueva contraseña"
             value={password}
             onChangeText={setPassword}
-            placeholder="Mínimo 6 caracteres"
+            placeholder="Mínimo 8 caracteres"
             secureTextEntry
             autoCapitalize="none"
           />

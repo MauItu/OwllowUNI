@@ -15,6 +15,7 @@ import { Icon } from './Icon';
 import { useAuth } from '../hooks/useAuth';
 import { useSidebarStore } from '../stores/sidebarStore';
 import { getUserRole } from '../utils/roles';
+import { navigationRef } from '../navigation/navigationRef';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.8, 320);
@@ -103,6 +104,22 @@ export function Sidebar() {
           )}
         </View>
 
+        {/* Mi cuenta: exportar datos, legal y eliminar cuenta. El Sidebar vive
+            FUERA del NavigationContainer → se navega vía navigationRef. */}
+        <Pressable
+          style={({ pressed }) => [styles.accountRow, pressed && { opacity: 0.7 }]}
+          onPress={() => {
+            close();
+            if (navigationRef.isReady()) navigationRef.navigate('Account' as never);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Mi cuenta"
+        >
+          <Icon name="circle-user" size={20} color={theme.colors.secondary} />
+          <Text style={styles.accountText}>Mi cuenta</Text>
+          <Icon name="chevron-right" size={18} color={theme.colors.textMuted} />
+        </Pressable>
+
         <View style={{ flex: 1 }} />
 
         {/* Cerrar sesión, anclado al fondo */}
@@ -178,6 +195,20 @@ const createStyles = (theme: Theme) =>
       borderColor: `${theme.colors.accent}55`,
     },
     roleText: { color: theme.colors.accent, fontSize: theme.fontSize.xs, fontWeight: theme.fontWeight.bold, letterSpacing: 0.3 },
+    accountRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      paddingVertical: theme.spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.colors.border,
+    },
+    accountText: {
+      flex: 1,
+      color: theme.colors.text,
+      fontSize: theme.fontSize.md,
+      fontWeight: theme.fontWeight.semibold,
+    },
     logout: {
       flexDirection: 'row',
       alignItems: 'center',

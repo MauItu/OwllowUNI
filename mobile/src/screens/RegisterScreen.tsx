@@ -5,6 +5,7 @@ import Toast from 'react-native-toast-message';
 import { type Theme } from '../theme';
 import { useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, PrimaryButton, TextField, FormScrollView } from '../components/common';
+import { Icon } from '../components/Icon';
 import { useAuth } from '../hooks/useAuth';
 import { getErrorMessage } from '../api/client';
 
@@ -19,6 +20,7 @@ export function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [accepted, setAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async () => {
@@ -36,6 +38,13 @@ export function RegisterScreen() {
     }
     if (password !== confirm) {
       Toast.show({ type: 'error', text1: 'Las contraseñas no coinciden' });
+      return;
+    }
+    if (!accepted) {
+      Toast.show({
+        type: 'error',
+        text1: 'Debes aceptar los términos y la política de privacidad',
+      });
       return;
     }
     setLoading(true);
@@ -93,6 +102,37 @@ export function RegisterScreen() {
             autoCapitalize="none"
           />
 
+          {/* Consentimiento de datos (habeas data): obligatorio para registrarse. */}
+          <Pressable
+            style={styles.consentRow}
+            onPress={() => setAccepted((v) => !v)}
+            hitSlop={8}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: accepted }}
+            accessibilityLabel="Acepto los términos y condiciones y la política de privacidad"
+          >
+            <View style={[styles.checkbox, accepted && styles.checkboxChecked]}>
+              {accepted && <Icon name="check" size={14} color="#FFFFFF" strokeWidth={3} />}
+            </View>
+            <Text style={styles.consentText}>
+              Acepto los{' '}
+              <Text
+                style={styles.consentLink}
+                onPress={() => navigation.navigate('Legal', { doc: 'terms' })}
+              >
+                Términos y condiciones
+              </Text>{' '}
+              y la{' '}
+              <Text
+                style={styles.consentLink}
+                onPress={() => navigation.navigate('Legal', { doc: 'privacy' })}
+              >
+                Política de privacidad
+              </Text>
+              , y autorizo el tratamiento de mis datos para prestar el servicio.
+            </Text>
+          </Pressable>
+
           <View style={styles.buttonWrap}>
             <PrimaryButton label="Crear cuenta" onPress={onSubmit} loading={loading} />
           </View>
@@ -117,6 +157,36 @@ const createStyles = (theme: Theme) =>
       marginBottom: theme.spacing.lg,
     },
     buttonWrap: { marginTop: theme.spacing.md },
+    consentRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.sm,
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: theme.colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 1,
+    },
+    checkboxChecked: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    consentText: {
+      flex: 1,
+      color: theme.colors.textSecondary,
+      fontSize: theme.fontSize.sm,
+      lineHeight: 19,
+    },
+    consentLink: {
+      color: theme.colors.primaryLight,
+      fontWeight: theme.fontWeight.bold,
+    },
     linkRow: {
       flexDirection: 'row',
       justifyContent: 'center',
