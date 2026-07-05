@@ -26,7 +26,7 @@ const EMPTY_TALLIES: StyleVoteState['tallies'] = { professional: 0, indigo: 0 };
 const Ctx = createContext<StyleVoteValue | null>(null);
 
 export function StyleVoteProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [state, setState] = useState<StyleVoteState | null>(null);
   const [loading, setLoading] = useState(true);
   const [dismissed, setDismissed] = useState(false);
@@ -65,7 +65,13 @@ export function StyleVoteProvider({ children }: { children: React.ReactNode }) {
     myVote: state?.myVote ?? null,
     tallies: state?.tallies ?? EMPTY_TALLIES,
     total: state?.total ?? 0,
-    showBanner: isAuthenticated && !loading && state != null && state.myVote == null && !dismissed,
+    showBanner:
+      isAuthenticated &&
+      user?.isAdmin !== true &&
+      !loading &&
+      state != null &&
+      state.myVote == null &&
+      !dismissed,
     dismissBanner: () => setDismissed(true),
     vote,
     refetch,

@@ -7,6 +7,7 @@ import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, ScreenHeader, PrimaryButton } from '../components/common';
 import { Icon } from '../components/Icon';
 import { useStyleVote } from '../hooks/useStyleVote';
+import { useAuth } from '../hooks/useAuth';
 import { getErrorMessage } from '../api/client';
 import type { StyleVoteChoice } from '../types';
 
@@ -36,6 +37,8 @@ export function StyleVoteScreen() {
   const { theme, paletteId, setPalette, swatch } = useTheme();
   const styles = useThemedStyles(createStyles);
   const { myVote, tallies, total, vote } = useStyleVote();
+  const { user } = useAuth();
+  const isAdmin = user?.isAdmin === true;
 
   // La opción "seleccionada" arranca en la paleta activa (para previsualizar).
   const [selected, setSelected] = useState<StyleVoteChoice>(
@@ -50,6 +53,14 @@ export function StyleVoteScreen() {
   };
 
   const submit = async () => {
+    if (isAdmin) {
+      Toast.show({
+        type: 'info',
+        text1: 'Vista de administrador',
+        text2: 'Puedes probar estilos, pero no participas en esta votación.',
+      });
+      return;
+    }
     setSaving(true);
     try {
       await vote(selected);
@@ -122,7 +133,7 @@ export function StyleVoteScreen() {
               </View>
               <Text style={styles.resultCount}>
                 {tallies[o.id]} voto{tallies[o.id] === 1 ? '' : 's'}
-                {voted ? ' · tu voto' : ''}
+                {!isAdmin && voted ? ' · tu voto' : ''}
               </Text>
             </Pressable>
           );
@@ -137,6 +148,8 @@ export function StyleVoteScreen() {
             label={
               saving
                 ? 'Guardando…'
+                : isAdmin
+                  ? 'Vista admin: no cuenta como voto'
                 : myVote === selected
                   ? 'Ya es tu voto'
                   : myVote
@@ -145,7 +158,7 @@ export function StyleVoteScreen() {
             }
             onPress={submit}
             loading={saving}
-            disabled={myVote === selected}
+            disabled={isAdmin || myVote === selected}
           />
         </View>
         <Text style={styles.footNote}>

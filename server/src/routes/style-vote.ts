@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
-import { styleVotes } from '../db/schema.js';
+import { styleVotes, users } from '../db/schema.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { userId } from '../middleware/auth.js';
 
@@ -25,11 +25,14 @@ async function tally(uid: number) {
   const [mine] = await db
     .select({ choice: styleVotes.choice })
     .from(styleVotes)
-    .where(eq(styleVotes.userId, uid));
+    .innerJoin(users, eq(styleVotes.userId, users.id))
+    .where(and(eq(styleVotes.userId, uid), eq(users.isAdmin, false)));
 
   const rows = await db
     .select({ choice: styleVotes.choice, count: sql<number>`count(*)::int` })
     .from(styleVotes)
+    .innerJoin(users, eq(styleVotes.userId, users.id))
+    .where(eq(users.isAdmin, false))
     .groupBy(styleVotes.choice);
 
   const tallies: Record<Choice, number> = { professional: 0, indigo: 0 };
@@ -57,6 +60,16 @@ styleVoteRouter.post(
   asyncHandler(async (req, res) => {
     const { choice } = voteSchema.parse(req.body);
     const uid = userId(req);
+    const [currentUser] = await db
+      .select({ isAdmin: users.isAdmin })
+      .from(users)
+      .where(eq(users.id, uid));
+
+    if (currentUser?.isAdmin) {
+      res.json(await tally(uid));
+      return;
+    }
+
     await db
       .insert(styleVotes)
       .values({ userId: uid, choice })

@@ -2,14 +2,22 @@ import React, { createContext, useContext, useMemo } from 'react';
 import { useColorScheme } from 'react-native';
 import { palettes, type Theme, type ThemeColors, type PaletteId } from './index';
 import { useSettingsStore, type ThemeMode } from '../stores/settingsStore';
+import { useAuth } from '../hooks/useAuth';
 
 /**
- * Votación A/B en curso: durante el test, TODOS los usuarios eligen solo entre
- * estas dos paletas candidatas (ver StyleVoteScreen). Las demás paletas siguen
- * en el registro pero no se ofrecen en el selector. `professional` es el default
- * (look actual de producción). Deben coincidir con CHOICES del backend.
+ * Votación A/B en curso: durante el test, los usuarios no admin eligen solo
+ * entre estas dos paletas candidatas (ver StyleVoteScreen). Los admins también
+ * pueden seleccionar las paletas internas de orgullo para revisar la app, pero
+ * esas paletas no participan en la votación. Deben coincidir con CHOICES del
+ * backend.
  */
 export const VOTE_PALETTE_IDS = ['professional', 'indigo'] as const satisfies readonly PaletteId[];
+const ADMIN_PALETTE_IDS = [
+  'bisexual',
+  'gay',
+  'lesbian',
+  ...VOTE_PALETTE_IDS,
+] as const satisfies readonly PaletteId[];
 const DEFAULT_PALETTE: PaletteId = 'professional';
 
 interface ThemeContextValue {
@@ -28,28 +36,36 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-// Solo las paletas candidatas de la votación, en orden fijo (original primero).
-const AVAILABLE_PALETTES = VOTE_PALETTE_IDS.map((id) => ({
-  id,
-  label: palettes[id].label,
-  swatch: palettes[id].swatch,
-}));
+function paletteOptions(ids: readonly PaletteId[]) {
+  return ids.map((id) => ({
+    id,
+    label: palettes[id].label,
+    swatch: palettes[id].swatch,
+  }));
+}
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const systemScheme = useColorScheme();
   const storedPaletteId = useSettingsStore((s) => s.paletteId);
   const setPaletteId = useSettingsStore((s) => s.setPaletteId);
   const themeMode = useSettingsStore((s) => s.themeMode);
   const setThemeMode = useSettingsStore((s) => s.setThemeMode);
+  const isAdmin = user?.isAdmin === true;
+  const selectablePaletteIds = isAdmin ? ADMIN_PALETTE_IDS : VOTE_PALETTE_IDS;
+  const availablePalettes = useMemo(
+    () => paletteOptions(selectablePaletteIds),
+    [selectablePaletteIds],
+  );
 
   const isDark =
     themeMode === 'system' ? (systemScheme ?? 'dark') === 'dark' : themeMode === 'dark';
 
-  // Durante la votación todos eligen entre las dos candidatas. El id persistido
-  // puede ser uno viejo (otra paleta, o una eliminada como 'amber'): si no es una
-  // de las candidatas, caer al default en vez de crashear con `palettes[id].light`.
-  const isCandidate = (VOTE_PALETTE_IDS as readonly string[]).includes(storedPaletteId);
-  const paletteId: PaletteId = isCandidate ? storedPaletteId : DEFAULT_PALETTE;
+  // Durante la votación los no-admin eligen entre las dos candidatas; admins
+  // también pueden usar paletas internas. El id persistido puede no estar
+  // permitido para la sesión actual: caer al default evita crashear.
+  const isSelectable = (selectablePaletteIds as readonly string[]).includes(storedPaletteId);
+  const paletteId: PaletteId = isSelectable ? storedPaletteId : DEFAULT_PALETTE;
   const palette = palettes[paletteId];
   const theme = isDark ? palette.dark : palette.light;
 
@@ -61,15 +77,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       toggleTheme: () => setThemeMode(isDark ? 'light' : 'dark'),
       swatch: palette.swatch,
       paletteId,
-      // Solo acepta las paletas candidatas de la votación.
+      // Solo acepta paletas disponibles para el usuario actual.
       setPalette: (id: PaletteId) => {
-        if ((VOTE_PALETTE_IDS as readonly string[]).includes(id)) setPaletteId(id);
+        if ((selectablePaletteIds as readonly string[]).includes(id)) setPaletteId(id);
       },
-      availablePalettes: AVAILABLE_PALETTES,
+      availablePalettes,
       themeMode,
       setThemeMode,
     }),
-    [theme, isDark, palette, paletteId, setPaletteId, themeMode, setThemeMode],
+    [
+      theme,
+      isDark,
+      palette,
+      paletteId,
+      setPaletteId,
+      selectablePaletteIds,
+      availablePalettes,
+      themeMode,
+      setThemeMode,
+    ],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
