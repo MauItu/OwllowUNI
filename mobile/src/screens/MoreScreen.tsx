@@ -178,6 +178,7 @@ export function MoreScreen() {
         <Text style={styles.version}>
           Owllow v{Constants.expoConfig?.version ?? '1.0.0'}
         </Text>
+        <Text style={styles.tagline}>Sabiduría para tus finanzas</Text>
       </ScrollView>
 
       <CurrencyPicker
@@ -214,6 +215,13 @@ const createStyles = (theme: Theme) =>
       fontSize: theme.fontSize.xs,
       textAlign: 'center',
       marginTop: theme.spacing.lg,
+    },
+    tagline: {
+      color: theme.colors.textMuted,
+      fontSize: theme.fontSize.xs,
+      textAlign: 'center',
+      fontStyle: 'italic',
+      marginTop: 2,
     },
     itemLabel: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: theme.fontWeight.medium },
     itemValue: { color: theme.colors.textSecondary, fontSize: theme.fontSize.sm, fontWeight: theme.fontWeight.semibold },

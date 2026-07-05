@@ -41,7 +41,7 @@ const STEPS: TourStep[] = [
     tab: 'Home',
     icon: 'sparkles',
     title: 'Te doy un recorrido',
-    body: 'Te voy mostrando los botones y secciones de la app uno por uno. Puedes saltarlo cuando quieras y repetirlo desde Más → Tutorial.',
+    body: 'Soy el búho de Owllow: te muestro los botones y secciones de la app uno por uno. Puedes saltarlo cuando quieras y repetirlo desde Más → Tutorial.',
   },
   {
     tab: 'Home',

@@ -5,7 +5,7 @@ import Toast from 'react-native-toast-message';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Screen, PrimaryButton, TextField } from '../components/common';
-import { Icon } from '../components/Icon';
+import { OwlLogo } from '../components/OwlLogo';
 import { useAuth } from '../hooks/useAuth';
 import { getErrorMessage } from '../api/client';
 
@@ -43,10 +43,10 @@ export function LoginScreen() {
       >
         <View style={styles.content}>
           <View style={styles.logoWrap}>
-            <Icon name="wallet" size={44} color={theme.colors.primary} strokeWidth={2.2} />
+            <OwlLogo size={48} color={theme.colors.primary} strokeWidth={2.2} />
           </View>
           <Text style={styles.title}>Bienvenido de nuevo</Text>
-          <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
+          <Text style={styles.subtitle}>Sabiduría para tus finanzas</Text>
 
           <View style={styles.form}>
             <TextField

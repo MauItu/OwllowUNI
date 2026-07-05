@@ -66,7 +66,7 @@ export function RegisterScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <FormScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.intro}>Crea tu cuenta para empezar a controlar tus finanzas.</Text>
+          <Text style={styles.intro}>Crea tu cuenta y empieza a manejar tus finanzas con sabiduría.</Text>
 
           <TextField
             label="Nombre"

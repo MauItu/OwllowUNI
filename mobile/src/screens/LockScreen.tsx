@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type Theme } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import { Icon } from '../components/Icon';
+import { OwlLogo } from '../components/OwlLogo';
 import { PinDots } from '../components/PinDots';
 import { PinKeypad } from '../components/PinKeypad';
 import {
@@ -132,10 +133,10 @@ export function LockScreen({ onUnlock }: Props) {
     <View style={[styles.container, { paddingTop: insets.top + theme.spacing.xl, paddingBottom: insets.bottom + theme.spacing.lg }]}>
       <View style={styles.top}>
         <View style={styles.logo}>
-          <Icon name="lock-keyhole" size={34} color="#FFFFFF" />
+          <OwlLogo size={38} color="#FFFFFF" />
         </View>
         <Text style={styles.title}>Owllow bloqueada</Text>
-        <Text style={styles.subtitle}>Ingresa tu PIN para continuar</Text>
+        <Text style={styles.subtitle}>El búho está de guardia. Ingresa tu PIN.</Text>
 
         <View style={styles.dots}>
           <PinDots filled={pin.length} error={error} />

@@ -39,6 +39,9 @@ function resetEmailHtml(code: string): string {
       El código expira en <strong>15 minutos</strong>. Si no solicitaste este cambio,
       podés ignorar este correo: tu contraseña no se modificará.
     </p>
+    <p style="font-size: 12px; color: #ADB5BD; margin: 24px 0 0; border-top: 1px solid #E9ECEF; padding-top: 12px;">
+      Owllow — sabiduría para tus finanzas 🦉
+    </p>
   </div>`;
 }
 
