@@ -2,7 +2,8 @@
 
 > Guía paso a paso para cualquier cambio en la base de datos (PostgreSQL en NeonDB, Drizzle ORM).
 > La DB ya está migrada, seedeada y **tiene datos reales del usuario**. Borrarlos NO es aceptable.
-> Aplica a las tareas de `PLAN_NUEVAS_FUNCIONES.md` y a cualquier cambio futuro.
+> Aplica a cualquier cambio futuro. `PLAN_NUEVAS_FUNCIONES.md` queda como histórico: las tareas de splits,
+> deudas, hora editable, iconos/colores y safe areas ya fueron implementadas en el código actual.
 
 ---
 
@@ -10,11 +11,11 @@
 
 | Tarea | ¿Migración? | Cambio |
 |---|---|---|
-| 1. Splits con cuentas | **Sí** | `split_expenses` + columna `account_id` (nullable); tabla nueva `split_settlements` |
-| 2. Más íconos/colores | No | Solo listas en el mobile (`icon` varchar(50) y `color` varchar(7) ya aceptan cualquier valor) |
-| 3. Abonos de deudas con cuenta | **Sí** | `debt_payments` + columna `account_id` (nullable) |
-| 4. Safe areas / responsive | No | Solo mobile |
-| 5. Hora en gastos/ingresos | **No** | `transactions.time` (TIME NOT NULL) **ya existe** desde la migración inicial — no tocar |
+| 1. Splits con cuentas | **Implementado** | `split_expenses.account_id`, `split_expenses.transaction_id` y `split_settlements` ya existen |
+| 2. Más íconos/colores | **Implementado** | Cambio mobile; `icon` varchar(50) y `color` varchar(7) aceptan los valores |
+| 3. Abonos de deudas con cuenta | **Implementado** | `debt_payments.account_id`, `transaction_id` y `debts.initial_transaction_id` ya existen |
+| 4. Safe areas / responsive | **Implementado** | Cambio mobile |
+| 5. Hora en gastos/ingresos | **Implementado** | `transactions.time` existe y el mobile usa `TimePicker` |
 
 Regla de oro: **todos los cambios deben ser aditivos** — `CREATE TABLE` y `ALTER TABLE ... ADD COLUMN`
 con la columna **nullable o con DEFAULT**. Nunca `DROP`, nunca renombrar, nunca cambiar tipos de columnas

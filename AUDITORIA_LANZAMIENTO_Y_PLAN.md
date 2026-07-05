@@ -2,6 +2,14 @@
 
 > Auditoria ejecutada el 2026-07-04 sobre la rama `Corections-Senior`, HEAD `e13ac09`, siguiendo `PROMPT_AUDITORIA_LANZAMIENTO.md`.
 > Alcance: solo auditoria y documentacion. No se modifico codigo de backend/mobile.
+>
+> **Nota de vigencia (2026-07-04, actualización documental):** este archivo es un reporte histórico.
+> Varias brechas listadas aquí ya están resueltas en el repo actual: recuperación de contraseña reactivada
+> en código, export completo y eliminación de cuenta, privacidad/términos/consentimiento, revocación por
+> `token_version`, JWT default `7d`, tests unitarios de server y CI en GitHub Actions. Para el estado vivo
+> usa `PROJECT_CONTEXT.md`, `RUNBOOK.md` y `DEPLOY_AND_APK.md`. Pendientes operativos que siguen siendo
+> relevantes: configurar `GMAIL_*` en Render, verificar/aplicar migraciones `0000`→`0024` en la DB real,
+> validar `accounts_balance_nonnegative`, configurar alertas/monitor externo y ejecutar QA pre-beta.
 
 ## Resumen ejecutivo
 
@@ -9,19 +17,18 @@ El proyecto tiene una base tecnica solida para una app de finanzas personales: b
 
 Los dos typechecks pasan limpios y la configuracion mobile de release fue mejorada respecto al reporte anterior: `mobile/eas.json` ya inyecta `EXPO_PUBLIC_API_URL` tambien en `production`, `mobile/app.json` usa `userInterfaceStyle: "automatic"` y bloquea `android.permission.RECORD_AUDIO`.
 
-Los bloqueos actuales para mercado no son de compilacion, sino de recuperacion de cuenta, privacidad/legal, base de datos, QA y operacion: la recuperacion de contrasena sigue deshabilitada por codigo y por falta de `GMAIL_*`, la DB consultada con el `.env` actual no tiene el constraint `accounts_balance_nonnegative`, no hay eliminacion de cuenta/export completo, no hay politica de privacidad/terminos, no hay tests ni CI, y no hay monitoreo de errores.
+En la auditoria original, los bloqueos para mercado no eran de compilacion sino de recuperacion de cuenta, privacidad/legal, base de datos, QA y operacion. En el repo actual ya se resolvieron por codigo la recuperacion de contrasena, export/delete de cuenta, legales, revocacion de sesiones, tests y CI; siguen como pendientes operativos la configuracion de `GMAIL_*` en Render, la verificacion/aplicacion de migraciones en la DB real, la validacion de `accounts_balance_nonnegative`, monitoreo/alertas y QA pre-beta.
 
 ## Veredicto de lanzamiento
 
-- Estado: Listo para beta cerrada con condiciones; no listo para produccion.
-- Justificacion: la app compila y la arquitectura base es razonable, pero un usuario real puede quedar bloqueado permanentemente si olvida la contrasena, no existen garantias automatizadas del motor financiero, faltan obligaciones basicas de privacidad y no hay observabilidad de errores en campo.
-- Condiciones minimas para avanzar al siguiente estado:
-  - Reactivar y probar recuperacion de contrasena.
-  - Aplicar/verificar migracion `0021_balance_nonnegative_guard.sql` en la DB correcta.
-  - Agregar eliminacion de cuenta y export completo de datos.
-  - Publicar politica de privacidad y terminos.
-  - Crear suite minima de tests financieros y CI.
-  - Configurar monitoreo de errores en server y mobile.
+- Estado actualizado del repo: más cerca de beta cerrada, condicionado por operación/QA; no declarar producción pública sin pruebas E2E/manuales y monitoreo.
+- Justificacion actualizada: la app compila y las brechas mayores de producto/legal/QA ya tienen implementación base, pero falta comprobar la DB real, configurar correo/alertas y ejecutar una ronda completa de QA.
+- Condiciones minimas actuales:
+  - Configurar y probar `GMAIL_USER`/`GMAIL_APP_PASSWORD` en Render.
+  - Aplicar/verificar migraciones `0000`→`0024` en la DB correcta.
+  - Validar `accounts_balance_nonnegative` tras reparar o documentar saldos historicos.
+  - Configurar `ALERT_WEBHOOK_URL` y monitor externo sobre `/api/health`.
+  - Ejecutar checklist manual pre-release y distribuir un APK `preview` reciente.
 
 ## Alcance revisado
 
@@ -39,7 +46,7 @@ Los bloqueos actuales para mercado no son de compilacion, sino de recuperacion d
 - Comandos que no se pudieron ejecutar y por que:
   - La primera consulta con `tsx -e` fallo por top-level await en salida CJS; se repitio envuelta en funcion async.
   - La segunda consulta con `tsx` dentro del sandbox fallo por `EPERM` en pipe temporal; se repitio con aprobacion fuera del sandbox. Fue read-only.
-  - No se ejecutaron tests porque no existen scripts ni archivos de prueba propios.
+  - No se ejecutaron tests en esa auditoria porque en ese momento no existian scripts ni archivos de prueba propios.
   - No se ejecuto build APK/EAS porque no es necesario para esta auditoria documental.
 - Supuestos:
   - La DB consultada por el `.env` actual es la DB objetivo local/produccion que se quiere auditar.
@@ -48,20 +55,22 @@ Los bloqueos actuales para mercado no son de compilacion, sino de recuperacion d
 
 ## Hallazgos criticos
 
+> Tabla original de la auditoria. Varios hallazgos ya estan resueltos en el repo actual; ver nota de vigencia arriba.
+
 | ID | Severidad | Area | Hallazgo | Evidencia | Impacto | Recomendacion |
 |---|---|---|---|---|---|---|
-| H1 | Critica | Seguridad/Producto | Recuperacion de contrasena deshabilitada | `server/src/routes/password-reset.ts` devuelve 503 y `return` temprano en `/forgot-password`, `/verify-reset-code`, `/reset-password`; al importar env aparece `Recuperación de contraseña deshabilitada: faltan GMAIL_*` | Usuario que olvida la contrasena puede perder acceso permanente a sus datos financieros | Configurar `GMAIL_USER`/`GMAIL_APP_PASSWORD`, quitar los bypass temporales, descomentar link si sigue oculto y probar el flujo completo |
+| H1 | Critica | Seguridad/Producto | Recuperacion de contrasena deshabilitada en la auditoria original | En el repo actual el bypass fue retirado; si faltan `GMAIL_*`, los endpoints responden 503 por configuracion | Usuario que olvida la contrasena puede perder acceso si no se configura correo en prod | Configurar `GMAIL_USER`/`GMAIL_APP_PASSWORD` y probar el flujo completo |
 | H2 | Critica | Datos/Finanzas | La DB conectada no tiene el constraint `accounts_balance_nonnegative` | Consulta read-only a `pg_constraint` retorno `rows: []`; migracion existe en `server/drizzle/0021_balance_nonnegative_guard.sql` | Debitos concurrentes o errores de saga podrian dejar cuentas sin sobregiro en negativo si el guard no esta aplicado | Correr `cd server && pnpm db:migrate` contra la DB correcta, verificar `pg_constraint`, revisar saldos historicos y luego validar la constraint |
-| H3 | Alta | Legal/Privacidad | No hay eliminacion de cuenta ni export completo del usuario | `server/src/routes/auth.ts` no expone DELETE de cuenta; `mobile/src/api/client.ts` solo exporta transacciones por `/transactions/export` | Bloquea publicacion seria en Play Store y derechos de habeas data/privacidad | Agregar export completo y `DELETE /api/auth/account` con confirmacion fuerte y cascada controlada |
-| H4 | Alta | Legal/Producto | No hay politica de privacidad, terminos ni consentimiento explicito | No se encontraron pantallas/documentos legales; datos financieros se capturan desde registro/uso | Riesgo legal y de rechazo en tienda; baja confianza del usuario | Publicar politica/terminos, enlazarlos en registro y menu, guardar aceptacion con version |
-| H5 | Alta | QA | No existen tests automatizados ni script `test` | `server/package.json` y `mobile/package.json` no tienen `test`; no hay `*.test.*`/`*.spec.*` propios | Regresiones financieras pueden llegar a usuarios sin deteccion | Agregar Vitest para utils/server y pruebas de integracion API sobre DB de test; luego CI |
+| H3 | Alta | Legal/Privacidad | En la auditoria original no habia eliminacion de cuenta ni export completo | En el repo actual existen `GET /api/auth/export` y `DELETE /api/auth/account` | Requisito de privacidad/portabilidad | Probar E2E en prod antes de beta |
+| H4 | Alta | Legal/Producto | En la auditoria original no habia politica/terminos/consentimiento | En el repo actual existen `PRIVACY.md`, `TERMS.md`, `LegalScreen` y consentimiento en registro | Requisito legal/confianza | Mantener textos sincronizados con `mobile/src/legal/texts.ts` |
+| H5 | Alta | QA | En la auditoria original no habia tests ni CI | En el repo actual existen tests unitarios de server y CI; faltan integracion/E2E | Regresiones financieras pueden llegar a usuarios si no se cubren flujos completos | Agregar pruebas de integracion API y QA manual/E2E |
 | H6 | Alta | Observabilidad | No hay monitoreo de errores en server/mobile | Busqueda `Sentry|crashlytics` sin resultados; errores criticos van a `console.error` | Crashes del APK y compensaciones fallidas pueden pasar desapercibidos | Integrar Sentry o equivalente y alertas para `COMPENSACIÓN FALLIDA` |
-| H7 | Alta | Sesion | JWT default de 30 dias sin revocacion | `server/src/utils/validateEnv.ts` define `JWT_EXPIRATION` default `30d`; `middleware/auth.ts` verifica stateless | Token robado sigue valido por largo tiempo; cambiar contrasena no cierra sesiones previas | Bajar expiracion en prod y agregar `tokenVersion`/revocacion en `users` |
-| H8 | Media | Seguridad | Politica de contrasena inconsistente | Registro/perfil usan min 8 en `server/src/routes/auth.ts`; reset usa min 6 en `password-reset.ts` | El reset permite contrasenas mas debiles que el registro | Centralizar constante `MIN_PASSWORD_LENGTH = 8` |
+| H7 | Alta | Sesion | En la auditoria original JWT default era 30 dias sin revocacion | En el repo actual `JWT_EXPIRATION` default es `7d` y existe `users.token_version` | Reduce impacto de token robado | Mantener rotacion/revocacion documentada |
+| H8 | Media | Seguridad | En la auditoria original la politica de contrasena era inconsistente | En el repo actual `MIN_PASSWORD_LENGTH=8` cubre registro, perfil y reset | Contraseñas consistentes | Mantener la constante centralizada |
 | H9 | Media | Mobile/Accesibilidad | Accesibilidad incompleta en controles clave | Busqueda de `accessibilityLabel` sin resultados; tab bar y botones iconicos usan `Pressable` sin label | Usuarios con TalkBack tendran una experiencia deficiente | Agregar labels/roles/hints a tab bar, FAB, botones de header, calculadora, PIN, selects y acciones destructivas |
 | H10 | Media | Datos/Import | Import de transacciones no es idempotente | `POST /api/transactions/import` valida e inserta batches, pero no hay hash/import id/dedupe; UI permite importar el mismo CSV de nuevo | Duplicar import mueve saldos dos veces y confunde al usuario | Agregar advertencia fuerte y/o deduplicacion por fingerprint |
 | H11 | Media | Operacion | Render free/cold starts chocan con timeout mobile de 5s | `mobile/src/api/client.ts` usa `timeout: 5000`; `DEPLOY_AND_APK.md` reconoce wake-up de Render | Primer request puede fallar aunque el backend este sano | Subir timeout/retry o pasar Render a plan sin sleep |
-| H12 | Baja | Docs | Documentacion de deploy tiene secciones desactualizadas | `DEPLOY_AND_APK.md` dice "No hay migraciones pendientes" y "0000->0009" aunque el repo tiene `0021`; tambien ya refleja otros fixes nuevos | Agentes futuros pueden tomar decisiones incorrectas | Actualizar guia de deploy con estado actual real |
+| H12 | Baja | Docs | Documentacion de deploy estaba desactualizada en la auditoria original | `DEPLOY_AND_APK.md` fue actualizado para migraciones `0000`→`0024`, CORS, reset y admin seed | Agentes futuros toman decisiones correctas | Mantener docs vivos al cambiar deploy/schema |
 
 ## Arquitectura
 
@@ -277,10 +286,10 @@ Los bloqueos actuales para mercado no son de compilacion, sino de recuperacion d
 
 ### Estado actual
 
-- No hay tests automatizados propios.
-- No hay scripts `test`.
-- No hay CI.
-- Verificacion actual: typecheck manual y pruebas funcionales/manuales documentadas.
+- Estado original: no habia tests automatizados, script `test` ni CI.
+- Estado actualizado: `server/package.json` tiene `pnpm test` con Vitest; existen tests unitarios en
+  `server/src/utils/*.test.ts`; `.github/workflows/ci.yml` corre typecheck server+mobile y tests del server.
+- Sigue faltando: integración API contra DB de test, E2E mobile y matriz formal de dispositivos Android.
 
 ### Brechas
 
@@ -334,13 +343,13 @@ Los bloqueos actuales para mercado no son de compilacion, sino de recuperacion d
 - Backend preparado para Render con build `tsc` y start `node dist/index.js`.
 - Mobile preparado con EAS `preview` APK y `production` app-bundle.
 - `EXPO_PUBLIC_API_URL` ya esta en ambos perfiles.
-- `.env` local ahora permite conectar a Neon para consulta read-only.
-- No hay CI ni monitoreo.
+- CI ya existe en GitHub Actions.
+- Pendiente operativo: confirmar `.env` local vigente contra Neon, configurar monitor externo y alertas.
 
 ### Brechas
 
-- DB objetivo no tiene el constraint esperado.
-- Guia de deploy mezcla estado viejo de migraciones con estado nuevo.
+- DB objetivo debe verificarse contra migraciones `0000`→`0024` y constraint `accounts_balance_nonnegative`.
+- Guia de deploy ya fue actualizada para no asumir el estado viejo `0000`→`0009`.
 - No hay estrategia de secrets/rotacion documentada mas alla de `.env`/Render.
 - No hay alertas por compensacion fallida ni crash reporting.
 - No hay backup/restore probado.
@@ -398,6 +407,11 @@ Los bloqueos actuales para mercado no son de compilacion, sino de recuperacion d
 - Definir propuesta de valor: finanzas personales en espanol/COP, control local, seguridad, presupuestos y tarjetas.
 
 ## Backlog priorizado
+
+> Backlog original. Estado actualizado: reset, export/delete, politica/terminos/consentimiento,
+> tests unitarios, CI, revocacion de sesiones y retry/timeout de red ya tienen implementación base.
+> Siguen vivos: verificación DB/constraint, monitoreo/alertas, accesibilidad ampliada, dedupe de import,
+> tipos compartidos y QA manual/E2E.
 
 | Prioridad | Item | Area | Severidad | Impacto | Esfuerzo | Dependencias | Criterio de aceptacion |
 |---|---|---|---|---|---|---|---|

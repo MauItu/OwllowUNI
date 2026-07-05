@@ -1,5 +1,10 @@
 # PLAN_NUEVAS_FUNCIONES.md — Plan de implementación (para Opus 4.8)
 
+> **Estado 2026-07-04: histórico / ya ejecutado.** Este plan describe el trabajo que dio lugar a las
+> features actuales: splits y deudas conectados a cuentas, liquidación parcial, hora editable, más
+> iconos/colores y ajustes de safe area. No lo uses como backlog activo. Para cambios nuevos de schema,
+> sigue `GUIA_MIGRACIONES_DB.md` y contrasta primero contra `PROJECT_CONTEXT.md` + código real.
+
 > **Instrucciones para el agente:** Lee primero `PROJECT_CONTEXT.md` (contexto completo del proyecto)
 > y `GUIA_MIGRACIONES_DB.md` (procedimiento obligatorio para cambios de schema SIN perder datos).
 > Ejecuta las tareas en el orden de este documento: la Tarea 0 (migración de DB) es prerequisito

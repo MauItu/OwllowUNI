@@ -20,7 +20,7 @@
 | `JWT_SECRET` | ✅ (≥32 chars) | Firma de sesiones. **Rotarla desloguea a todos** |
 | `JWT_EXPIRATION` | no (default `7d`) | Vida del token |
 | `NODE_ENV` | `production` | Rate limits reales, logs mínimos, CORS cerrado |
-| `CORS_ORIGINS` | no | Solo si algún día hay cliente web |
+| `CORS_ORIGINS` | no | Orígenes web permitidos. Si falta en producción, se niega CORS de navegador; el APK no se afecta |
 | `GMAIL_USER` / `GMAIL_APP_PASSWORD` | para reset | Sin ellas, recuperación de contraseña responde 503 |
 | `ALERT_WEBHOOK_URL` | recomendada | Webhook (Discord/Slack/ntfy) para alertas críticas |
 | `ADMIN_PASSWORD` | solo para `db:seed` | No la usa el runtime |
@@ -44,6 +44,8 @@ pnpm db:migrate      # aplica contra la DATABASE_URL del .env raíz
 ```
 
 - Quién: el desarrollador, desde local, con la `DATABASE_URL` de producción en el `.env` raíz.
+- Estado del repo al 2026-07-04: migraciones versionadas hasta `0024_regular_drax.sql`. No asumir
+  documentación antigua que hable solo de `0000`→`0009`.
 - Si una migración necesita ser destructiva (DROP/ALTER TYPE): plan aparte con backup previo y deploy coordinado. Hasta hoy nunca ha hecho falta.
 - Estado aplicado: tabla `drizzle.__drizzle_migrations` (o comparar contra `drizzle/meta/_journal.json`).
 - Pendiente conocido: `accounts_balance_nonnegative` (0021) está `NOT VALID`; tras reparar los 2 saldos negativos históricos (accounts id 11 y 15), correr `ALTER TABLE accounts VALIDATE CONSTRAINT accounts_balance_nonnegative;`.

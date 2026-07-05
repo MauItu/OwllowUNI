@@ -5,7 +5,8 @@
 > **Valores reales detectados:**
 > - Servicio Render: **`https://wallet-7v82.onrender.com`** (de `mobile/eas.json` → perfil `preview`).
 > - API base que consume el móvil: **`https://wallet-7v82.onrender.com/api`**.
-> - DB: **Neon PostgreSQL** (`DATABASE_URL` en el `.env` de la raíz). **Ya está migrada (0000→0009) y seedeada.**
+> - DB: **Neon PostgreSQL** (`DATABASE_URL` en el `.env` de la raíz). El repo tiene migraciones
+>   versionadas **`0000`→`0024`**; antes de deploy/verificación no asumas el estado viejo `0000`→`0009`.
 > - Backend: `server/` — build `tsc` → `dist/`, arranque `node dist/index.js`. Package manager **pnpm**.
 > - App móvil: Expo SDK 54, slug `wallet-clone`, owner `maurarch`, EAS projectId `d1a959a4-1885-4e2e-a90d-53838005629a`.
 
@@ -24,20 +25,22 @@ El diagnóstico anterior (2026-06-13: prod servía la versión vieja single-user
 mientras el código nuevo vivía en la rama `APK`) **quedó resuelto**: `main` contiene el código
 con auth y Render lo despliega. El flujo sigue siendo **merge a `main` → auto-deploy**.
 
-**Pendientes reales de deploy (auditoría 2026-07-04, ver `AUDITORIA_LANZAMIENTO_Y_PLAN.md`):**
+**Pendientes reales de deploy/operación (estado documental 2026-07-04):**
 
 - La `DATABASE_URL` del `.env` **local** es rechazada por Neon (`password authentication failed` —
   credenciales rotadas). Render conecta con sus propias env vars, pero **las migraciones se corren
   desde local**, así que hay que actualizar el `.env` con la connection string vigente del dashboard
   de Neon antes de poder migrar.
-- Por lo anterior, **no está confirmado** que la migración `0021_balance_nonnegative_guard`
-  (CHECK `accounts_balance_nonnegative`) esté aplicada en la DB de producción. Verificar con:
+- Por lo anterior, antes de tocar prod hay que confirmar qué migraciones están aplicadas en la DB real
+  contra `drizzle.__drizzle_migrations` y verificar especialmente la `0021_balance_nonnegative_guard`
+  (CHECK `accounts_balance_nonnegative`) con:
   `SELECT conname, convalidated FROM pg_constraint WHERE conname = 'accounts_balance_nonnegative';`
-  y, si falta, correr `cd server && pnpm db:migrate`. La constraint nace `NOT VALID`; tras revisar
+  Si falta cualquier migración del repo (`0000`→`0024`), correr `cd server && pnpm db:migrate`. La
+  constraint nace `NOT VALID`; tras revisar
   que no haya saldos negativos históricos ilegítimos, correr
   `ALTER TABLE accounts VALIDATE CONSTRAINT accounts_balance_nonnegative;`.
 - `GMAIL_USER`/`GMAIL_APP_PASSWORD` sin configurar en Render → la recuperación de contraseña
-  sigue deshabilitada (los endpoints devuelven 503 por un bypass temporal en el código).
+  responde 503 por configuración. El código de reset está activo; ya no hay bypass temporal.
 
 ---
 
@@ -98,7 +101,7 @@ En **Settings → Environment** del servicio, configurá:
 | `JWT_SECRET` | *(secreto — poné uno fuerte)* | ✅ Sí | El server **no arranca** sin esto. En el repo el `.env` trae el default de dev `wallet-clone-secret-change-in-production`; **en Render poné un valor aleatorio fuerte** (ver comando abajo). |
 | `GMAIL_USER` | *(secreto — ver abajo)* | ⚠️ Para recuperar contraseña | Dirección de Gmail que **envía** el email con el código de recuperación (también es el remitente `from`). Va de la mano con `GMAIL_APP_PASSWORD`. **Sin ambas la API arranca igual**, pero `forgot-password` responde 503. El resto de la app funciona normal. |
 | `GMAIL_APP_PASSWORD` | *(secreto — ver abajo)* | ⚠️ Para recuperar contraseña | **Contraseña de aplicación** de 16 caracteres generada en la cuenta de Google (NO la contraseña normal; requiere verificación en 2 pasos). Va de la mano con `GMAIL_USER`. |
-| `CORS_ORIGINS` | *(no setear)* | ❌ No | Sin esta var, CORS permite cualquier origen. **El APK nativo no envía header `Origin`, así que el móvil funciona igual.** Solo definila (lista separada por comas) si algún día sirvís un frontend web. |
+| `CORS_ORIGINS` | *(no setear salvo cliente web)* | ❌ No | En producción, si falta, el backend **niega CORS de navegador** (`origin:false`). **El APK nativo no envía header `Origin`, así que el móvil funciona igual.** Definila solo si sirves un frontend web. |
 | `PORT` | *(no setear)* | ❌ No | Lo inyecta Render. |
 | `NODE_VERSION` | `22` | recomendado | El código usa `fetch` nativo de Node 22 (tasas de cambio). |
 
@@ -119,7 +122,7 @@ postgresql://neondb_owner:****@ep-polished-salad-ajzloqar-pooler.c-3.us-east-2.a
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-> ⚠️ Cambiar `JWT_SECRET` invalida cualquier token JWT ya emitido (expiran a 30 días). Como esta es la
+> ⚠️ Cambiar `JWT_SECRET` invalida cualquier token JWT ya emitido (expiran por defecto a 7 días). Como esta es la
 > **primera** vez que prod corre con auth, no hay tokens válidos vivos → poné el secreto fuerte ahora sin
 > problema. Si lo cambiás más adelante, el APP forzará re-login en todos los dispositivos.
 
@@ -146,11 +149,25 @@ la cuenta de Google necesita **verificación en 2 pasos (2FA) activada**.
 
 ### 1.4 Migraciones en producción
 
-**No hay migraciones pendientes.** La DB Neon ya tiene las 10 migraciones (`0000`→`0009`) aplicadas, `users`
-poblada y los índices de la auditoría creados (lo verifiqué con `psql` contra la URL real).
+El repo tiene migraciones versionadas hasta **`0024_regular_drax.sql`**. Antes de desplegar código que
+depende del schema, confirmá la DB real con:
 
-Si en el futuro generás una migración nueva (`pnpm db:generate` en `server/`), aplicala a Neon con cualquiera
-de estas dos vías:
+```sql
+SELECT hash, created_at
+FROM drizzle.__drizzle_migrations
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+También verificá la constraint financiera:
+
+```sql
+SELECT conname, convalidated
+FROM pg_constraint
+WHERE conname = 'accounts_balance_nonnegative';
+```
+
+Si falta alguna migración del repo, aplicala a Neon con cualquiera de estas dos vías:
 
 - **Desde tu máquina** (la más simple, el `.env` de la raíz apunta a la DB real):
   ```bash
@@ -160,9 +177,9 @@ de estas dos vías:
 - **Desde Render** (Shell del servicio, requiere plan con Shell): `pnpm db:migrate`. Como `tsx` es devDependency
   y el Build Command instala todo, está disponible. Es idempotente.
 
-> El usuario admin ya existe: **`mauiturriza@gmail.com` / `admin123`** (lo fija `pnpm db:seed`; cambialo desde
-> la app en *Más → Perfil*). Si necesitaras re-seedear (recrea categorías default y rehashea la pass del admin):
-> `cd server && pnpm db:seed`.
+> El usuario admin usa email **`mauiturriza@gmail.com`**. `pnpm db:seed` toma la contraseña desde
+> `ADMIN_PASSWORD`; si no existe y el admin ya fue creado, conserva la contraseña actual. Si crea el admin
+> desde cero sin `ADMIN_PASSWORD`, genera una contraseña aleatoria y la imprime una sola vez.
 
 ---
 
@@ -190,15 +207,17 @@ curl -s -o /dev/null -w "%{http_code}\n" https://wallet-7v82.onrender.com/api/ac
 # → 401
 
 # d) Login real → debe devolver { token, user }:
+# Reemplazá ADMIN_PASSWORD_REAL por la contraseña vigente del admin
+# (o por la definida temporalmente en ADMIN_PASSWORD antes de correr db:seed).
 curl -s -X POST https://wallet-7v82.onrender.com/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"mauiturriza@gmail.com","password":"admin123"}'
+  -d '{"email":"mauiturriza@gmail.com","password":"ADMIN_PASSWORD_REAL"}'
 # → {"token":"eyJ...","user":{...}}
 
 # e) Usar el token para una ruta protegida:
 TOKEN=$(curl -s -X POST https://wallet-7v82.onrender.com/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"mauiturriza@gmail.com","password":"admin123"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+  -d '{"email":"mauiturriza@gmail.com","password":"ADMIN_PASSWORD_REAL"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
 
 curl -s https://wallet-7v82.onrender.com/api/accounts \
   -H "Authorization: Bearer $TOKEN"
@@ -290,12 +309,14 @@ npx eas build:list --platform android --limit 1
   `pnpm install` localmente en `server/`, commiteá el `pnpm-lock.yaml` y redeployá.
 
 **"relation ... does not exist" / faltan columnas `user_id` en runtime.**
-- La DB no tiene las migraciones. No es el caso hoy (verificado), pero si pasara: `cd server && pnpm db:migrate`.
+- La DB no tiene todas las migraciones del repo. Verificá `drizzle.__drizzle_migrations` contra
+  `server/drizzle/meta/_journal.json`; si faltan entradas, corré `cd server && pnpm db:migrate`.
   Es idempotente.
 
-**Login dice credenciales inválidas con `admin123`.**
-- La pass del admin fue cambiada desde la app, o `db:seed` no corrió. Para resetear a `admin123`:
-  `cd server && pnpm db:seed` (rehashea la pass del admin a `admin123`). Después cambiala en *Más → Perfil*.
+**Login dice credenciales inválidas con el admin.**
+- La contraseña del admin fue cambiada desde la app o no coincide con `ADMIN_PASSWORD`. Para forzar una
+  nueva contraseña de admin, define `ADMIN_PASSWORD` temporalmente y corre `cd server && pnpm db:seed`;
+  después cámbiala desde *Más → Mi cuenta* y retira el secreto si no lo necesitas.
 
 **El APK apunta a `localhost` / `192.168.0.12` y no a Render.**
 - Estás corriendo en dev (Expo Go) o el build no tomó `eas.json`. En el APK de EAS, `EXPO_PUBLIC_API_URL` viene

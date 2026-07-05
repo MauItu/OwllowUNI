@@ -11,14 +11,16 @@ Clon de "Wallet by BudgetBakers". Monorepo con backend (Express + Drizzle + Neon
   ```
   DATABASE_URL=postgres://...neon.tech/neondb?sslmode=require
   ```
+- `JWT_SECRET` de al menos 32 caracteres en `.env`. Opcionales: `GMAIL_USER`/`GMAIL_APP_PASSWORD`
+  para recuperación de contraseña y `ALERT_WEBHOOK_URL` para alertas operativas.
 
 ## Backend
 ```bash
 cd server
 pnpm install
-pnpm db:generate   # genera migraciones desde el schema
-pnpm db:migrate    # las aplica en Neon
-pnpm db:seed       # categorías por defecto + cuenta "Efectivo"
+pnpm db:generate   # solo después de cambiar el schema
+pnpm db:migrate    # aplica migraciones versionadas en Neon
+pnpm db:seed       # solo para bootstrap/admin; no lo corras como parte normal del deploy
 pnpm dev           # API en http://localhost:3000
 ```
 
@@ -37,3 +39,11 @@ cd mobile
 pnpm build:apk     # eas build -p android --profile preview
 ```
 (Requiere `eas login` y `eas init` para configurar `projectId` en `app.json`.)
+
+## Verificación
+```bash
+cd server && pnpm typecheck && pnpm test
+cd mobile && pnpm typecheck
+```
+
+CI corre estos checks en GitHub Actions para PRs y pushes a `main`.

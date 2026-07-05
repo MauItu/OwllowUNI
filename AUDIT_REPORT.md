@@ -4,6 +4,11 @@
 > **Etapa: IMPLEMENTACIÓN COMPLETADA.** Grupos G1–G6 aplicados en commits lógicos
 > (rama `APK`). Baselines verdes tras los cambios. Estado final por hallazgo en §11.
 > Fecha: 2026-06-13.
+>
+> **Nota de vigencia:** reporte histórico de la fase `APK`. El código actual endureció más el sistema:
+> CORS sin `CORS_ORIGINS` en producción niega orígenes web, `JWT_EXPIRATION` default es `7d`, existe
+> revocación por `token_version`, recuperación de contraseña por email, legales, export/delete de cuenta,
+> CI y tests. Para estado operativo actual, ver `PROJECT_CONTEXT.md`, `RUNBOOK.md` y `DEPLOY_AND_APK.md`.
 
 ---
 
@@ -132,7 +137,8 @@ implementado y en uso. El propio brief parte de esa premisa obsoleta.
     es 10⁴. Dado que vive en SecureStore (respaldo por hardware), hay lockout (5 intentos/30s) y el
     secreto real es el JWT (almacenado aparte), el modelo de amenaza es **proporcional**. No se
     recomienda cambiar (PBKDF2/scrypt aportaría poco aquí).
-- **Bien:** `JWT_SECRET` es obligatorio al arrancar (lanza si falta); `.env` git-ignored; tokens 30d.
+- **Bien en esa fase:** `JWT_SECRET` era obligatorio al arrancar (lanza si falta); `.env` git-ignored.
+  Estado actual: tokens default `7d` y revocacion por `token_version`.
 
 ---
 

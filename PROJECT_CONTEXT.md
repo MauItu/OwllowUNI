@@ -130,8 +130,9 @@ wallet/                         ← raíz del repo
     (`*_TTL_MS`) se derivan de los valores canónicos en segundos de `utils/constants.ts` (`CACHE_TTL_*`).
   - `invalidateOnMutation` sube `dataVersion[uid]` tras CADA mutación 2xx del usuario (en `finish`,
     post-commit) → invalida toda su caché. Montado en todos los routers de datos.
-- **CORS:** `CORS_ORIGINS` (lista separada por comas) restringe orígenes; sin ella, se permite
-  cualquiera (default de dev). Las apps nativas no envían `Origin`, así que el móvil no se afecta.
+- **CORS:** `CORS_ORIGINS` (lista separada por comas) restringe orígenes web. Sin ella, en
+  **desarrollo** se permite cualquier origen para pruebas; en **producción** se niega el CORS de
+  navegador (`origin: false`). Las apps nativas no envían `Origin`, así que el móvil no se afecta.
 - **N+1 splits resuelto:** `GET /api/splits` y `/summary` usan `computeBalancesForGroups` (3 queries
   totales) en vez de iterar `computeBalances` por grupo.
 - **Provisión de defaults por lote (`db/defaults.ts → provisionUserDefaults`):** el registro ya NO
