@@ -2,9 +2,6 @@
 
 **Última actualización: 4 de julio de 2026**
 
-> Este documento también está disponible dentro de la app (Más → Ayuda → Política de privacidad).
-> El texto que ve el usuario en la app vive en `mobile/src/legal/texts.ts`; este archivo es la copia canónica del repositorio.
-> La copia pública (GitHub Pages, requerida por Play Store) vive en `docs/privacidad.md`: si cambias algo aquí, actualiza las tres.
 
 ## 1. Responsable del tratamiento
 

@@ -2,9 +2,6 @@
 
 **Última actualización: 4 de julio de 2026**
 
-> Este documento también está disponible dentro de la app (Más → Ayuda → Términos y condiciones).
-> El texto que ve el usuario en la app vive en `mobile/src/legal/texts.ts`; este archivo es la copia canónica del repositorio.
-> La copia pública (GitHub Pages, requerida por Play Store) vive en `docs/terminos.md`: si cambias algo aquí, actualiza las tres.
 
 ## 1. El servicio
 
@@ -24,7 +21,7 @@ Te comprometes a no intentar acceder a datos de otros usuarios, no interferir co
 
 ## 4. Tus datos
 
-Tus datos te pertenecen. Puedes exportarlos en cualquier momento (Mi cuenta → Descargar mis datos). El tratamiento de datos personales se rige por la [Política de privacidad](./PRIVACY.md).
+Tus datos te pertenecen. Puedes exportarlos en cualquier momento (Mi cuenta → Descargar mis datos). El tratamiento de datos personales se rige por la [Política de privacidad](./privacidad).
 
 ## 5. Disponibilidad y estado del servicio
 

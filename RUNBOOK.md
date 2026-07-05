@@ -48,7 +48,23 @@ pnpm db:migrate      # aplica contra la DATABASE_URL del .env raíz
   documentación antigua que hable solo de `0000`→`0009`.
 - Si una migración necesita ser destructiva (DROP/ALTER TYPE): plan aparte con backup previo y deploy coordinado. Hasta hoy nunca ha hecho falta.
 - Estado aplicado: tabla `drizzle.__drizzle_migrations` (o comparar contra `drizzle/meta/_journal.json`).
-- Pendiente conocido: `accounts_balance_nonnegative` (0021) está `NOT VALID`; tras reparar los 2 saldos negativos históricos (accounts id 11 y 15), correr `ALTER TABLE accounts VALIDATE CONSTRAINT accounts_balance_nonnegative;`.
+- Pendiente conocido: `accounts_balance_nonnegative` (0021) está `NOT VALID` (verificado 2026-07-04);
+  las cuentas 11 y 15 (ambas "Efectivo", usuarios 5 y 6) siguen con saldo negativo histórico.
+  Reparación recomendada — `allow_overdraft = true` preserva la historia de transacciones y mantiene
+  la reconciliación consistente (poner el saldo en 0 la rompería):
+
+  ```sql
+  -- 1. Confirmar que siguen siendo solo estas dos:
+  SELECT id, user_id, current_balance FROM accounts
+   WHERE allow_overdraft = false AND current_balance::numeric < 0;
+  -- 2. Reparar sin tocar saldos ni transacciones:
+  UPDATE accounts SET allow_overdraft = true, updated_at = now() WHERE id IN (11, 15);
+  -- 3. Activar la protección para TODAS las filas:
+  ALTER TABLE accounts VALIDATE CONSTRAINT accounts_balance_nonnegative;
+  -- 4. Verificar (convalidated debe ser t):
+  SELECT conname, convalidated FROM pg_constraint
+   WHERE conname = 'accounts_balance_nonnegative';
+  ```
 
 ## Rollback
 
