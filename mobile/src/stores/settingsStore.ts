@@ -19,13 +19,13 @@ interface SettingsState {
   hydrated: boolean;
 }
 
-// El usuario activo define la clave de persistencia (`wallet-settings-<userId>`),
+// El usuario activo define la clave de persistencia (`owllow-settings-<userId>`),
 // así las preferencias de un usuario no afectan a otro y persisten al re-login.
 let currentUserKey = 'guest';
 
 /**
  * Storage de AsyncStorage que namespacea por usuario. La clave lógica es fija
- * (`wallet-settings`) pero la física incluye el usuario activo.
+ * (`owllow-settings`) pero la física incluye el usuario activo.
  */
 const userScopedStorage = createJSONStorage(() => ({
   getItem: (name: string) => AsyncStorage.getItem(`${name}-${currentUserKey}`),
@@ -45,7 +45,7 @@ export const useSettingsStore = create<SettingsState>()(
       hydrated: false,
     }),
     {
-      name: 'wallet-settings',
+      name: 'owllow-settings',
       storage: userScopedStorage,
       partialize: (s) => ({ mainCurrency: s.mainCurrency, paletteId: s.paletteId, themeMode: s.themeMode }),
       onRehydrateStorage: () => (state) => {

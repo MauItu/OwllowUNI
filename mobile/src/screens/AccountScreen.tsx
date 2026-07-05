@@ -34,7 +34,7 @@ export function AccountScreen() {
     setExporting(true);
     try {
       const data = await authApi.exportData();
-      const filename = `mis-datos-wallet-${new Date().toISOString().slice(0, 10)}.json`;
+      const filename = `mis-datos-owllow-${new Date().toISOString().slice(0, 10)}.json`;
       const uri = (FileSystem.cacheDirectory ?? '') + filename;
       await FileSystem.writeAsStringAsync(uri, JSON.stringify(data, null, 2), {
         encoding: FileSystem.EncodingType.UTF8,

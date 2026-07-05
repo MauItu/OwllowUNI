@@ -1,4 +1,4 @@
-# Política de privacidad — Wallet
+# Política de privacidad — Owllow
 
 **Última actualización: 4 de julio de 2026**
 
@@ -7,7 +7,7 @@
 
 ## 1. Responsable del tratamiento
 
-Wallet es una aplicación de registro de finanzas personales desarrollada de forma independiente.
+Owllow es una aplicación de registro de finanzas personales desarrollada de forma independiente.
 Responsable del tratamiento de datos: el desarrollador de la app.
 Contacto: **mauiturriza@gmail.com**.
 

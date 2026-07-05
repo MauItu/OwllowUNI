@@ -161,7 +161,7 @@ export async function authenticateBiometric(): Promise<boolean> {
   try {
     if (!(await isBiometricAvailable())) return false;
     const res = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Desbloquea Wallet',
+      promptMessage: 'Desbloquea Owllow',
       cancelLabel: 'Usar PIN',
       // Mostramos NUESTRO PIN como fallback, no el del sistema.
       disableDeviceFallback: true,

@@ -24,7 +24,7 @@ export const PRIVACY_POLICY: LegalDoc = {
     {
       title: '1. Responsable del tratamiento',
       body:
-        'Wallet es una aplicación de registro de finanzas personales desarrollada de forma independiente. ' +
+        'Owllow es una aplicación de registro de finanzas personales desarrollada de forma independiente. ' +
         'Responsable del tratamiento de datos: el desarrollador de la app. Contacto: mauiturriza@gmail.com.',
     },
     {
@@ -97,9 +97,9 @@ export const TERMS: LegalDoc = {
     {
       title: '1. El servicio',
       body:
-        'Wallet es una aplicación de registro de finanzas personales: te permite anotar y organizar tus cuentas, gastos, ingresos, ' +
+        'Owllow es una aplicación de registro de finanzas personales: te permite anotar y organizar tus cuentas, gastos, ingresos, ' +
         'presupuestos, deudas, ahorros y gastos compartidos.\n\n' +
-        'Wallet NO es una entidad financiera. No maneja dinero real, no ejecuta pagos ni transferencias, no se conecta a bancos y no ' +
+        'Owllow NO es una entidad financiera. No maneja dinero real, no ejecuta pagos ni transferencias, no se conecta a bancos y no ' +
         'ofrece asesoría financiera, tributaria ni de inversión. Todos los saldos y cálculos (intereses, cuotas, conversiones de ' +
         'moneda, estadísticas) son informativos y se basan exclusivamente en los datos que tú ingresas.',
     },

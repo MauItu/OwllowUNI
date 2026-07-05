@@ -3,13 +3,13 @@
  * app"). Se muestra UNA sola vez tras el primer login/registro y se puede saltar.
  *
  * El flag se guarda en AsyncStorage namespaceado por usuario, igual que las
- * preferencias (`wallet_tutorial_seen_<userId>`), para que cada cuenta vea el
+ * preferencias (`owllow_tutorial_seen_<userId>`), para que cada cuenta vea el
  * tutorial la primera vez aunque compartan el mismo dispositivo. No es un dato
  * sensible, así que AsyncStorage (no SecureStore) es suficiente.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const keyFor = (userId: string | number) => `wallet_tutorial_seen_${userId}`;
+const keyFor = (userId: string | number) => `owllow_tutorial_seen_${userId}`;
 
 /** true si el usuario ya vio (o saltó) el tutorial alguna vez. */
 export async function hasSeenTutorial(userId: string | number): Promise<boolean> {

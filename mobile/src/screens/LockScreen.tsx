@@ -134,7 +134,7 @@ export function LockScreen({ onUnlock }: Props) {
         <View style={styles.logo}>
           <Icon name="lock-keyhole" size={34} color="#FFFFFF" />
         </View>
-        <Text style={styles.title}>Wallet bloqueada</Text>
+        <Text style={styles.title}>Owllow bloqueada</Text>
         <Text style={styles.subtitle}>Ingresa tu PIN para continuar</Text>
 
         <View style={styles.dots}>

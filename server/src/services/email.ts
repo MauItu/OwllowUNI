@@ -22,7 +22,7 @@ export function assertEmailConfigured(): void {
   }
 }
 
-const RESET_EMAIL_SUBJECT = 'Código de recuperación — Wallet Clone';
+const RESET_EMAIL_SUBJECT = 'Código de recuperación — Owllow';
 
 /** HTML sencillo con el código de 6 dígitos bien visible y aviso de expiración. */
 function resetEmailHtml(code: string): string {
@@ -30,7 +30,7 @@ function resetEmailHtml(code: string): string {
   <div style="font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; color: #212529;">
     <h1 style="font-size: 20px; margin: 0 0 8px;">Recuperá tu contraseña</h1>
     <p style="font-size: 15px; color: #6C757D; margin: 0 0 24px;">
-      Usá este código en la app de Wallet Clone para crear una nueva contraseña:
+      Usá este código en la app de Owllow para crear una nueva contraseña:
     </p>
     <div style="background: #F1D7E2; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
       <span style="font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #A8336B;">${code}</span>

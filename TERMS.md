@@ -1,4 +1,4 @@
-# Términos y condiciones — Wallet
+# Términos y condiciones — Owllow
 
 **Última actualización: 4 de julio de 2026**
 
@@ -7,9 +7,9 @@
 
 ## 1. El servicio
 
-Wallet es una aplicación de **registro de finanzas personales**: te permite anotar y organizar tus cuentas, gastos, ingresos, presupuestos, deudas, ahorros y gastos compartidos.
+Owllow es una aplicación de **registro de finanzas personales**: te permite anotar y organizar tus cuentas, gastos, ingresos, presupuestos, deudas, ahorros y gastos compartidos.
 
-**Wallet NO es una entidad financiera.** No maneja dinero real, no ejecuta pagos ni transferencias, no se conecta a bancos y no ofrece asesoría financiera, tributaria ni de inversión. Todos los saldos y cálculos (intereses, cuotas, conversiones de moneda, estadísticas) son informativos y se basan exclusivamente en los datos que tú ingresas.
+**Owllow NO es una entidad financiera.** No maneja dinero real, no ejecuta pagos ni transferencias, no se conecta a bancos y no ofrece asesoría financiera, tributaria ni de inversión. Todos los saldos y cálculos (intereses, cuotas, conversiones de moneda, estadísticas) son informativos y se basan exclusivamente en los datos que tú ingresas.
 
 ## 2. Tu cuenta
 

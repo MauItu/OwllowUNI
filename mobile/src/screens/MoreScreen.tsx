@@ -149,7 +149,7 @@ export function MoreScreen() {
           style={({ pressed }) => [styles.item, pressed && { backgroundColor: theme.colors.surfaceLight }]}
           onPress={() =>
             Linking.openURL(
-              `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Soporte Wallet')}`,
+              `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Soporte Owllow')}`,
             ).catch(() => {})
           }
           accessibilityRole="button"
@@ -176,7 +176,7 @@ export function MoreScreen() {
 
         {/* Versión de la app (de app.json vía expo-constants) */}
         <Text style={styles.version}>
-          Wallet v{Constants.expoConfig?.version ?? '1.0.0'}
+          Owllow v{Constants.expoConfig?.version ?? '1.0.0'}
         </Text>
       </ScrollView>
 

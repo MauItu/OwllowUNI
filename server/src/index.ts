@@ -83,7 +83,7 @@ app.use(
 app.use(express.json());
 
 app.get('/', (_req, res) => {
-  res.json({ name: 'Wallet Clone API', status: 'ok', version: '1.0.0' });
+  res.json({ name: 'Owllow API', status: 'ok', version: '1.0.0' });
 });
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
