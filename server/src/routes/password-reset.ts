@@ -6,7 +6,6 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db/connection.js';
 import { users, passwordResets } from '../db/schema.js';
 import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
-import { assertEmailConfigured, sendResetCodeEmail } from '../services/email.js';
 import { passwordResetLimiter } from '../middleware/rateLimiter.js';
 import { BCRYPT_ROUNDS, MIN_PASSWORD_LENGTH } from '../utils/constants.js';
 import { invalidateTokenVersionCache } from '../middleware/auth.js';
@@ -17,6 +16,7 @@ export const passwordResetRouter = Router();
 const CODE_TTL_MS = 15 * 60 * 1000; // 15 minutos
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hora
 const RATE_LIMIT_MAX = 3; // máx. solicitudes por email por hora
+const PASSWORD_RESET_ENABLED = false; // Temporal: desactivado mientras no se use Gmail SMTP.
 
 // Mensaje genérico: no revela si el email existe (anti-enumeración).
 const GENERIC_MESSAGE = 'Si el email existe, recibirás un código.';
@@ -43,6 +43,12 @@ function generateCode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, '0');
 }
 
+function assertPasswordResetEnabled(): void {
+  if (!PASSWORD_RESET_ENABLED) {
+    throw new ApiError(503, 'Recuperación de contraseña temporalmente deshabilitada.');
+  }
+}
+
 // POST /api/auth/forgot-password
 passwordResetRouter.post(
   '/forgot-password',
@@ -50,9 +56,7 @@ passwordResetRouter.post(
   asyncHandler(async (req, res) => {
     const { email } = forgotSchema.parse(req.body);
 
-    // Falla de forma uniforme si no hay clave de correo (antes del lookup, para
-    // no filtrar la existencia del email vía el tipo de error).
-    assertEmailConfigured();
+    assertPasswordResetEnabled();
 
     const [user] = await db.select().from(users).where(eq(users.email, email));
     // Si el email no existe respondemos 200 igualmente (anti-enumeración).
@@ -83,8 +87,6 @@ passwordResetRouter.post(
 
     await db.insert(passwordResets).values({ userId: user.id, code, token, expiresAt });
 
-    await sendResetCodeEmail(user.email, code);
-
     res.json({ message: GENERIC_MESSAGE });
   }),
 );
@@ -95,6 +97,8 @@ passwordResetRouter.post(
   passwordResetLimiter,
   asyncHandler(async (req, res) => {
     const { email, code } = verifySchema.parse(req.body);
+
+    assertPasswordResetEnabled();
 
     const [match] = await db
       .select({ token: passwordResets.token })
@@ -122,6 +126,8 @@ passwordResetRouter.post(
   passwordResetLimiter,
   asyncHandler(async (req, res) => {
     const { token, newPassword } = resetSchema.parse(req.body);
+
+    assertPasswordResetEnabled();
 
     const [reset] = await db
       .select()

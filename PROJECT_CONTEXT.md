@@ -55,17 +55,18 @@ wallet/                         ← raíz del repo
     (caché de token_version invalidado; el usuario inexistente nunca vuelve a autenticar). Verificado E2E:
     usuario con tx+deuda+pago+ahorro+aporte+split+regla → borrado 200, token después 401, 0 filas huérfanas.
   - **Recuperación de contraseña por email** (`routes/password-reset.ts`, públicos; código de 6 dígitos
-    pensado para móvil, no link). Requiere `GMAIL_USER` y `GMAIL_APP_PASSWORD` (envío vía **Gmail SMTP** con
-    **Nodemailer**). **REACTIVADA (jul-2026):** se quitaron los bypass 503 y el link de `LoginScreen` está
-    activo. ⚠️ Falta configurar `GMAIL_*` en Render para que funcione en prod (sin ellas responde 503).
-    - `POST /api/auth/forgot-password` — `{ email }`. Si el email existe: genera código de 6 dígitos
+    pensado para móvil, no link). **DESHABILITADA TEMPORALMENTE (jul-2026):** `PASSWORD_RESET_ENABLED=false`
+    en backend y el link de `LoginScreen` muestra aviso sin navegar al OTP. No se requieren `GMAIL_USER` ni
+    `GMAIL_APP_PASSWORD` mientras esté apagada. Para reactivarla, volver a `PASSWORD_RESET_ENABLED=true`,
+    configurar `GMAIL_*` en Render y probar el flujo E2E.
+    - `POST /api/auth/forgot-password` — temporalmente responde 503. Al reactivarlo: `{ email }`; si el email existe, genera código de 6 dígitos
       (`crypto.randomInt`) + token de 64 chars (`crypto.randomBytes`), expiración 15 min, invalida códigos
       previos no usados del usuario y envía el código por email. **Siempre responde 200** con mensaje genérico
       (anti-enumeración). Rate limit **3/hora por email** (cuenta filas en `password_resets`, sin Redis) → 429.
-      Si faltan `GMAIL_USER`/`GMAIL_APP_PASSWORD` responde 503 con mensaje claro (no crashea).
-    - `POST /api/auth/verify-reset-code` — `{ email, code }` → `{ token }` si el código es válido/no usado/no
+      Si `PASSWORD_RESET_ENABLED=false`, responde 503 sin intentar usar Gmail.
+    - `POST /api/auth/verify-reset-code` — temporalmente responde 503. Al reactivarlo: `{ email, code }` → `{ token }` si el código es válido/no usado/no
       expirado (JOIN con `users`); 400 si no. **No** marca el código como usado todavía.
-    - `POST /api/auth/reset-password` — `{ token, newPassword(≥8) }`. Rehashea con bcrypt 12 y, en un `db.batch`
+    - `POST /api/auth/reset-password` — temporalmente responde 503. Al reactivarlo: `{ token, newPassword(≥8) }`. Rehashea con bcrypt 12 y, en un `db.batch`
       atómico, actualiza `users.password_hash`, **incrementa `token_version`** (revoca sesiones) y marca el reset
       `used=true` (token de un solo uso). 400 si el token es inválido/expirado/usado.
   > **Política de contraseñas unificada:** mínimo **8** en TODOS los flujos (registro, perfil, reset), vía
@@ -90,8 +91,8 @@ wallet/                         ← raíz del repo
     (X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, Cross-Origin-*, quita X-Powered-By).
   - **Validación de entorno al arrancar (`utils/validateEnv.ts`, Zod):** importado PRIMERO en `index.ts`.
     Valida `DATABASE_URL` (url), `JWT_SECRET` (≥32 chars), `JWT_EXPIRATION` (default '7d'), `NODE_ENV`
-    (default 'development'), `PORT` (default 3000); `GMAIL_USER`/`GMAIL_APP_PASSWORD` opcionales (si faltan,
-    `console.warn` "Recuperación de contraseña deshabilitada: faltan GMAIL_*"). Si algo falla → `process.exit(1)`
+    (default 'development'), `PORT` (default 3000); `GMAIL_USER`/`GMAIL_APP_PASSWORD` opcionales y sin warning
+    mientras recuperación esté apagada. Si algo falla → `process.exit(1)`
     con el detalle, NO arranca en estado roto.
   - **Sanitización de ids (`utils/parseId.ts`):** TODAS las rutas usan `parseId(req.params.id|groupId)` en vez
     de `Number(...)`. Exige entero > 0 (rechaza `NaN`, decimales, negativos y arrays de Express 5) → `ApiError(400, 'ID inválido')`.
@@ -100,7 +101,7 @@ wallet/                         ← raíz del repo
   el token y redirige al login. Paletas restringidas a admin (resto: `professional`). El stack de auth
   incluye además el flujo de recuperación: `ForgotPasswordScreen` (pide email) → `VerifyResetCodeScreen`
   (6 inputs OTP, timer de 15 min, reenviar con throttle de 60 s) → `ResetPasswordScreen` (nueva contraseña,
-  mínimo 8). El link "¿Olvidaste tu contraseña?" de `LoginScreen` está **activo** (reactivado jul-2026).
+  mínimo 8), pero está **deshabilitado temporalmente**; el link "¿Olvidaste tu contraseña?" muestra aviso y no navega.
   > **Privacidad y cuenta (jul-2026):** `RegisterScreen` exige un **checkbox de consentimiento** (términos +
   > política de privacidad + autorización de tratamiento de datos) antes de crear la cuenta, con links a
   > **`LegalScreen`** (`{ doc: 'privacy' | 'terms' }`, textos embebidos en `src/legal/texts.ts`, espejo de
@@ -807,9 +808,9 @@ zod ^3.23, cors ^2.8, dotenv ^16.4, date-fns ^4.1, **bcryptjs ^3** (hash de cont
 **node-cron ^4** (scheduler de pagos recurrentes; **trae sus propios tipos** — NO instalar `@types/node-cron`, que es v3) ·
 dev: drizzle-kit ^0.28, tsx ^4.19, typescript ^5.6, @types/bcryptjs, @types/jsonwebtoken, @types/nodemailer,
 @types/compression (compression no trae tipos propios).
-Requiere **`JWT_SECRET`** en el `.env` raíz; **`GMAIL_USER`** y **`GMAIL_APP_PASSWORD`** son obligatorias solo
-para enviar emails de recuperación (si faltan, esos endpoints responden 503 con mensaje claro; el resto de la
-API funciona igual). El transporter usa `smtp.gmail.com:465` (secure) y el `from` es `GMAIL_USER`.
+Requiere **`JWT_SECRET`** en el `.env` raíz. **`GMAIL_USER`** y **`GMAIL_APP_PASSWORD`** no son necesarias
+mientras recuperación de contraseña esté deshabilitada; al reactivarla, vuelven a ser necesarias para enviar
+emails vía Gmail SMTP (`smtp.gmail.com:465`, secure, `from=GMAIL_USER`).
 > **Multi-moneda no añade dependencias:** las tasas se consultan con el `fetch` nativo de Node 22 (Frankfurter /
 > open.er-api.com). En mobile la persistencia de la moneda principal usa el middleware `persist` de Zustand sobre
 > `@react-native-async-storage/async-storage` (ya instalado); no se agregó ningún paquete.
@@ -1492,8 +1493,9 @@ salvo el middleware de logging. El orden del pipeline es: `helmet` → `requestL
   headers de seguridad (X-Content-Type-Options, X-Frame-Options, HSTS, etc.) apliquen a todas las respuestas.
   Ver detalle en "Hardening de producción (server)" arriba.
 - **Validación de entorno (`utils/validateEnv.ts`, Zod):** `import './utils/validateEnv.js'` es lo PRIMERO de
-  `index.ts`. Valida `DATABASE_URL` (requerido), `JWT_SECRET` (≥32 chars), `PORT` (default 3000) y avisa si
-  faltan `GMAIL_USER`/`GMAIL_APP_PASSWORD` (opcionales). Si algo falla → `process.exit(1)` con mensaje claro.
+  `index.ts`. Valida `DATABASE_URL` (requerido), `JWT_SECRET` (≥32 chars) y `PORT` (default 3000).
+  `GMAIL_USER`/`GMAIL_APP_PASSWORD` son opcionales y no generan warning mientras recuperación esté apagada.
+  Si algo falla → `process.exit(1)` con mensaje claro.
 - **Compresión gzip (`compression ^1.8`):** `app.use(compression())` montado **después de helmet, antes
   de las rutas**. Threshold por defecto (1 kb): comprime los payloads grandes (export, listas largas,
   insights) sin tocar los chicos. Añade `Vary: Accept-Encoding` a las respuestas.

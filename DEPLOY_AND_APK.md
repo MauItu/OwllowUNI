@@ -39,8 +39,8 @@ con auth y Render lo despliega. El flujo sigue siendo **merge a `main` → auto-
   constraint nace `NOT VALID`; tras revisar
   que no haya saldos negativos históricos ilegítimos, correr
   `ALTER TABLE accounts VALIDATE CONSTRAINT accounts_balance_nonnegative;`.
-- `GMAIL_USER`/`GMAIL_APP_PASSWORD` sin configurar en Render → la recuperación de contraseña
-  responde 503 por configuración. El código de reset está activo; ya no hay bypass temporal.
+- Recuperación de contraseña deshabilitada temporalmente (`PASSWORD_RESET_ENABLED=false`).
+  No se requieren `GMAIL_USER`/`GMAIL_APP_PASSWORD` mientras esté apagada.
 
 ---
 
@@ -99,8 +99,8 @@ En **Settings → Environment** del servicio, configurá:
 |---|---|---|---|
 | `DATABASE_URL` | *(secreto — ver abajo)* | ✅ Sí | Connection string de Neon. **Está en el `.env` de la raíz del repo.** Copiala desde ahí. El server no arranca sin ella. |
 | `JWT_SECRET` | *(secreto — poné uno fuerte)* | ✅ Sí | El server **no arranca** sin esto. En el repo el `.env` trae el default de dev `wallet-clone-secret-change-in-production`; **en Render poné un valor aleatorio fuerte** (ver comando abajo). |
-| `GMAIL_USER` | *(secreto — ver abajo)* | ⚠️ Para recuperar contraseña | Dirección de Gmail que **envía** el email con el código de recuperación (también es el remitente `from`). Va de la mano con `GMAIL_APP_PASSWORD`. **Sin ambas la API arranca igual**, pero `forgot-password` responde 503. El resto de la app funciona normal. |
-| `GMAIL_APP_PASSWORD` | *(secreto — ver abajo)* | ⚠️ Para recuperar contraseña | **Contraseña de aplicación** de 16 caracteres generada en la cuenta de Google (NO la contraseña normal; requiere verificación en 2 pasos). Va de la mano con `GMAIL_USER`. |
+| `GMAIL_USER` | *(secreto — ver abajo)* | Solo al reactivar reset | Dirección de Gmail que **envía** el email con el código de recuperación. No se requiere mientras `PASSWORD_RESET_ENABLED=false`. |
+| `GMAIL_APP_PASSWORD` | *(secreto — ver abajo)* | Solo al reactivar reset | Contraseña de aplicación de Gmail. No se requiere mientras `PASSWORD_RESET_ENABLED=false`. |
 | `CORS_ORIGINS` | *(no setear salvo cliente web)* | ❌ No | En producción, si falta, el backend **niega CORS de navegador** (`origin:false`). **El APK nativo no envía header `Origin`, así que el móvil funciona igual.** Definila solo si sirves un frontend web. |
 | `PORT` | *(no setear)* | ❌ No | Lo inyecta Render. |
 | `NODE_VERSION` | `22` | recomendado | El código usa `fetch` nativo de Node 22 (tasas de cambio). |
@@ -126,7 +126,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 > **primera** vez que prod corre con auth, no hay tokens válidos vivos → poné el secreto fuerte ahora sin
 > problema. Si lo cambiás más adelante, el APP forzará re-login en todos los dispositivos.
 
-**Obtener `GMAIL_USER` y `GMAIL_APP_PASSWORD` (recuperación de contraseña por email vía Gmail SMTP):**
+**Obtener `GMAIL_USER` y `GMAIL_APP_PASSWORD` (solo si se reactiva la recuperación por email):**
 
 El envío usa **Nodemailer** contra el SMTP de Gmail (`smtp.gmail.com:465`). Gmail no permite usar tu
 contraseña normal desde apps: hay que generar una **contraseña de aplicación** (16 caracteres). Para eso
@@ -144,8 +144,8 @@ la cuenta de Google necesita **verificación en 2 pasos (2FA) activada**.
    (Para probar localmente, agregá ambas también al `.env` de la raíz del repo.)
 4. **Remitente (`from`):** es directamente `GMAIL_USER`; el email sale desde tu propia dirección de Gmail.
 
-> Sin `GMAIL_USER`/`GMAIL_APP_PASSWORD`, todo lo demás funciona: solo el flujo "¿Olvidaste tu contraseña?"
-> devuelve un error claro (503). El login/registro normal no las necesita.
+> Mientras `PASSWORD_RESET_ENABLED=false`, todo lo demás funciona y el flujo "¿Olvidaste tu contraseña?"
+> queda deshabilitado temporalmente. El login/registro normal no necesita `GMAIL_*`.
 
 ### 1.4 Migraciones en producción
 

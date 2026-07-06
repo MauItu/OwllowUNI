@@ -21,7 +21,7 @@
 | `JWT_EXPIRATION` | no (default `7d`) | Vida del token |
 | `NODE_ENV` | `production` | Rate limits reales, logs mínimos, CORS cerrado |
 | `CORS_ORIGINS` | no | Orígenes web permitidos. Si falta en producción, se niega CORS de navegador; el APK no se afecta |
-| `GMAIL_USER` / `GMAIL_APP_PASSWORD` | para reset | Sin ellas, recuperación de contraseña responde 503 |
+| `GMAIL_USER` / `GMAIL_APP_PASSWORD` | no mientras reset esté apagado | Recuperación de contraseña deshabilitada temporalmente; configurar solo al reactivarla |
 | `ALERT_WEBHOOK_URL` | recomendada | Webhook (Discord/Slack/ntfy) para alertas críticas |
 | `ADMIN_PASSWORD` | solo para `db:seed` | No la usa el runtime |
 
@@ -106,7 +106,7 @@ Estado conocido (2026-07-04): 19/20 cuentas en 0.00; 1 tarjeta (`accounts.id=18`
 | Síntoma | Causa probable | Acción |
 |---|---|---|
 | App muestra "Conectando con el servidor…" y tarda | Cold start de Render free (~10-30 s) | Normal; el cliente reintenta solo. Solución de fondo: instancia de pago |
-| 503 en `/api/auth/forgot-password` | Faltan `GMAIL_*` en Render | Configurarlas (App Password de Gmail, no la contraseña normal) |
+| 503 en `/api/auth/forgot-password` | Recuperación deshabilitada temporalmente | Esperado mientras `PASSWORD_RESET_ENABLED=false`; reactivar y configurar `GMAIL_*` cuando se retome |
 | Todos los usuarios deslogueados | Se rotó `JWT_SECRET` o bump masivo de `token_version` | Esperado tras rotación; comunicar |
 | 429 masivos | Rate limit global (1000/15min/IP) — NAT de operador | Subir `limit` del `globalLimiter` con criterio |
 | Cargos recurrentes no aparecen | Render free durmió y el usuario no abrió la app (catch-up) | Esperado en free; el cron corre al despertar. Fondo: instancia de pago |
@@ -114,7 +114,7 @@ Estado conocido (2026-07-04): 19/20 cuentas en 0.00; 1 tarjeta (`accounts.id=18`
 
 ## Checklist antes de ampliar la beta
 
-- [ ] `GMAIL_*` configuradas y flujo de reset probado E2E en prod.
+- [ ] Antes de reactivar recuperación: `GMAIL_*` configuradas y flujo de reset probado E2E en prod.
 - [ ] `ALERT_WEBHOOK_URL` configurada y alerta de prueba recibida.
 - [ ] Monitor externo sobre `/api/health`.
 - [ ] Reconciliación en 0 diffs (o diffs documentados).

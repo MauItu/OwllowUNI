@@ -9,6 +9,8 @@ import { OwlLogo } from '../components/OwlLogo';
 import { useAuth } from '../hooks/useAuth';
 import { getErrorMessage } from '../api/client';
 
+const PASSWORD_RESET_ENABLED = false;
+
 export function LoginScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
@@ -71,8 +73,18 @@ export function LoginScreen() {
               <PrimaryButton label="Iniciar sesión" onPress={onSubmit} loading={loading} />
             </View>
             <Pressable
-              style={styles.forgotRow}
-              onPress={() => navigation.navigate('ForgotPassword')}
+              style={[styles.forgotRow, !PASSWORD_RESET_ENABLED && styles.forgotDisabled]}
+              onPress={() => {
+                if (PASSWORD_RESET_ENABLED) {
+                  navigation.navigate('ForgotPassword');
+                  return;
+                }
+                Toast.show({
+                  type: 'info',
+                  text1: 'Recuperación deshabilitada temporalmente',
+                  text2: 'Contactá soporte para recuperar el acceso.',
+                });
+              }}
               hitSlop={8}
             >
               <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
@@ -127,6 +139,7 @@ const createStyles = (theme: Theme) =>
     form: { gap: theme.spacing.xs },
     buttonWrap: { marginTop: theme.spacing.md },
     forgotRow: { alignItems: 'center', marginTop: theme.spacing.md },
+    forgotDisabled: { opacity: 0.55 },
     forgotText: {
       color: theme.colors.primaryLight,
       fontSize: theme.fontSize.sm,

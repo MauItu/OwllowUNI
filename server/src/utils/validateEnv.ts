@@ -58,8 +58,5 @@ if (!parsed.success) {
  */
 export const env = parsed.data;
 
-// Recuperación de contraseña requiere AMBAS credenciales de Gmail. Si falta alguna,
-// el server arranca igual pero esos endpoints quedan deshabilitados (devuelven 503).
-if (!env.GMAIL_USER || !env.GMAIL_APP_PASSWORD) {
-  console.warn('⚠️  Recuperación de contraseña deshabilitada: faltan GMAIL_*');
-}
+// GMAIL_* queda opcional. La recuperación de contraseña está deshabilitada
+// temporalmente en routes/password-reset.ts, así que no se advierte por estas envs.

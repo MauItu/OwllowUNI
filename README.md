@@ -11,8 +11,8 @@ Clon de "Wallet by BudgetBakers". Monorepo con backend (Express + Drizzle + Neon
   ```
   DATABASE_URL=postgres://...neon.tech/neondb?sslmode=require
   ```
-- `JWT_SECRET` de al menos 32 caracteres en `.env`. Opcionales: `GMAIL_USER`/`GMAIL_APP_PASSWORD`
-  para recuperación de contraseña y `ALERT_WEBHOOK_URL` para alertas operativas.
+- `JWT_SECRET` de al menos 32 caracteres en `.env`. Opcional: `ALERT_WEBHOOK_URL` para alertas operativas.
+  `GMAIL_USER`/`GMAIL_APP_PASSWORD` no se requieren mientras recuperación de contraseña esté deshabilitada.
 
 ## Backend
 ```bash
