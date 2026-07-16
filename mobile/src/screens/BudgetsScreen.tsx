@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, RefreshControl, StyleSheet, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -449,7 +449,15 @@ function BudgetFormSheet({
         </View>
 
         {isEdit && editing && (
-          <Pressable style={styles.deleteBtn} onPress={() => onDelete(editing.id)}>
+          <Pressable
+            style={styles.deleteBtn}
+            onPress={() =>
+              Alert.alert('Eliminar presupuesto', `¿Seguro que quieres eliminar "${editName}"?`, [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(editing.id) },
+              ])
+            }
+          >
             <Icon name="trash-2" size={18} color={theme.colors.expense} />
             <Text style={styles.deleteText}>Eliminar presupuesto</Text>
           </Pressable>
