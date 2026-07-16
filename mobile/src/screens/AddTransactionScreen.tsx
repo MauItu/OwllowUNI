@@ -396,7 +396,7 @@ export function AddTransactionScreen() {
                 }
               }}
             >
-              <Icon name="trash-2" size={20} color="#FFFFFF" />
+              <Icon name="trash-2" size={20} color={theme.colors.onHeader} />
             </Pressable>
           ) : null
         }

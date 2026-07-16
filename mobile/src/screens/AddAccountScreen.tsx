@@ -240,7 +240,7 @@ export function AddAccountScreen() {
         right={
           editingId ? (
             <Pressable onPress={remove} hitSlop={10}>
-              <Icon name="trash-2" size={20} color="#FFFFFF" />
+              <Icon name="trash-2" size={20} color={theme.colors.onHeader} />
             </Pressable>
           ) : null
         }

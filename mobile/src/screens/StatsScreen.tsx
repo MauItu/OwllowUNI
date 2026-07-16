@@ -146,7 +146,7 @@ export function StatsScreen() {
         title="Estadísticas"
         right={
           <Pressable onPress={() => navigation.navigate('Insights')} hitSlop={12}>
-            <Icon name="lightbulb" size={22} color="#FFFFFF" />
+            <Icon name="lightbulb" size={22} color={theme.colors.onHeader} />
           </Pressable>
         }
       />

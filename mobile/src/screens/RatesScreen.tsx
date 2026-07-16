@@ -109,7 +109,7 @@ export function RatesScreen() {
         onBack={() => navigation.goBack()}
         right={
           <Pressable onPress={() => load(true)} hitSlop={10}>
-            <Icon name="refresh-cw" size={20} color="#FFFFFF" />
+            <Icon name="refresh-cw" size={20} color={theme.colors.onHeader} />
           </Pressable>
         }
       />

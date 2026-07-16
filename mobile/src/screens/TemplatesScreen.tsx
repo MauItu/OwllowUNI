@@ -119,7 +119,7 @@ export function TemplatesScreen() {
         onBack={() => navigation.goBack()}
         right={
           <Pressable onPress={() => setForm(emptyForm)} hitSlop={10}>
-            <Icon name="plus" size={24} color="#FFFFFF" />
+            <Icon name="plus" size={24} color={theme.colors.onHeader} />
           </Pressable>
         }
       />

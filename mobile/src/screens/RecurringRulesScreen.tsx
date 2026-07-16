@@ -132,7 +132,7 @@ export function RecurringRulesScreen() {
         onBack={() => navigation.goBack()}
         right={
           <Pressable hitSlop={10} onPress={() => navigation.navigate('AddRecurring')}>
-            <Icon name="plus" size={24} color="#FFFFFF" strokeWidth={2.4} />
+            <Icon name="plus" size={24} color={theme.colors.onHeader} strokeWidth={2.4} />
           </Pressable>
         }
       />

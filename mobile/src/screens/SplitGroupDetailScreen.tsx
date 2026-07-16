@@ -171,10 +171,10 @@ export function SplitGroupDetailScreen() {
           group ? (
             <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
               <Pressable hitSlop={8} onPress={() => navigation.navigate('AddSplitGroup', { groupId })}>
-                <Icon name="pencil" size={20} color="#FFFFFF" />
+                <Icon name="pencil" size={20} color={theme.colors.onHeader} />
               </Pressable>
               <Pressable hitSlop={8} onPress={promptCloseGroup}>
-                <Icon name="trash-2" size={20} color="#FFFFFF" />
+                <Icon name="trash-2" size={20} color={theme.colors.onHeader} />
               </Pressable>
             </View>
           ) : null
