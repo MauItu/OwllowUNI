@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, FlatList, Pressable, TextInput, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, TextInput, RefreshControl, StyleSheet, Alert } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -71,6 +71,7 @@ export function TagsScreen() {
   const remove = async (tag: Tag) => {
     try {
       await tagsApi.remove(tag.id);
+      setSheetOpen(false);
       showSuccess('Etiqueta eliminada');
       triggerRefresh();
     } catch (err) {
@@ -78,8 +79,15 @@ export function TagsScreen() {
     }
   };
 
+  const confirmRemove = (tag: Tag) => {
+    Alert.alert('Eliminar etiqueta', `¿Seguro que quieres eliminar "${tag.name}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: () => remove(tag) },
+    ]);
+  };
+
   const renderRightActions = (tag: Tag) => (
-    <Pressable style={styles.deleteAction} onPress={() => remove(tag)}>
+    <Pressable style={styles.deleteAction} onPress={() => confirmRemove(tag)}>
       <Icon name="trash-2" size={22} color="#FFFFFF" />
     </Pressable>
   );
@@ -168,6 +176,13 @@ export function TagsScreen() {
           loading={saving}
           icon="tag"
         />
+
+        {editing && (
+          <Pressable style={styles.deleteBtn} onPress={() => confirmRemove(editing)}>
+            <Icon name="trash-2" size={18} color={theme.colors.expense} />
+            <Text style={styles.deleteText}>Eliminar etiqueta</Text>
+          </Pressable>
+        )}
       </BottomSheet>
     </Screen>
   );
@@ -221,4 +236,13 @@ const createStyles = (theme: Theme) =>
       justifyContent: 'center',
     },
     colorSwatchActive: { borderWidth: 3, borderColor: theme.colors.text },
+    deleteBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.sm,
+      padding: theme.spacing.md,
+    },
+    deleteText: { color: theme.colors.expense, fontWeight: theme.fontWeight.semibold },
   });
