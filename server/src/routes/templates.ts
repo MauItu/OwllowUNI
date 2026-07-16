@@ -7,6 +7,7 @@ import { asyncHandler, ApiError } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
 import { assertAccountOwned, assertCategoryOwned } from '../utils/ownership.js';
+import { accountDisplayName } from '../utils/accountDisplay.js';
 
 export const templatesRouter = Router();
 
@@ -35,7 +36,7 @@ templatesRouter.get(
         isActive: templates.isActive,
         useCount: templates.useCount,
         createdAt: templates.createdAt,
-        accountName: accounts.name,
+        accountName: accountDisplayName(accounts.name, accounts.isActive),
         categoryName: categories.name,
         categoryColor: categories.color,
         categoryIcon: categories.icon,

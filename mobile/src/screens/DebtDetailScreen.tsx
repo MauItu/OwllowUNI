@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet, TextInput } from 'react-native';
+import { View, Text, FlatList, Pressable, RefreshControl, StyleSheet, TextInput, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -117,16 +117,29 @@ export function DebtDetailScreen() {
     }
   };
 
-  const removeDebt = async () => {
-    try {
-      await debtsApi.remove(debtId);
-      cancelDebtNotifications(debtId).catch(() => {});
-      showSuccess(isDebt ? 'Deuda eliminada' : 'Préstamo eliminado');
-      triggerRefresh();
-      navigation.goBack();
-    } catch (err) {
-      showError(getErrorMessage(err));
-    }
+  const removeDebt = () => {
+    Alert.alert(
+      isDebt ? 'Eliminar deuda' : 'Eliminar préstamo',
+      'Se revertirán en sus cuentas los movimientos asociados (desembolso y abonos). ¿Quieres continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await debtsApi.remove(debtId);
+              cancelDebtNotifications(debtId).catch(() => {});
+              showSuccess(isDebt ? 'Deuda eliminada' : 'Préstamo eliminado');
+              triggerRefresh();
+              navigation.goBack();
+            } catch (err) {
+              showError(getErrorMessage(err));
+            }
+          },
+        },
+      ],
+    );
   };
 
   const payments = debt?.payments ?? [];

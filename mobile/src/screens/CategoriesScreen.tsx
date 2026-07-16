@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, Modal, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, Modal, RefreshControl, StyleSheet, Alert } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -73,16 +73,25 @@ export function CategoriesScreen() {
     }
   };
 
-  const remove = async (id: number) => {
-    try {
-      await categoriesApi.remove(id);
-      setForm(null);
-      refetch();
-      triggerRefresh();
-      showSuccess('Categoría eliminada');
-    } catch (err) {
-      showError(getErrorMessage(err));
-    }
+  const remove = (id: number) => {
+    Alert.alert('Eliminar categoría', '¿Seguro que quieres eliminar esta categoría?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await categoriesApi.remove(id);
+            setForm(null);
+            refetch();
+            triggerRefresh();
+            showSuccess('Categoría eliminada');
+          } catch (err) {
+            showError(getErrorMessage(err));
+          }
+        },
+      },
+    ]);
   };
 
   return (

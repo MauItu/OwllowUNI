@@ -13,6 +13,7 @@ import { buildFifoCardDebtPayment } from '../utils/creditCardDebt.js';
 import { frenchInstallment } from '../utils/installments.js';
 import { balanceStatements, assertDebitSufficient } from '../utils/balance.js';
 import { assertAccountsOwned, assertCategoryOwned, assertTagsOwned } from '../utils/ownership.js';
+import { accountDisplayName } from '../utils/accountDisplay.js';
 
 /** yyyy-MM-dd de una fecha local. */
 function ymd(d: Date): string {
@@ -183,11 +184,11 @@ transactionsRouter.get(
           installmentAmount: transactions.installmentAmount,
           debtId: transactions.debtId,
           createdAt: transactions.createdAt,
-          accountName: accounts.name,
+          accountName: accountDisplayName(accounts.name, accounts.isActive),
           accountColor: accounts.color,
           accountIcon: accounts.icon,
           accountCurrency: accounts.currency,
-          toAccountName: toAccounts.name,
+          toAccountName: accountDisplayName(toAccounts.name, toAccounts.isActive),
           categoryName: categories.name,
           categoryColor: categories.color,
           categoryIcon: categories.icon,
@@ -258,8 +259,8 @@ transactionsRouter.get(
         date: transactions.date,
         time: transactions.time,
         notes: transactions.notes,
-        accountName: accounts.name,
-        toAccountName: toAccounts.name,
+        accountName: accountDisplayName(accounts.name, accounts.isActive),
+        toAccountName: accountDisplayName(toAccounts.name, toAccounts.isActive),
         categoryName: categories.name,
         categoryParentId: categories.parentId,
         parentName: parentCat.name,

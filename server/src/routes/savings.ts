@@ -201,16 +201,36 @@ savingsRouter.put(
   }),
 );
 
-// DELETE /api/savings/:id — cascade en contribuciones
+// DELETE /api/savings/:id — cascade en contribuciones, repone el saldo movido a cada cuenta
 savingsRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = parseId(req.params.id);
-    const deleted = await db
-      .delete(savingsGoals)
-      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, userId(req))))
-      .returning();
-    if (deleted.length === 0) throw new ApiError(404, 'Meta de ahorro no encontrada');
+    const [goal] = await db
+      .select()
+      .from(savingsGoals)
+      .where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid)));
+    if (!goal) throw new ApiError(404, 'Meta de ahorro no encontrada');
+
+    const contributions = await db
+      .select()
+      .from(savingsContributions)
+      .where(eq(savingsContributions.goalId, id));
+
+    const stmts: unknown[] = [];
+    // Revertir en cada cuenta el efecto de sus contribuciones (las del modelo
+    // viejo sin cuenta no movieron saldo → nada que revertir).
+    for (const c of contributions) {
+      if (c.accountId != null) {
+        stmts.push(balanceUpdate(uid, c.accountId, -accountDelta(c.type, Number(c.amount))));
+      }
+    }
+    // Borrar la meta (CASCADE borra las contribuciones).
+    stmts.push(db.delete(savingsGoals).where(and(eq(savingsGoals.id, id), eq(savingsGoals.userId, uid))));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.batch(stmts as any);
     res.json({ success: true });
   }),
 );

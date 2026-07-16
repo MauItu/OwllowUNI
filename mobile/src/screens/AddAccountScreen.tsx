@@ -152,16 +152,29 @@ export function AddAccountScreen() {
     }
   };
 
-  const remove = async () => {
+  const remove = () => {
     if (!editingId) return;
-    try {
-      await accountsApi.remove(editingId);
-      triggerRefresh();
-      showSuccess('Cuenta eliminada');
-      navigation.goBack();
-    } catch (err) {
-      showError(getErrorMessage(err));
-    }
+    Alert.alert(
+      'Eliminar cuenta',
+      'La cuenta dejará de aparecer en los selectores. Su historial (movimientos, deudas, etc.) se conserva y mostrará "Cuenta eliminada". ¿Quieres continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await accountsApi.remove(editingId);
+              triggerRefresh();
+              showSuccess('Cuenta eliminada');
+              navigation.goBack();
+            } catch (err) {
+              showError(getErrorMessage(err));
+            }
+          },
+        },
+      ],
+    );
   };
 
   // Desactivar/reactivar la cuenta (acción inmediata). Al desactivar, si hay reglas

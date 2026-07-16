@@ -22,6 +22,7 @@ import { getOwnedAccount } from '../utils/ownership.js';
 import { safeCompensate } from '../utils/safeCompensate.js';
 import { assertDebitSufficient } from '../utils/balance.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
+import { accountDisplayName } from '../utils/accountDisplay.js';
 
 export const splitsRouter = Router();
 
@@ -520,7 +521,7 @@ splitsRouter.get(
         createdAt: splitExpenses.createdAt,
         updatedAt: splitExpenses.updatedAt,
         paidByName: splitMembers.name,
-        accountName: accounts.name,
+        accountName: accountDisplayName(accounts.name, accounts.isActive),
         categoryName: categories.name,
         categoryIcon: categories.icon,
         categoryColor: categories.color,

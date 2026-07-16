@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, SectionList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import { View, Text, SectionList, Pressable, RefreshControl, StyleSheet, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { type Theme } from '../theme';
@@ -106,15 +106,28 @@ export function DebtsScreen() {
     );
   };
 
-  const removePaid = async (id: number) => {
-    try {
-      await debtsApi.remove(id);
-      showSuccess('Eliminado del historial');
-      triggerRefresh();
-      refetch(true);
-    } catch (err) {
-      showError(getErrorMessage(err));
-    }
+  const removePaid = (id: number) => {
+    Alert.alert(
+      'Eliminar deuda',
+      'Se eliminará la deuda y se revertirán los movimientos asociados (desembolso y abonos) en sus cuentas. ¿Quieres continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await debtsApi.remove(id);
+              showSuccess('Eliminado del historial');
+              triggerRefresh();
+              refetch(true);
+            } catch (err) {
+              showError(getErrorMessage(err));
+            }
+          },
+        },
+      ],
+    );
   };
 
   // keyExtractor estable y renderItem estable (el onPress por item necesita el

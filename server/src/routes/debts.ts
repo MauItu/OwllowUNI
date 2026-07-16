@@ -17,6 +17,7 @@ import { assertDebitSufficient } from '../utils/balance.js';
 import { getOwnedAccount } from '../utils/ownership.js';
 import { cacheResponse, SUMMARY_TTL_MS } from '../services/cache.js';
 import { frenchInstallment, computeDueInfo } from '../utils/installments.js';
+import { accountDisplayName } from '../utils/accountDisplay.js';
 
 export const debtsRouter = Router();
 
@@ -71,7 +72,7 @@ async function loadDebtDetail(uid: number, id: number) {
       accountId: debtPayments.accountId,
       transactionId: debtPayments.transactionId,
       createdAt: debtPayments.createdAt,
-      accountName: accounts.name,
+      accountName: accountDisplayName(accounts.name, accounts.isActive),
     })
     .from(debtPayments)
     .leftJoin(accounts, eq(debtPayments.accountId, accounts.id))
@@ -189,7 +190,7 @@ debtsRouter.get(
         accountId: debts.accountId,
         createdAt: debts.createdAt,
         updatedAt: debts.updatedAt,
-        accountName: accounts.name,
+        accountName: accountDisplayName(accounts.name, accounts.isActive),
         accountType: accounts.type,
       })
       .from(debts)

@@ -145,16 +145,29 @@ export function SavingsDetailScreen() {
     ]);
   };
 
-  const removeGoal = async () => {
-    try {
-      await savingsApi.remove(goalId);
-      cancelGoalNotifications(goalId).catch(() => {});
-      showSuccess('Meta eliminada');
-      triggerRefresh();
-      navigation.goBack();
-    } catch (err) {
-      showError(getErrorMessage(err));
-    }
+  const removeGoal = () => {
+    Alert.alert(
+      'Eliminar meta',
+      'Se eliminará la meta y todas sus contribuciones. El dinero de los depósitos se repondrá en sus cuentas de origen. ¿Quieres continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await savingsApi.remove(goalId);
+              cancelGoalNotifications(goalId).catch(() => {});
+              showSuccess('Meta eliminada');
+              triggerRefresh();
+              navigation.goBack();
+            } catch (err) {
+              showError(getErrorMessage(err));
+            }
+          },
+        },
+      ],
+    );
   };
 
   const contributions = goal?.contributions ?? [];

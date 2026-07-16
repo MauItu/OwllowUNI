@@ -1,8 +1,16 @@
 import { Router } from 'express';
-import { and, eq, asc } from 'drizzle-orm';
+import { and, eq, asc, inArray, count } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../db/connection.js';
-import { categories, type Category } from '../db/schema.js';
+import {
+  categories,
+  transactions,
+  templates,
+  budgets,
+  recurringRules,
+  splitExpenses,
+  type Category,
+} from '../db/schema.js';
 import { asyncHandler, ApiError, isUniqueViolation } from '../middleware/errorHandler.js';
 import { parseId } from '../utils/parseId.js';
 import { userId } from '../middleware/auth.js';
@@ -140,14 +148,60 @@ categoriesRouter.put(
   }),
 );
 
-// DELETE /api/categories/:id — CASCADE subcategorías (definido en el FK)
+/** Cuenta cuántas filas de cada tabla dependiente referencian alguna de estas categorías. */
+async function referenceCounts(categoryIds: number[]) {
+  const [[tx], [tpl], [bud], [rec], [se]] = await Promise.all([
+    db.select({ n: count() }).from(transactions).where(inArray(transactions.categoryId, categoryIds)),
+    db.select({ n: count() }).from(templates).where(inArray(templates.categoryId, categoryIds)),
+    db.select({ n: count() }).from(budgets).where(inArray(budgets.categoryId, categoryIds)),
+    db.select({ n: count() }).from(recurringRules).where(inArray(recurringRules.categoryId, categoryIds)),
+    db.select({ n: count() }).from(splitExpenses).where(inArray(splitExpenses.categoryId, categoryIds)),
+  ]);
+  return {
+    transactions: Number(tx.n),
+    templates: Number(tpl.n),
+    budgets: Number(bud.n),
+    recurringRules: Number(rec.n),
+    splitExpenses: Number(se.n),
+  };
+}
+
+// DELETE /api/categories/:id — CASCADE subcategorías (definido en el FK). Bloquea
+// con 400 si la categoría (o alguna de sus subcategorías) tiene movimientos,
+// plantillas, presupuestos, reglas recurrentes o gastos compartidos asociados:
+// esas FKs son NO ACTION y el borrado fallaría igual, pero con un 500 feo.
 categoriesRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
+    const uid = userId(req);
     const id = parseId(req.params.id);
+
+    const [cat] = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.id, id), eq(categories.userId, uid)));
+    if (!cat) throw new ApiError(404, 'Categoría no encontrada');
+
+    const subcats = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(and(eq(categories.parentId, id), eq(categories.userId, uid)));
+    const allIds = [id, ...subcats.map((s) => s.id)];
+
+    const refs = await referenceCounts(allIds);
+    const parts: string[] = [];
+    if (refs.transactions > 0) parts.push(`${refs.transactions} movimiento(s)`);
+    if (refs.templates > 0) parts.push(`${refs.templates} plantilla(s)`);
+    if (refs.budgets > 0) parts.push(`${refs.budgets} presupuesto(s)`);
+    if (refs.recurringRules > 0) parts.push(`${refs.recurringRules} regla(s) recurrente(s)`);
+    if (refs.splitExpenses > 0) parts.push(`${refs.splitExpenses} gasto(s) compartido(s)`);
+    if (parts.length > 0) {
+      throw new ApiError(400, `No se puede eliminar: tiene ${parts.join(', ')} asociado(s)`);
+    }
+
     const deleted = await db
       .delete(categories)
-      .where(and(eq(categories.id, id), eq(categories.userId, userId(req))))
+      .where(and(eq(categories.id, id), eq(categories.userId, uid)))
       .returning();
     if (deleted.length === 0) throw new ApiError(404, 'Categoría no encontrada');
     res.json({ success: true });

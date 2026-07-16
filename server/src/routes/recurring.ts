@@ -16,6 +16,7 @@ import { userId } from '../middleware/auth.js';
 import { getOwnedAccount, assertCategoryOwned, assertTagsOwned } from '../utils/ownership.js';
 import { nextOccurrence, parseYmd, ymd, type Frequency } from '../utils/recurrence.js';
 import { materializeRecurringCharges } from '../services/recurring.js';
+import { accountDisplayName } from '../utils/accountDisplay.js';
 
 export const recurringRouter = Router();
 
@@ -134,7 +135,7 @@ recurringRouter.get(
     const rows = await db
       .select({
         rule: recurringRules,
-        accountName: accounts.name,
+        accountName: accountDisplayName(accounts.name, accounts.isActive),
         accountType: accounts.type,
         categoryName: categories.name,
         categoryColor: categories.color,
